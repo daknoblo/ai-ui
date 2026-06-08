@@ -1,0 +1,56 @@
+{{define "config"}}
+<div class="modal-overlay" hx-on:click="if(event.target===this)this.remove()">
+	<div class="modal">
+		<div class="modal-head">
+			<h2>Einstellungen</h2>
+			<button class="modal-close" hx-on:click="document.querySelector('.modal-overlay').remove()">×</button>
+		</div>
+
+		<form hx-post="/config" hx-target="#modal-root" hx-swap="innerHTML" class="config-form">
+			<label>
+				Azure Endpoint-URL
+				<input type="url" name="endpoint" value="{{.Config.Endpoint}}"
+					placeholder="https://mein-router.openai.azure.com" required>
+			</label>
+			<label>
+				Deployment-Name (Chat-Modell)
+				<input type="text" name="chat_deployment" value="{{.Config.ChatDeployment}}"
+					placeholder="gpt-4o" required>
+			</label>
+			<label>
+				API-Version
+				<input type="text" name="api_version" value="{{.Config.APIVersion}}"
+					placeholder="2024-08-01-preview" required>
+			</label>
+			<label>
+				Embedding-Deployment-Name
+				<input type="text" name="embedding_deployment" value="{{.Config.EmbeddingDeployment}}"
+					placeholder="text-embedding-3-large">
+			</label>
+			<label>
+				System-Prompt
+				<textarea name="system_prompt" rows="3">{{.Config.SystemPrompt}}</textarea>
+			</label>
+			<label>
+				Temperatur ({{printf "%.1f" .Config.Temperature}})
+				<input type="number" name="temperature" value="{{.Config.Temperature}}"
+					min="0" max="2" step="0.1">
+			</label>
+
+			<div class="config-secret {{if .HasKey}}ok{{else}}warn{{end}}">
+				API-Key (Secret):
+				{{if .HasKey}}über Umgebungsvariable AZURE_API_KEY gesetzt ✓{{else}}
+				nicht gesetzt — Umgebungsvariable <code>AZURE_API_KEY</code> beim Containerstart angeben{{end}}
+			</div>
+
+			{{if .Saved}}<div class="config-saved">Gespeichert ✓</div>{{end}}
+
+			<div class="modal-actions">
+				<button type="button" class="btn btn-ghost"
+					hx-on:click="document.querySelector('.modal-overlay').remove()">Schließen</button>
+				<button type="submit" class="btn">Speichern</button>
+			</div>
+		</form>
+	</div>
+</div>
+{{end}}

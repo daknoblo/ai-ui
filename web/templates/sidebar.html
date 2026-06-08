@@ -1,0 +1,75 @@
+{{define "sidebar"}}
+<aside class="sidebar">
+	<div class="sidebar-top">
+		<form hx-post="/chats" hx-target="body" hx-push-url="true" class="new-chat-form">
+			<button type="submit" class="btn btn-new">+ Neuer Chat</button>
+		</form>
+	</div>
+
+	{{template "chatnav" .}}
+
+	<div class="sidebar-section">
+		<div class="sidebar-section-head">Dokumente</div>
+		<form hx-post="/documents"
+			hx-target="#doc-list"
+			hx-swap="outerHTML"
+			hx-encoding="multipart/form-data"
+			class="upload-form">
+			<label class="file-label">
+				<input type="file" name="file" accept=".txt,.md,.markdown,.json,.pdf,.docx" required>
+				<span>Datei wählen</span>
+			</label>
+			<button type="submit" class="btn btn-small">Hochladen</button>
+			<div class="htmx-indicator upload-indicator">Verarbeite…</div>
+		</form>
+		{{template "doclist" .}}
+	</div>
+
+	<div class="sidebar-bottom">
+		<button class="btn btn-config"
+			hx-get="/config"
+			hx-target="#modal-root"
+			hx-swap="innerHTML">⚙ Einstellungen</button>
+		<div class="status {{if .Configured}}ok{{else}}warn{{end}}">
+			{{if .Configured}}Verbunden{{else}}Nicht konfiguriert{{end}}
+		</div>
+	</div>
+</aside>
+<div id="modal-root"></div>
+{{end}}
+
+{{define "chatnav"}}
+<nav id="chat-list" class="chat-list">
+	{{range .Chats}}
+	<div class="chat-item {{if and $.CurrentChat (eq .ID $.CurrentChat.ID)}}active{{end}}">
+		<a href="/chat/{{.ID}}" class="chat-link" title="{{.Title}}">{{.Title}}</a>
+		<button class="chat-del"
+			hx-delete="/chats/{{.ID}}"
+			hx-target="body"
+			hx-confirm="Diesen Chat wirklich löschen?"
+			hx-push-url="/"
+			title="Löschen">×</button>
+	</div>
+	{{else}}
+	<p class="empty-hint">Noch keine Chats.</p>
+	{{end}}
+</nav>
+{{end}}
+
+{{define "doclist"}}
+<div id="doc-list" class="doc-list">
+	{{range .Documents}}
+	<div class="doc-item">
+		<span class="doc-name" title="{{.Name}}">{{.Name}}</span>
+		<span class="doc-chunks">{{.Chunks}}</span>
+		<button class="doc-del"
+			hx-delete="/documents/{{.ID}}"
+			hx-target="#doc-list"
+			hx-swap="outerHTML"
+			title="Entfernen">×</button>
+	</div>
+	{{else}}
+	<p class="empty-hint">Keine Dokumente.</p>
+	{{end}}
+</div>
+{{end}}

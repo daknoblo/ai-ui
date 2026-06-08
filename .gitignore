@@ -1,0 +1,17 @@
+# Binaries
+/ai-ui
+/out
+
+# Lokaler Datenpfad / SQLite
+/data
+*.db
+*.db-wal
+*.db-shm
+
+# Konfiguration mit potenziell sensiblen Werten
+appdata/config.json
+
+# OS / IDE
+.DS_Store
+.idea/
+*.swp

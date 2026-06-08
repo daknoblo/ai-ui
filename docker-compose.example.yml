@@ -1,0 +1,32 @@
+# Beispiel-Deployment hinter Traefik.
+# Kopiere diese Datei nach docker-compose.yml und passe Domain/Netzwerk an.
+
+services:
+  ai-ui:
+    image: ghcr.io/daknoblo/ai-ui:latest
+    container_name: ai-ui
+    restart: unless-stopped
+    environment:
+      # Secret ausschließlich über Umgebungsvariable (nie in der Konfig-Datei).
+      - AZURE_API_KEY=${AZURE_API_KEY}
+      - PORT=8080
+      - DATA_DIR=/data
+    volumes:
+      # Persistenter Datenpfad: Chats, Dokumente, Embeddings und Konfiguration.
+      - ai-ui-data:/data
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ai-ui.rule=Host(`chat.example.com`)"
+      - "traefik.http.routers.ai-ui.entrypoints=websecure"
+      - "traefik.http.routers.ai-ui.tls=true"
+      - "traefik.http.routers.ai-ui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ai-ui.loadbalancer.server.port=8080"
+
+volumes:
+  ai-ui-data:
+
+networks:
+  traefik:
+    external: true

@@ -9,6 +9,9 @@ services:
     environment:
       # Secret ausschließlich über Umgebungsvariable (nie in der Konfig-Datei).
       - AZURE_API_KEY=${AZURE_API_KEY}
+      # Optional: eigener Key, falls Embeddings auf einer separaten Azure-Ressource
+      # liegen. Bleibt er leer, wird AZURE_API_KEY auch für Embeddings genutzt.
+      - AZURE_EMBEDDING_API_KEY=${AZURE_EMBEDDING_API_KEY:-}
       - PORT=8080
       - DATA_DIR=/data
     volumes:

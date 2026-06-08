@@ -7,6 +7,7 @@
 		</div>
 
 		<form hx-post="/config" hx-target="#modal-root" hx-swap="innerHTML" class="config-form">
+			<div class="config-section-head">Chat (Model-Router)</div>
 			<label>
 				Azure Endpoint-URL
 				<input type="url" name="endpoint" value="{{.Config.Endpoint}}"
@@ -22,11 +23,25 @@
 				<input type="text" name="api_version" value="{{.Config.APIVersion}}"
 					placeholder="2024-08-01-preview" required>
 			</label>
+
+			<div class="config-section-head">Embeddings (Dokument-Kontext)</div>
+			<label>
+				Embedding-Endpoint-URL <span class="hint">(optional, sonst wie Chat)</span>
+				<input type="url" name="embedding_endpoint" value="{{.Config.EmbeddingEndpoint}}"
+					placeholder="https://ddf6-msfoundry.cognitiveservices.azure.com">
+			</label>
 			<label>
 				Embedding-Deployment-Name
 				<input type="text" name="embedding_deployment" value="{{.Config.EmbeddingDeployment}}"
 					placeholder="text-embedding-3-large">
 			</label>
+			<label>
+				Embedding-API-Version <span class="hint">(optional, sonst wie Chat)</span>
+				<input type="text" name="embedding_api_version" value="{{.Config.EmbeddingAPIVersion}}"
+					placeholder="2023-05-15">
+			</label>
+
+			<div class="config-section-head">Verhalten</div>
 			<label>
 				System-Prompt
 				<textarea name="system_prompt" rows="3">{{.Config.SystemPrompt}}</textarea>
@@ -38,9 +53,15 @@
 			</label>
 
 			<div class="config-secret {{if .HasKey}}ok{{else}}warn{{end}}">
-				API-Key (Secret):
+				Chat-API-Key (Secret):
 				{{if .HasKey}}über Umgebungsvariable AZURE_API_KEY gesetzt ✓{{else}}
 				nicht gesetzt — Umgebungsvariable <code>AZURE_API_KEY</code> beim Containerstart angeben{{end}}
+			</div>
+			<div class="config-secret {{if .HasEmbeddingKey}}ok{{else}}warn{{end}}">
+				Embedding-API-Key (Secret):
+				{{if .HasOwnEmbeddingKey}}eigener Key über <code>AZURE_EMBEDDING_API_KEY</code> gesetzt ✓
+				{{else if .HasEmbeddingKey}}nutzt <code>AZURE_API_KEY</code> (kein eigener Key gesetzt) ✓
+				{{else}}nicht gesetzt — bei getrennter Ressource <code>AZURE_EMBEDDING_API_KEY</code> setzen{{end}}
 			</div>
 
 			{{if .Saved}}<div class="config-saved">Gespeichert ✓</div>{{end}}

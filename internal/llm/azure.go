@@ -138,12 +138,12 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 	if cfg.EmbeddingDeployment == "" {
 		return nil, fmt.Errorf("kein embedding-deployment konfiguriert")
 	}
-	if !c.store.HasAPIKey() {
-		return nil, fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
+	if !c.store.HasEmbeddingAPIKey() {
+		return nil, fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY bzw. AZURE_EMBEDDING_API_KEY)")
 	}
 
 	url := fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=%s",
-		strings.TrimRight(cfg.Endpoint, "/"), cfg.EmbeddingDeployment, cfg.APIVersion)
+		strings.TrimRight(cfg.EmbeddingHost(), "/"), cfg.EmbeddingDeployment, cfg.EmbeddingVersion())
 
 	body, err := json.Marshal(embeddingRequest{Input: inputs})
 	if err != nil {
@@ -155,7 +155,7 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", c.store.APIKey())
+	req.Header.Set("api-key", c.store.EmbeddingAPIKey())
 
 	resp, err := c.http.Do(req)
 	if err != nil {

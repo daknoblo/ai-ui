@@ -9,6 +9,8 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  # JavaScript-Actions auf Node.js 24 ausführen (Node.js 20 ist deprecated).
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build-and-push:

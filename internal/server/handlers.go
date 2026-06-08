@@ -29,6 +29,8 @@ type pageData struct {
 	Messages    []storage.Message
 	Documents   []storage.Document
 	Configured  bool
+	Notice      string
+	NoticeErr   bool
 }
 
 // buildPageData lädt Chats, Dokumente und ggf. den aktuellen Chat samt Nachrichten.
@@ -330,7 +332,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	ecfg := s.cfg.Get()
 	if ecfg.EmbeddingDeployment == "" || ecfg.EmbeddingHost() == "" || !s.cfg.HasEmbeddingAPIKey() {
-		s.renderDocList(w, r, "Embedding nicht konfiguriert – bitte zuerst Einstellungen ausfüllen.")
+		s.renderDocList(w, r, "Embedding nicht konfiguriert – bitte zuerst Einstellungen ausfüllen.", true)
 		return
 	}
 
@@ -347,13 +349,13 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mime := header.Header.Get("Content-Type")
-	if _, _, err := s.ingestor.Ingest(ctx, header.Filename, mime, data); err != nil {
+	_, n, err := s.ingestor.Ingest(ctx, header.Filename, mime, data)
+	if err != nil {
 		slog.Error("ingest", "file", header.Filename, "err", err)
-		s.renderDocList(w, r, "Verarbeitung fehlgeschlagen: "+err.Error())
+		s.renderDocList(w, r, "Verarbeitung fehlgeschlagen: "+err.Error(), true)
 		return
 	}
-
-	s.renderDocList(w, r, "")
+	s.renderDocList(w, r, fmt.Sprintf("„%s“ hinzugefügt (%d Abschnitte).", header.Filename, n), false)
 }
 
 // handleDeleteDocument entfernt ein Dokument.
@@ -367,7 +369,7 @@ func (s *Server) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	s.renderDocList(w, r, "")
+	s.renderDocList(w, r, "", false)
 }
 
 // ---- Render-Helfer ----
@@ -395,13 +397,13 @@ func (s *Server) renderConfig(w http.ResponseWriter, saved bool) {
 	s.render(w, "config", data)
 }
 
-func (s *Server) renderDocList(w http.ResponseWriter, r *http.Request, _ string) {
+func (s *Server) renderDocList(w http.ResponseWriter, r *http.Request, notice string, isErr bool) {
 	docs, err := s.store.ListDocuments(r.Context())
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	s.render(w, "doclist", pageData{Documents: docs})
+	s.render(w, "doclist", pageData{Documents: docs, Notice: notice, NoticeErr: isErr})
 }
 
 // renderMarkdownString rendert Markdown zu einem HTML-String (für SSE).

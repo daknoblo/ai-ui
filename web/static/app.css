@@ -109,7 +109,12 @@ html, body {
 }
 .file-label input { display: none; }
 .file-label:hover { border-color: var(--accent); color: var(--text); }
+.file-label.has-file { border-style: solid; border-color: var(--accent); color: var(--text); }
+.file-label span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .upload-indicator { font-size: 12px; color: var(--accent); }
+.doc-notice { font-size: 12px; padding: 6px 8px; border-radius: 6px; margin: 0 0 4px; }
+.doc-notice.ok { color: var(--accent); background: rgba(16,163,127,.12); }
+.doc-notice.err { color: var(--warn); background: rgba(224,160,48,.12); }
 
 .doc-list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .doc-item {

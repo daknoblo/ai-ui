@@ -275,6 +275,17 @@ html, body {
 }
 .config-form { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
 .config-form label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--text-dim); }
+.config-form .hint { color: var(--text-dim); opacity: .7; font-weight: 400; }
+.config-section-head {
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: .05em;
+	color: var(--accent);
+	border-top: 1px solid var(--border);
+	padding-top: 12px;
+	margin-top: 4px;
+}
+.config-section-head:first-child { border-top: none; padding-top: 0; margin-top: 0; }
 .config-form input, .config-form textarea {
 	background: var(--bg);
 	color: var(--text);

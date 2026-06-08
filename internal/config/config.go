@@ -11,12 +11,32 @@ import (
 // NICHT hier gespeichert, sondern ausschließlich zur Laufzeit aus der
 // Umgebungsvariable AZURE_API_KEY bezogen.
 type Config struct {
-	Endpoint            string  `json:"endpoint"`             // z.B. https://my-router.openai.azure.com
-	ChatDeployment      string  `json:"chat_deployment"`      // Deployment-Name des Chat-Modells
-	APIVersion          string  `json:"api_version"`          // z.B. 2024-08-01-preview
-	EmbeddingDeployment string  `json:"embedding_deployment"` // Deployment-Name des Embedding-Modells
+	Endpoint            string  `json:"endpoint"`              // Chat: z.B. https://my-router.openai.azure.com
+	ChatDeployment      string  `json:"chat_deployment"`       // Deployment-Name des Chat-Modells
+	APIVersion          string  `json:"api_version"`           // z.B. 2024-08-01-preview
+	EmbeddingEndpoint   string  `json:"embedding_endpoint"`    // optional; fällt auf Endpoint zurück
+	EmbeddingDeployment string  `json:"embedding_deployment"`  // Deployment-Name des Embedding-Modells
+	EmbeddingAPIVersion string  `json:"embedding_api_version"` // optional; fällt auf APIVersion zurück
 	SystemPrompt        string  `json:"system_prompt"`
 	Temperature         float64 `json:"temperature"`
+}
+
+// EmbeddingVersion liefert die für Embeddings zu nutzende API-Version.
+// Ist kein eigener Wert gesetzt, wird die allgemeine APIVersion verwendet.
+func (c Config) EmbeddingVersion() string {
+	if c.EmbeddingAPIVersion != "" {
+		return c.EmbeddingAPIVersion
+	}
+	return c.APIVersion
+}
+
+// EmbeddingHost liefert den für Embeddings zu nutzenden Endpoint.
+// Ist kein eigener Wert gesetzt, wird der Chat-Endpoint verwendet.
+func (c Config) EmbeddingHost() string {
+	if c.EmbeddingEndpoint != "" {
+		return c.EmbeddingEndpoint
+	}
+	return c.Endpoint
 }
 
 // Defaults liefert sinnvolle Startwerte.
@@ -25,7 +45,9 @@ func Defaults() Config {
 		Endpoint:            "",
 		ChatDeployment:      "",
 		APIVersion:          "2024-08-01-preview",
+		EmbeddingEndpoint:   "",
 		EmbeddingDeployment: "",
+		EmbeddingAPIVersion: "",
 		SystemPrompt:        "Du bist ein hilfreicher Assistent. Antworte präzise und nutze den bereitgestellten Kontext, wenn er relevant ist.",
 		Temperature:         0.7,
 	}
@@ -33,17 +55,19 @@ func Defaults() Config {
 
 // Store verwaltet das Laden und Speichern der Konfiguration als JSON-Datei.
 type Store struct {
-	path   string
-	apiKey string
+	path            string
+	apiKey          string
+	embeddingAPIKey string
 
 	mu  sync.RWMutex
 	cur Config
 }
 
 // NewStore erzeugt einen Konfigurationsspeicher für den angegebenen Pfad.
-// apiKey stammt aus der Umgebung und wird niemals persistiert.
-func NewStore(path, apiKey string) *Store {
-	return &Store{path: path, apiKey: apiKey, cur: Defaults()}
+// apiKey und embeddingAPIKey stammen aus der Umgebung und werden niemals
+// persistiert. Ist embeddingAPIKey leer, wird für Embeddings apiKey verwendet.
+func NewStore(path, apiKey, embeddingAPIKey string) *Store {
+	return &Store{path: path, apiKey: apiKey, embeddingAPIKey: embeddingAPIKey, cur: Defaults()}
 }
 
 // Load liest die Konfiguration von der Festplatte. Existiert keine Datei,
@@ -98,6 +122,25 @@ func (s *Store) APIKey() string {
 // HasAPIKey gibt an, ob ein API-Key gesetzt wurde.
 func (s *Store) HasAPIKey() bool {
 	return s.apiKey != ""
+}
+
+// EmbeddingAPIKey liefert den Key für Embeddings. Ist kein eigener Key gesetzt,
+// wird der allgemeine API-Key zurückgegeben.
+func (s *Store) EmbeddingAPIKey() string {
+	if s.embeddingAPIKey != "" {
+		return s.embeddingAPIKey
+	}
+	return s.apiKey
+}
+
+// HasEmbeddingAPIKey gibt an, ob ein (eigener oder geerbter) Key für Embeddings vorhanden ist.
+func (s *Store) HasEmbeddingAPIKey() bool {
+	return s.EmbeddingAPIKey() != ""
+}
+
+// HasOwnEmbeddingAPIKey gibt an, ob ein dedizierter Embedding-Key gesetzt wurde.
+func (s *Store) HasOwnEmbeddingAPIKey() bool {
+	return s.embeddingAPIKey != ""
 }
 
 // IsConfigured prüft, ob die Mindestangaben für Chat-Anfragen vorhanden sind.

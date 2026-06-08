@@ -28,12 +28,15 @@ Dokumenten-Kontext (RAG), angebunden an einen Azure-Foundry-Model-Router
 
 | Variable        | Default  | Beschreibung                                  |
 | --------------- | -------- | --------------------------------------------- |
-| `AZURE_API_KEY` | –        | **Secret.** API-Key des Model-Routers.        |
+| `AZURE_API_KEY` | –        | **Secret.** API-Key des Model-Routers (Chat). |
+| `AZURE_EMBEDDING_API_KEY` | – | **Secret, optional.** Eigener Key, falls Embeddings auf einer separaten Azure-Ressource liegen. Leer ⇒ `AZURE_API_KEY` wird genutzt. |
 | `DATA_DIR`      | `/data`  | Persistenter Datenpfad (DB + `appdata/`).     |
 | `PORT`          | `8080`   | HTTP-Port.                                    |
 
 Die übrigen Einstellungen werden im UI-Dialog gesetzt und unter
-`<DATA_DIR>/appdata/config.json` gespeichert (ohne Secret).
+`<DATA_DIR>/appdata/config.json` gespeichert (ohne Secret). Chat und Embeddings
+können getrennte Endpoints, Deployments und API-Versionen verwenden; die
+Embedding-Felder fallen bei Leereingabe auf die Chat-Werte zurück.
 
 ## Lokal starten
 

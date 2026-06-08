@@ -30,7 +30,8 @@ func run() error {
 	// Konfiguration aus Umgebung lesen.
 	port := getenv("PORT", "8080")
 	dataDir := getenv("DATA_DIR", "/data")
-	apiKey := os.Getenv("AZURE_API_KEY") // Secret ausschließlich aus ENV.
+	apiKey := os.Getenv("AZURE_API_KEY")                     // Secret ausschließlich aus ENV.
+	embeddingAPIKey := os.Getenv("AZURE_EMBEDDING_API_KEY") // optional; eigener Key für Embeddings.
 
 	// Datenverzeichnisse anlegen.
 	appDataDir := filepath.Join(dataDir, "appdata")
@@ -39,7 +40,7 @@ func run() error {
 	}
 
 	// Konfiguration laden (oder Default erzeugen).
-	cfgStore := config.NewStore(filepath.Join(appDataDir, "config.json"), apiKey)
+	cfgStore := config.NewStore(filepath.Join(appDataDir, "config.json"), apiKey, embeddingAPIKey)
 	if _, err := cfgStore.Load(); err != nil {
 		return err
 	}

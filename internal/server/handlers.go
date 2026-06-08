@@ -297,7 +297,9 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	cfg.Endpoint = strings.TrimSpace(r.FormValue("endpoint"))
 	cfg.ChatDeployment = strings.TrimSpace(r.FormValue("chat_deployment"))
 	cfg.APIVersion = strings.TrimSpace(r.FormValue("api_version"))
+	cfg.EmbeddingEndpoint = strings.TrimSpace(r.FormValue("embedding_endpoint"))
 	cfg.EmbeddingDeployment = strings.TrimSpace(r.FormValue("embedding_deployment"))
+	cfg.EmbeddingAPIVersion = strings.TrimSpace(r.FormValue("embedding_api_version"))
 	cfg.SystemPrompt = r.FormValue("system_prompt")
 	if t, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("temperature")), 64); err == nil {
 		cfg.Temperature = t
@@ -326,7 +328,8 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	if !s.cfg.IsConfigured() || s.cfg.Get().EmbeddingDeployment == "" {
+	ecfg := s.cfg.Get()
+	if ecfg.EmbeddingDeployment == "" || ecfg.EmbeddingHost() == "" || !s.cfg.HasEmbeddingAPIKey() {
 		s.renderDocList(w, r, "Embedding nicht konfiguriert – bitte zuerst Einstellungen ausfüllen.")
 		return
 	}
@@ -377,13 +380,17 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 
 func (s *Server) renderConfig(w http.ResponseWriter, saved bool) {
 	data := struct {
-		Config config.Config
-		HasKey bool
-		Saved  bool
+		Config            config.Config
+		HasKey            bool
+		HasEmbeddingKey   bool
+		HasOwnEmbeddingKey bool
+		Saved             bool
 	}{
-		Config: s.cfg.Get(),
-		HasKey: s.cfg.HasAPIKey(),
-		Saved:  saved,
+		Config:             s.cfg.Get(),
+		HasKey:             s.cfg.HasAPIKey(),
+		HasEmbeddingKey:    s.cfg.HasEmbeddingAPIKey(),
+		HasOwnEmbeddingKey: s.cfg.HasOwnEmbeddingAPIKey(),
+		Saved:              saved,
 	}
 	s.render(w, "config", data)
 }

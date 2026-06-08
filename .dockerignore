@@ -1,0 +1,18 @@
+# Lokaler Build-Cache und Git
+.git
+.gitignore
+*.md
+
+# Datenverzeichnis / lokale DB
+/data
+*.db
+*.db-wal
+*.db-shm
+
+# Build-Artefakte
+/ai-ui
+/out
+
+# IDE
+.vscode
+.idea

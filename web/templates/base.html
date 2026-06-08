@@ -1,0 +1,31 @@
+{{define "base"}}<!DOCTYPE html>
+<html lang="de">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{{.Title}}</title>
+	<link rel="stylesheet" href="/static/app.css">
+	<script src="/static/htmx.min.js"></script>
+	<script src="/static/sse.js"></script>
+</head>
+<body>
+	<div class="app">
+		{{template "sidebar" .}}
+		<main class="main">
+			{{block "content" .}}{{end}}
+		</main>
+	</div>
+	{{block "modal" .}}{{end}}
+	<script>
+		// Nach jedem HTMX-Swap im Nachrichtenbereich nach unten scrollen.
+		function scrollMessages() {
+			var m = document.getElementById('messages');
+			if (m) { m.scrollTop = m.scrollHeight; }
+		}
+		document.body.addEventListener('htmx:afterSwap', scrollMessages);
+		document.body.addEventListener('htmx:sseMessage', scrollMessages);
+		window.addEventListener('load', scrollMessages);
+	</script>
+</body>
+</html>
+{{end}}

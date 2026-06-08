@@ -1,0 +1,53 @@
+{{define "content"}}
+<div class="chat-header">
+	<h1 id="chat-title">{{if .CurrentChat}}{{.CurrentChat.Title}}{{else}}Neuer Chat{{end}}</h1>
+</div>
+
+<div id="messages" class="messages">
+	{{if not .Messages}}
+	<div class="welcome">
+		<h2>Womit kann ich helfen?</h2>
+		<p>Stelle eine Frage. Hochgeladene Dokumente werden automatisch als Kontext genutzt.</p>
+		{{if not .Configured}}
+		<p class="warn-text">⚠ Bitte zuerst unter <strong>Einstellungen</strong> den Azure-Endpoint konfigurieren.</p>
+		{{end}}
+	</div>
+	{{end}}
+	{{range .Messages}}
+		{{template "message" .}}
+	{{end}}
+</div>
+
+<form id="chat-form" class="composer"
+	hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
+	hx-target="#messages"
+	hx-swap="beforeend"
+	hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';}">
+	<textarea name="message" rows="1" placeholder="Nachricht schreiben…"
+		oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px';"
+		onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"
+		required></textarea>
+	<button type="submit" class="btn btn-send" title="Senden">↑</button>
+</form>
+{{end}}
+
+{{define "message"}}
+<div class="msg {{.Role}}">
+	<div class="msg-role">{{if eq .Role "user"}}Du{{else}}Assistent{{end}}</div>
+	<div class="bubble">{{renderMarkdown .Content}}</div>
+</div>
+{{end}}
+
+{{/* assistant-stream: vom Send-Handler zurückgegeben, öffnet die SSE-Verbindung */}}
+{{define "assistant-stream"}}
+<div class="msg assistant"
+	hx-ext="sse"
+	sse-connect="/chat/{{.ChatID}}/generate"
+	sse-close="done">
+	<div class="msg-role">Assistent</div>
+	<div class="bubble" sse-swap="token" hx-swap="innerHTML"><span class="cursor">▍</span></div>
+</div>
+{{end}}
+
+{{/* title-oob: aktualisiert den Header-Titel per Out-of-Band-Swap */}}
+{{define "title-oob"}}<h1 id="chat-title" hx-swap-oob="true">{{.Title}}</h1>{{end}}

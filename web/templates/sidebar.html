@@ -14,9 +14,11 @@
 			hx-target="#doc-list"
 			hx-swap="outerHTML"
 			hx-encoding="multipart/form-data"
+			hx-on::after-request="this.reset();this.querySelector('.file-label span').textContent='Datei wählen';this.querySelector('.file-label').classList.remove('has-file');"
 			class="upload-form">
 			<label class="file-label">
-				<input type="file" name="file" accept=".txt,.md,.markdown,.json,.pdf,.docx" required>
+				<input type="file" name="file" accept=".txt,.md,.markdown,.json,.pdf,.docx" required
+					onchange="var l=this.closest('.file-label');if(this.files.length){l.querySelector('span').textContent=this.files[0].name;l.classList.add('has-file');}else{l.querySelector('span').textContent='Datei wählen';l.classList.remove('has-file');}">
 				<span>Datei wählen</span>
 			</label>
 			<button type="submit" class="btn btn-small">Hochladen</button>
@@ -58,6 +60,7 @@
 
 {{define "doclist"}}
 <div id="doc-list" class="doc-list">
+	{{if .Notice}}<p class="doc-notice {{if .NoticeErr}}err{{else}}ok{{end}}">{{.Notice}}</p>{{end}}
 	{{range .Documents}}
 	<div class="doc-item">
 		<span class="doc-name" title="{{.Name}}">{{.Name}}</span>

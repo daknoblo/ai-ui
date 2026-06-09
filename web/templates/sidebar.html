@@ -32,8 +32,11 @@
 			hx-get="/config"
 			hx-target="#modal-root"
 			hx-swap="innerHTML">⚙ Einstellungen</button>
-		<div id="conn-status" class="status {{if .UploadsReady}}ok{{else}}warn{{end}}">
-			{{if .UploadsReady}}Bereit{{else}}Nicht verifiziert{{end}}
+		<div id="conn-status"
+			hx-get="/status"
+			hx-trigger="load, every 30s"
+			hx-swap="innerHTML">
+			{{template "status-badge" .StatusBadge}}
 		</div>
 	</div>
 </aside>
@@ -74,5 +77,11 @@
 	{{else}}
 	<p class="empty-hint">Keine Dokumente.</p>
 	{{end}}
+</div>
+{{end}}
+
+{{define "status-badge"}}
+<div class="status {{.Level}}" title="{{if .Uploads}}Uploads freigegeben{{else}}Uploads gesperrt – Verbindung prüfen{{end}}">
+	<span class="status-dot"></span>{{.Label}}
 </div>
 {{end}}

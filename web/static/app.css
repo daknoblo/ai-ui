@@ -144,9 +144,21 @@ html, body {
 	gap: 8px;
 }
 .btn-config { width: 100%; background: transparent; border: 1px solid var(--border); }
-.status { font-size: 12px; text-align: center; border-radius: 6px; padding: 3px; }
+.status {
+	font-size: 12px;
+	text-align: center;
+	border-radius: 6px;
+	padding: 4px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+}
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
 .status.ok { color: var(--accent); }
 .status.warn { color: var(--warn); }
+.status.err { color: var(--danger); }
+.status.err .status-dot { animation: blink 1.2s step-start infinite; }
 .empty-hint { color: var(--text-dim); font-size: 13px; padding: 4px 8px; }
 
 /* ---------- Buttons ---------- */

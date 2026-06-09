@@ -32,6 +32,7 @@ func run() error {
 	dataDir := getenv("DATA_DIR", "/data")
 	apiKey := os.Getenv("AZURE_API_KEY")                     // Secret ausschließlich aus ENV.
 	embeddingAPIKey := os.Getenv("AZURE_EMBEDDING_API_KEY") // optional; eigener Key für Embeddings.
+	healthCheckInterval := parseDurationEnv("HEALTHCHECK_INTERVAL", 60*time.Second)
 
 	// Datenverzeichnisse anlegen.
 	appDataDir := filepath.Join(dataDir, "appdata")
@@ -70,6 +71,9 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Verbindung beim Start verifizieren und periodisch überwachen.
+	go srv.Monitor(ctx, healthCheckInterval)
+
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("server gestartet", "addr", httpServer.Addr, "data_dir", dataDir)
@@ -94,4 +98,23 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// parseDurationEnv liest eine Dauer aus der Umgebung (z.B. "30s", "2m").
+// Bei ungültigem oder fehlendem Wert wird fallback verwendet. "0" oder "off"
+// deaktiviert den periodischen Check (nur Start-Prüfung).
+func parseDurationEnv(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	if v == "0" || v == "off" {
+		return 0
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		slog.Warn("ungültiges intervall, nutze default", "key", key, "wert", v)
+		return fallback
+	}
+	return d
 }

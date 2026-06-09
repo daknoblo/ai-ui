@@ -114,7 +114,8 @@
 <div class="verify-banner {{if .UploadsAllowed}}ok{{else}}warn{{end}}">
 	{{if .UploadsAllowed}}Speicher &amp; Embedding bereit – Uploads freigegeben ✓{{else}}Uploads bleiben gesperrt, bis Speicher und Embedding grün sind{{end}}
 </div>
-<div id="conn-status" hx-swap-oob="true" class="status {{if .UploadsAllowed}}ok{{else}}warn{{end}}">
-	{{if .UploadsAllowed}}Bereit{{else}}Nicht verifiziert{{end}}
+<div id="conn-status" hx-swap-oob="true"
+	hx-get="/status" hx-trigger="load, every 30s" hx-swap="innerHTML">
+	{{template "status-badge" .StatusBadge}}
 </div>
 {{end}}

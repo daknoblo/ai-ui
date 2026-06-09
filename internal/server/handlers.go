@@ -35,6 +35,7 @@ type pageData struct {
 	Models       []string
 	CurrentModel string
 	UploadsReady bool
+	StatusBadge  statusBadge
 }
 
 // buildPageData lädt Chats, Dokumente und ggf. den aktuellen Chat samt Nachrichten.
@@ -53,6 +54,7 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		Models:       cfg.ChatModels,
 		CurrentModel: cfg.ChatModel,
 		UploadsReady: s.ready.uploadsAllowed(),
+		StatusBadge:  s.statusData(),
 	}
 	if current != nil {
 		msgs, err := s.store.ListMessages(ctx, current.ID)
@@ -338,12 +340,65 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		Results        []checkResult
 		Verified       bool
 		UploadsAllowed bool
+		StatusBadge    statusBadge
 	}{
 		Results:        results,
 		Verified:       s.ready.verified(),
 		UploadsAllowed: s.ready.uploadsAllowed(),
+		StatusBadge:    s.statusData(),
 	}
 	s.render(w, "verify-results", data)
+}
+
+// handleStatus liefert den Verbindungs-Badge für die Seitenleiste. Wird von der
+// UI periodisch gepollt, damit Verbindungsausfälle sichtbar werden.
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "status-badge", s.statusData())
+}
+
+// statusData bereitet die Daten für den Status-Badge auf.
+func (s *Server) statusData() statusBadge {
+	snap := s.ready.snapshot()
+	b := statusBadge{
+		Configured: s.cfg.IsConfigured(),
+		Checked:    snap.Checked,
+		AllOK:      snap.AllOK,
+		Uploads:    snap.Uploads,
+	}
+	switch {
+	case !b.Configured:
+		b.Label = "Nicht konfiguriert"
+		b.Level = "warn"
+	case !snap.Checked:
+		b.Label = "Prüfe…"
+		b.Level = "warn"
+	case snap.AllOK:
+		b.Label = "Verbunden"
+		b.Level = "ok"
+	case !snap.StorageOK:
+		b.Label = "Speicher-Fehler"
+		b.Level = "err"
+	case !snap.ChatOK && !snap.EmbeddingOK:
+		b.Label = "Endpoints nicht erreichbar"
+		b.Level = "err"
+	case !snap.ChatOK:
+		b.Label = "Chat-Endpoint offline"
+		b.Level = "err"
+	default:
+		b.Label = "Embedding-Endpoint offline"
+		b.Level = "err"
+	}
+	return b
+}
+
+// statusBadge sind die Anzeigedaten des Verbindungsstatus.
+type statusBadge struct {
+	Configured bool
+	Checked    bool
+	AllOK      bool
+	Uploads    bool
+	Label      string
+	Level      string // ok | warn | err
 }
 
 // handleSetModel übernimmt die Modellauswahl aus dem Header-Menü. Die Auswahl

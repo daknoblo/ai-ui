@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -60,6 +61,33 @@ func (r *readiness) verified() bool {
 	return !r.checkedAt.IsZero() && r.storageOK && r.chatOK && r.embeddingOK
 }
 
+// statusSnapshot beschreibt den aktuellen Verbindungszustand für die Anzeige.
+type statusSnapshot struct {
+	Checked     bool      // wurde überhaupt schon geprüft?
+	StorageOK   bool
+	ChatOK      bool
+	EmbeddingOK bool
+	AllOK       bool
+	Uploads     bool
+	CheckedAt   time.Time
+}
+
+// snapshot liefert eine konsistente Kopie des aktuellen Zustands.
+func (r *readiness) snapshot() statusSnapshot {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	checked := !r.checkedAt.IsZero()
+	return statusSnapshot{
+		Checked:     checked,
+		StorageOK:   r.storageOK,
+		ChatOK:      r.chatOK,
+		EmbeddingOK: r.embeddingOK,
+		AllOK:       checked && r.storageOK && r.chatOK && r.embeddingOK,
+		Uploads:     r.storageOK && r.embeddingOK,
+		CheckedAt:   r.checkedAt,
+	}
+}
+
 // runChecks führt alle Bereitschaftsprüfungen aus, speichert das Ergebnis und
 // liefert die Einzelresultate für die Anzeige.
 func (s *Server) runChecks(ctx context.Context) []checkResult {
@@ -94,4 +122,53 @@ func (s *Server) runChecks(ctx context.Context) []checkResult {
 
 	s.ready.set(storageOK, chatOK, embeddingOK)
 	return results
+}
+
+// Monitor führt beim Start eine Verifizierung aus und prüft danach periodisch
+// die Verbindung. Nur sinnvoll, wenn die Mindestkonfiguration vorhanden ist;
+// andernfalls wird die Prüfung übersprungen, bis konfiguriert wurde.
+// Die Funktion blockiert bis ctx abgebrochen wird (z.B. beim Shutdown).
+func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
+	check := func(reason string) {
+		// Ohne Mindestkonfiguration macht eine Endpoint-Prüfung keinen Sinn.
+		if !s.cfg.IsConfigured() {
+			slog.Info("verbindungsprüfung übersprungen (nicht konfiguriert)", "anlass", reason)
+			return
+		}
+		prev := s.ready.snapshot()
+		results := s.runChecks(ctx)
+		cur := s.ready.snapshot()
+
+		// Zustandsänderungen protokollieren, damit Ausfälle sichtbar werden.
+		switch {
+		case cur.AllOK && (!prev.Checked || !prev.AllOK):
+			slog.Info("verbindung bereit", "anlass", reason)
+		case !cur.AllOK:
+			for _, r := range results {
+				if !r.OK {
+					slog.Warn("verbindungsprüfung fehlgeschlagen", "anlass", reason, "check", r.Name, "detail", r.Detail)
+				}
+			}
+		}
+	}
+
+	// Sofort beim Start prüfen.
+	check("start")
+
+	// interval <= 0 deaktiviert den periodischen Check (nur Start-Prüfung).
+	if interval <= 0 {
+		<-ctx.Done()
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			check("periodisch")
+		}
+	}
 }

@@ -212,8 +212,10 @@ func (s *Store) TouchChat(ctx context.Context, id int64) error {
 
 // DeleteChat entfernt einen Chat samt Nachrichten.
 func (s *Store) DeleteChat(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM chats WHERE id = ?`, id)
-	return err
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM chats WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return s.Vacuum(ctx)
 }
 
 // ---- Messages ----
@@ -300,8 +302,28 @@ func (s *Store) ListDocumentsByChat(ctx context.Context, chatID int64) ([]Docume
 
 // DeleteDocument entfernt ein Dokument samt Chunks.
 func (s *Store) DeleteDocument(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM documents WHERE id = ?`, id)
-	return err
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM documents WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return s.Vacuum(ctx)
+}
+
+// Vacuum schreibt die Datenbank ohne freie Seiten neu und gibt damit nach dem
+// Löschen belegten Speicher an das Dateisystem zurück. VACUUM kann nicht in
+// einer Transaktion laufen; bei sehr großen Datenbanken ist es kurzzeitig
+// sperrend, für den persönlichen Maßstab hier aber unproblematisch.
+//
+// Im WAL-Modus landet das verkleinerte Ergebnis zunächst in der WAL-Datei; ein
+// anschließender TRUNCATE-Checkpoint überträgt es in die Hauptdatei und schneidet
+// die WAL ab, sodass die Dateigröße auf der Platte tatsächlich sinkt.
+func (s *Store) Vacuum(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		return err
+	}
+	return nil
 }
 
 // ChunksByChat liefert alle Chunks der Dokumente eines Chats samt Embeddings.

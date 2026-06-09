@@ -170,6 +170,25 @@ html, body {
 }
 .storage-icon { flex: 0 0 auto; opacity: .8; }
 .storage-docs { opacity: .8; }
+.usage-line {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	font-size: 11px;
+	color: var(--text-dim);
+	margin-top: 3px;
+	cursor: default;
+}
+.usage-icon { flex: 0 0 auto; opacity: .8; }
+.usage-last { opacity: .8; }
+.msg-usage:empty { display: none; }
+.msg-usage {
+	font-size: 11px;
+	color: var(--text-dim);
+	margin-top: 4px;
+	opacity: .85;
+}
 .empty-hint { color: var(--text-dim); font-size: 13px; padding: 4px 8px; }
 
 /* ---------- Buttons ---------- */
@@ -391,6 +410,20 @@ html, body {
 }
 .doc-chip-del:hover { color: var(--danger); }
 .web-tag { color: var(--accent); font-size: 11px; }
+.msg-model:empty { display: none; }
+.model-badge {
+	display: inline-block;
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: .02em;
+	color: var(--accent);
+	background: rgba(16,163,127,.12);
+	border: 1px solid rgba(16,163,127,.3);
+	border-radius: 10px;
+	padding: 1px 7px;
+	margin-left: 6px;
+	vertical-align: middle;
+}
 
 /* ---------- Modal ---------- */
 .modal-overlay {

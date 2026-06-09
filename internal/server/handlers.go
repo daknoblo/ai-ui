@@ -255,7 +255,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	messages := s.buildLLMMessages(ctx, id, s.cfg.Get(), history, query, web)
 
 	var acc strings.Builder
-	streamErr := s.llm.ChatStream(ctx, messages, func(delta string) error {
+	result, streamErr := s.llm.ChatStream(ctx, messages, func(delta string) error {
 		acc.WriteString(delta)
 		return sse.send("token", renderMarkdownString(acc.String()))
 	})
@@ -276,6 +276,17 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		if _, err := s.store.AddMessage(context.Background(), id, "assistant", final); err != nil {
 			slog.Error("assistant-nachricht speichern", "err", err)
 		}
+	}
+
+	// Tatsächlich verwendetes Modell anzeigen (vom Router gemeldet).
+	if result.Model != "" {
+		_ = sse.send("model", s.renderString("model-tag", result.Model))
+	}
+
+	// Token-Nutzung dieser Antwort als Fußzeile der Nachricht ausgeben.
+	if result.Usage.TotalTokens > 0 {
+		_ = sse.send("usage", fmt.Sprintf("%d Tokens · %d Eingabe / %d Antwort",
+			result.Usage.TotalTokens, result.Usage.PromptTokens, result.Usage.CompletionTokens))
 	}
 	_ = sse.send("done", "")
 }
@@ -395,6 +406,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) statusData() statusBadge {
 	snap := s.ready.snapshot()
 	docs, _ := s.store.CountDocuments(context.Background())
+	m := s.llm.Metrics()
 	b := statusBadge{
 		Configured: s.cfg.IsConfigured(),
 		Checked:    snap.Checked,
@@ -402,6 +414,9 @@ func (s *Server) statusData() statusBadge {
 		Uploads:    snap.Uploads,
 		DiskBytes:  s.store.DiskUsage(),
 		DocCount:   docs,
+		Metrics:    m,
+		HasUsage:   m.TotalTokens > 0,
+		TotalHuman: humanCount(m.TotalTokens),
 	}
 	b.DiskHuman = humanBytes(b.DiskBytes)
 	switch {
@@ -439,6 +454,9 @@ type statusBadge struct {
 	DiskBytes  int64
 	DiskHuman  string
 	DocCount   int
+	Metrics    llm.MetricsSnapshot
+	HasUsage   bool
+	TotalHuman string
 	Label      string
 	Level      string // ok | warn | err
 }
@@ -630,6 +648,16 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 	}
 }
 
+// renderString rendert ein Template in einen String (für SSE-Events).
+func (s *Server) renderString(name string, data any) string {
+	var buf strings.Builder
+	if err := s.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
+		slog.Error("template", "name", name, "err", err)
+		return ""
+	}
+	return buf.String()
+}
+
 func (s *Server) renderConfig(w http.ResponseWriter, saved bool) {
 	data := struct {
 		Config             config.Config
@@ -712,4 +740,16 @@ func humanBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// humanCount formatiert große Zähler kompakt (z.B. 12345 -> "12.3k").
+func humanCount(n int64) string {
+	switch {
+	case n < 1000:
+		return fmt.Sprintf("%d", n)
+	case n < 1_000_000:
+		return fmt.Sprintf("%.1fk", float64(n)/1000)
+	default:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	}
 }

@@ -285,8 +285,10 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	// Token-Nutzung dieser Antwort als Fußzeile der Nachricht ausgeben.
 	if result.Usage.TotalTokens > 0 {
-		_ = sse.send("usage", fmt.Sprintf("%d Tokens · %d Eingabe / %d Antwort",
-			result.Usage.TotalTokens, result.Usage.PromptTokens, result.Usage.CompletionTokens))
+		_ = sse.send("usage", fmt.Sprintf("%s Tokens · %s Eingabe / %s Antwort",
+			groupThousands(int64(result.Usage.TotalTokens)),
+			groupThousands(int64(result.Usage.PromptTokens)),
+			groupThousands(int64(result.Usage.CompletionTokens))))
 	}
 	_ = sse.send("done", "")
 }
@@ -416,7 +418,6 @@ func (s *Server) statusData() statusBadge {
 		DocCount:   docs,
 		Metrics:    m,
 		HasUsage:   m.TotalTokens > 0,
-		TotalHuman: humanCount(m.TotalTokens),
 	}
 	b.DiskHuman = humanBytes(b.DiskBytes)
 	switch {
@@ -456,7 +457,6 @@ type statusBadge struct {
 	DocCount   int
 	Metrics    llm.MetricsSnapshot
 	HasUsage   bool
-	TotalHuman string
 	Label      string
 	Level      string // ok | warn | err
 }
@@ -742,14 +742,35 @@ func humanBytes(b int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-// humanCount formatiert große Zähler kompakt (z.B. 12345 -> "12.3k").
-func humanCount(n int64) string {
-	switch {
-	case n < 1000:
-		return fmt.Sprintf("%d", n)
-	case n < 1_000_000:
-		return fmt.Sprintf("%.1fk", float64(n)/1000)
-	default:
-		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+// groupThousands formatiert eine Ganzzahl mit deutschen Tausender-Trennpunkten
+// (z.B. 1234567 -> "1.234.567").
+func groupThousands(n int64) string {
+	neg := n < 0
+	if neg {
+		n = -n
 	}
+	s := strconv.FormatInt(n, 10)
+	if len(s) <= 3 {
+		if neg {
+			return "-" + s
+		}
+		return s
+	}
+	// Von rechts in Dreiergruppen mit "." trennen.
+	var b strings.Builder
+	lead := len(s) % 3
+	if lead > 0 {
+		b.WriteString(s[:lead])
+	}
+	for i := lead; i < len(s); i += 3 {
+		if b.Len() > 0 {
+			b.WriteByte('.')
+		}
+		b.WriteString(s[i : i+3])
+	}
+	out := b.String()
+	if neg {
+		return "-" + out
+	}
+	return out
 }

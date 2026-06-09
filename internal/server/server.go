@@ -34,7 +34,10 @@ func New(cfg *config.Store, store *storage.Store) *Server {
 	client := llm.New(cfg)
 
 	tmpl := template.Must(template.New("").
-		Funcs(template.FuncMap{"renderMarkdown": renderMarkdown}).
+		Funcs(template.FuncMap{
+			"renderMarkdown": renderMarkdown,
+			"thousands":      groupThousands,
+		}).
 		ParseFS(web.TemplatesFS, "templates/*.html"))
 
 	return &Server{

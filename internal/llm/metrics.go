@@ -31,9 +31,9 @@ type MetricsSnapshot struct {
 	ChatComplTokens  int64
 	ChatTotalTokens  int64
 
-	LastPromptTokens int
-	LastComplTokens  int
-	LastTotalTokens  int
+	LastPromptTokens int64
+	LastComplTokens  int64
+	LastTotalTokens  int64
 
 	EmbedRequests int64
 	EmbedTokens   int64
@@ -77,9 +77,9 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 		ChatPromptTokens: m.chatPromptTok,
 		ChatComplTokens:  m.chatComplTok,
 		ChatTotalTokens:  m.chatTotalTok,
-		LastPromptTokens: m.lastPromptTok,
-		LastComplTokens:  m.lastComplTok,
-		LastTotalTokens:  m.lastTotalTok,
+		LastPromptTokens: int64(m.lastPromptTok),
+		LastComplTokens:  int64(m.lastComplTok),
+		LastTotalTokens:  int64(m.lastTotalTok),
 		EmbedRequests:    m.embedRequests,
 		EmbedTokens:      m.embedTokens,
 		TotalTokens:      m.chatTotalTok + m.embedTokens,

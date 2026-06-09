@@ -12,6 +12,8 @@ services:
       # Optional: eigener Key, falls Embeddings auf einer separaten Azure-Ressource
       # liegen. Bleibt er leer, wird AZURE_API_KEY auch für Embeddings genutzt.
       - AZURE_EMBEDDING_API_KEY=${AZURE_EMBEDDING_API_KEY:-}
+      # Optional: API-Key für die Web-Suche (Tavily/Brave). Für SearXNG nicht nötig.
+      - SEARCH_API_KEY=${SEARCH_API_KEY:-}
       - PORT=8080
       - DATA_DIR=/data
       # Intervall der periodischen Verbindungsprüfung (z.B. 30s, 2m; 0/off = aus).

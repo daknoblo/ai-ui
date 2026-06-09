@@ -20,7 +20,7 @@
 		<div class="welcome">
 			<h2>Womit kann ich helfen?</h2>
 			<p>Stelle eine Frage. Hochgeladene Dokumente werden automatisch als Kontext genutzt.</p>
-			<p class="welcome-hint">Tipp: Ziehe Dokumente einfach in dieses Fenster, um sie als Kontext hinzuzufügen.</p>
+			<p class="welcome-hint">Tipp: Hänge Dokumente über 📎 an oder ziehe sie ins Fenster. Mit 🌐 beziehst du aktuelle Web-Ergebnisse ein.</p>
 			{{if not .Configured}}
 			<p class="warn-text">⚠ Bitte zuerst unter <strong>Einstellungen</strong> den Azure-Endpoint konfigurieren.</p>
 			{{end}}
@@ -31,17 +31,35 @@
 		{{end}}
 	</div>
 
-	<form id="chat-form" class="composer"
-		hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
-		hx-target="#messages"
-		hx-swap="beforeend"
-		hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';}">
-		<textarea name="message" rows="1" placeholder="Nachricht schreiben…"
-			oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px';"
-			onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"
-			required></textarea>
-		<button type="submit" class="btn btn-send" title="Senden">↑</button>
-	</form>
+	<div class="composer-dock">
+		{{template "doclist" .}}
+
+		<form id="chat-form" class="composer"
+			hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
+			hx-target="#messages"
+			hx-swap="beforeend"
+			hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';syncWebToggle(this);}">
+			<input type="hidden" name="web" id="web-flag" value="0">
+			<label class="composer-btn attach-btn" title="Dokument anhängen">
+				📎
+				<input type="file" name="file" accept=".txt,.md,.markdown,.json,.pdf,.docx"
+					hx-post="/chat/{{.ChatID}}/documents"
+					hx-trigger="change"
+					hx-target="#doc-list"
+					hx-swap="outerHTML"
+					hx-encoding="multipart/form-data"
+					hx-on::after-request="this.value=''">
+			</label>
+			<button type="button" class="composer-btn web-toggle" id="web-toggle"
+				aria-pressed="false" title="Websuche für die nächste Nachricht"
+				onclick="toggleWeb(this)" {{if not .SearchEnabled}}hidden{{end}}>🌐</button>
+			<textarea name="message" rows="1" placeholder="Nachricht schreiben…"
+				oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px';"
+				onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"
+				required></textarea>
+			<button type="submit" class="btn btn-send" title="Senden">↑</button>
+		</form>
+	</div>
 
 	<div class="drop-overlay" id="drop-overlay" aria-hidden="true">
 		<div class="drop-inner drop-ready">
@@ -69,9 +87,9 @@
 {{define "assistant-stream"}}
 <div class="msg assistant"
 	hx-ext="sse"
-	sse-connect="/chat/{{.ChatID}}/generate"
+	sse-connect="/chat/{{.ChatID}}/generate{{if .Web}}?web=1{{end}}"
 	sse-close="done">
-	<div class="msg-role">Assistent</div>
+	<div class="msg-role">Assistent{{if .Web}} <span class="web-tag">🌐 Web</span>{{end}}</div>
 	<div class="bubble" sse-swap="token" hx-swap="innerHTML"><span class="cursor">▍</span></div>
 </div>
 {{end}}

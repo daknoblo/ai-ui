@@ -23,19 +23,20 @@ const (
 
 // pageData bündelt alle Daten für das Rendern einer Vollseite.
 type pageData struct {
-	Title        string
-	Chats        []storage.Chat
-	CurrentChat  *storage.Chat
-	Messages     []storage.Message
-	Documents    []storage.Document
-	Configured   bool
-	ChatID       int64
-	Notice       string
-	NoticeErr    bool
-	Models       []string
-	CurrentModel string
-	UploadsReady bool
-	StatusBadge  statusBadge
+	Title         string
+	Chats         []storage.Chat
+	CurrentChat   *storage.Chat
+	Messages      []storage.Message
+	Documents     []storage.Document
+	Configured    bool
+	ChatID        int64
+	Notice        string
+	NoticeErr     bool
+	Models        []string
+	CurrentModel  string
+	UploadsReady  bool
+	SearchEnabled bool
+	StatusBadge   statusBadge
 }
 
 // buildPageData lädt Chats, Dokumente und ggf. den aktuellen Chat samt Nachrichten.
@@ -47,14 +48,15 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 	cfg := s.cfg.Get()
 
 	pd := pageData{
-		Title:        "AI UI",
-		Chats:        chats,
-		CurrentChat:  current,
-		Configured:   s.cfg.IsConfigured(),
-		Models:       cfg.ChatModels,
-		CurrentModel: cfg.ChatModel,
-		UploadsReady: s.ready.uploadsAllowed(),
-		StatusBadge:  s.statusData(),
+		Title:         "AI UI",
+		Chats:         chats,
+		CurrentChat:   current,
+		Configured:    s.cfg.IsConfigured(),
+		Models:        cfg.ChatModels,
+		CurrentModel:  cfg.ChatModel,
+		UploadsReady:  s.ready.uploadsAllowed(),
+		SearchEnabled: s.search.Enabled(),
+		StatusBadge:   s.statusData(),
 	}
 	if current != nil {
 		msgs, err := s.store.ListMessages(ctx, current.ID)
@@ -173,6 +175,9 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Web-Suche nur berücksichtigen, wenn angefordert UND konfiguriert.
+	web := r.FormValue("web") == "1" && s.search.Enabled()
+
 	if _, err := s.store.AddMessage(ctx, chatID, "user", message); err != nil {
 		httpError(w, err)
 		return
@@ -192,7 +197,10 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 
 	// Nutzer-Bubble + Stream-Hülle anhängen.
 	s.render(w, "message", storage.Message{Role: "user", Content: message})
-	s.render(w, "assistant-stream", struct{ ChatID int64 }{ChatID: chatID})
+	s.render(w, "assistant-stream", struct {
+		ChatID int64
+		Web    bool
+	}{ChatID: chatID, Web: web})
 	if titleChanged {
 		s.render(w, "title-oob", struct{ Title string }{Title: chat.Title})
 	}
@@ -238,7 +246,10 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	messages := s.buildLLMMessages(ctx, id, s.cfg.Get(), history, query)
+	// Web-Suche, falls für diese Anfrage angefordert und konfiguriert.
+	web := r.URL.Query().Get("web") == "1" && s.search.Enabled()
+
+	messages := s.buildLLMMessages(ctx, id, s.cfg.Get(), history, query, web)
 
 	var acc strings.Builder
 	streamErr := s.llm.ChatStream(ctx, messages, func(delta string) error {
@@ -266,8 +277,9 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	_ = sse.send("done", "")
 }
 
-// buildLLMMessages baut die Nachrichtenliste inkl. RAG-Kontext (auf den Chat beschränkt).
-func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.Config, history []storage.Message, query string) []llm.Message {
+// buildLLMMessages baut die Nachrichtenliste inkl. RAG- und optionalem Web-Kontext
+// (RAG ist auf den Chat beschränkt).
+func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.Config, history []storage.Message, query string, web bool) []llm.Message {
 	system := cfg.SystemPrompt
 
 	// Relevante Dokumentabschnitte abrufen (sofern Embedding konfiguriert).
@@ -280,6 +292,21 @@ func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.
 			sb.WriteString("\n\nNutze den folgenden Kontext aus hochgeladenen Dokumenten, sofern er für die Frage relevant ist. Wenn er nicht passt, ignoriere ihn.\n\n")
 			for i, res := range results {
 				fmt.Fprintf(&sb, "[Kontext %d]\n%s\n\n", i+1, res.Text)
+			}
+			system += sb.String()
+		}
+	}
+
+	// Aktuelle Web-Ergebnisse einbeziehen, falls angefordert.
+	if web && query != "" {
+		results, err := s.search.Search(ctx, query)
+		if err != nil {
+			slog.Warn("websuche fehlgeschlagen", "err", err)
+		} else if len(results) > 0 {
+			var sb strings.Builder
+			sb.WriteString("\n\nNutze die folgenden aktuellen Web-Ergebnisse, sofern sie für die Frage relevant sind. Zitiere die Quellen mit ihrer URL.\n\n")
+			for i, res := range results {
+				fmt.Fprintf(&sb, "[Web %d] %s\nQuelle: %s\n%s\n\n", i+1, res.Title, res.URL, res.Content)
 			}
 			system += sb.String()
 		}
@@ -314,6 +341,11 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	cfg.EmbeddingEndpoint = strings.TrimSpace(r.FormValue("embedding_endpoint"))
 	cfg.EmbeddingDeployment = strings.TrimSpace(r.FormValue("embedding_deployment"))
 	cfg.EmbeddingAPIVersion = strings.TrimSpace(r.FormValue("embedding_api_version"))
+	cfg.SearchProvider = strings.ToLower(strings.TrimSpace(r.FormValue("search_provider")))
+	cfg.SearchEndpoint = strings.TrimSpace(r.FormValue("search_endpoint"))
+	if n, err := strconv.Atoi(strings.TrimSpace(r.FormValue("search_max_results"))); err == nil && n > 0 {
+		cfg.SearchMaxResults = n
+	}
 	cfg.SystemPrompt = r.FormValue("system_prompt")
 	if t, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("temperature")), 64); err == nil {
 		cfg.Temperature = t
@@ -546,6 +578,8 @@ func (s *Server) renderConfig(w http.ResponseWriter, saved bool) {
 		HasKey             bool
 		HasEmbeddingKey    bool
 		HasOwnEmbeddingKey bool
+		HasSearchKey       bool
+		SearchEnabled      bool
 		Saved              bool
 		Verified           bool
 		UploadsAllowed     bool
@@ -554,6 +588,8 @@ func (s *Server) renderConfig(w http.ResponseWriter, saved bool) {
 		HasKey:             s.cfg.HasAPIKey(),
 		HasEmbeddingKey:    s.cfg.HasEmbeddingAPIKey(),
 		HasOwnEmbeddingKey: s.cfg.HasOwnEmbeddingAPIKey(),
+		HasSearchKey:       s.cfg.HasSearchAPIKey(),
+		SearchEnabled:      s.search.Enabled(),
 		Saved:              saved,
 		Verified:           s.ready.verified(),
 		UploadsAllowed:     s.ready.uploadsAllowed(),

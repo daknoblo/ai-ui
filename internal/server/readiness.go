@@ -63,7 +63,7 @@ func (r *readiness) verified() bool {
 
 // statusSnapshot beschreibt den aktuellen Verbindungszustand für die Anzeige.
 type statusSnapshot struct {
-	Checked     bool      // wurde überhaupt schon geprüft?
+	Checked     bool // wurde überhaupt schon geprüft?
 	StorageOK   bool
 	ChatOK      bool
 	EmbeddingOK bool
@@ -119,6 +119,18 @@ func (s *Server) runChecks(ctx context.Context) []checkResult {
 		embeddingDetail = err.Error()
 	}
 	results = append(results, checkResult{Name: "Embedding-Endpoint", OK: embeddingOK, Detail: embeddingDetail})
+
+	// 4. Web-Suche (nur informativ; blockiert keine Uploads). Nur prüfen, wenn
+	//    ein Provider konfiguriert ist.
+	if s.search.Enabled() {
+		searchOK := true
+		searchDetail := s.search.ProviderName() + " erreichbar"
+		if err := s.search.Verify(ctx); err != nil {
+			searchOK = false
+			searchDetail = err.Error()
+		}
+		results = append(results, checkResult{Name: "Web-Suche", OK: searchOK, Detail: searchDetail})
+	}
 
 	s.ready.set(storageOK, chatOK, embeddingOK)
 	return results

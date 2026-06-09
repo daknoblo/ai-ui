@@ -12,7 +12,10 @@ Dokumenten-Kontext (RAG), angebunden an einen Azure-Foundry-Model-Router
   Router entscheiden); die Auswahl gilt global und bleibt beim Chatwechsel erhalten
 - Dokumenten-Upload (Text/Markdown, PDF, DOCX) als RAG-Kontext
   (Embeddings + Brute-Force-Cosine-Suche)
-- Dokumente per Drag & Drop direkt ins Chatfenster ziehen
+- Dokumente direkt am Eingabefeld anhängen (📎) oder per Drag & Drop ins
+  Chatfenster ziehen; angehängte Dokumente werden als Chips über der Eingabe gezeigt
+- Optionale Web-Suche (🌐) pro Anfrage: bezieht aktuelle Online-Ergebnisse als
+  Kontext ein – provider-agnostisch (Tavily, Brave Search, SearXNG)
 - Dokumente sind an den jeweiligen Chat gebunden und werden beim Löschen des
   Chats automatisch mit entfernt (inkl. Embeddings)
 - Konfigurationsdialog in der UI (Endpoint, Deployments, API-Version,
@@ -38,6 +41,7 @@ Dokumenten-Kontext (RAG), angebunden an einen Azure-Foundry-Model-Router
 | --------------- | -------- | --------------------------------------------- |
 | `AZURE_API_KEY` | –        | **Secret.** API-Key des Model-Routers (Chat). |
 | `AZURE_EMBEDDING_API_KEY` | – | **Secret, optional.** Eigener Key, falls Embeddings auf einer separaten Azure-Ressource liegen. Leer ⇒ `AZURE_API_KEY` wird genutzt. |
+| `SEARCH_API_KEY` | – | **Secret, optional.** API-Key für die Web-Suche (Tavily oder Brave). Für SearXNG nicht erforderlich. |
 | `DATA_DIR`      | `/data`  | Persistenter Datenpfad (DB + `appdata/`).     |
 | `PORT`          | `8080`   | HTTP-Port.                                    |
 | `HEALTHCHECK_INTERVAL` | `60s` | Intervall der periodischen Verbindungsprüfung (Go-Dauer, z.B. `30s`, `2m`). `0` oder `off` deaktiviert den periodischen Check (die Prüfung beim Start läuft weiterhin). |
@@ -57,6 +61,22 @@ Verifizierung zurück. Beim Container-Start wird automatisch verifiziert (sofern
 konfiguriert); ein Hintergrund-Check (`HEALTHCHECK_INTERVAL`) überwacht die
 Verbindung laufend und meldet Ausfälle über den Status in der Seitenleiste sowie
 im Log.
+
+### Web-Suche (optional)
+
+Im Einstellungsdialog unter **Web-Suche** einen Anbieter wählen:
+
+- **Tavily** – auf LLM/RAG optimiert, liefert direkt extrahierte Inhalte
+  (benötigt `SEARCH_API_KEY`).
+- **Brave Search** – REST-API (benötigt `SEARCH_API_KEY`).
+- **SearXNG** – selbst gehostete Meta-Suche; nur die Basis-URL angeben, kein Key
+  nötig.
+
+Ist ein Anbieter konfiguriert, erscheint im Chat neben dem Eingabefeld ein
+🌐-Umschalter. Ist er aktiv, wird die jeweilige Nachricht mit aktuellen
+Web-Ergebnissen angereichert; der Zustand bleibt über Chatwechsel hinweg
+erhalten. Der Such-API-Key wird – wie die Azure-Keys – ausschließlich über die
+Umgebungsvariable `SEARCH_API_KEY` bezogen und nie in `config.json` gespeichert.
 
 ## Lokal starten
 

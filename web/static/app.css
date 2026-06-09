@@ -266,15 +266,18 @@ html, body {
 .cursor { animation: blink 1s step-start infinite; color: var(--accent); }
 @keyframes blink { 50% { opacity: 0; } }
 
-.composer {
-	display: flex;
-	gap: 8px;
-	align-items: flex-end;
-	padding: 16px 24px 22px;
+.composer-dock {
 	border-top: 1px solid var(--border);
 	max-width: 808px;
 	width: 100%;
 	margin: 0 auto;
+	padding: 10px 24px 18px;
+}
+.composer {
+	display: flex;
+	gap: 8px;
+	align-items: flex-end;
+	width: 100%;
 }
 .composer textarea {
 	flex: 1;
@@ -289,6 +292,29 @@ html, body {
 	max-height: 200px;
 }
 .composer textarea:focus { outline: none; border-color: var(--accent); }
+.composer-btn {
+	flex: 0 0 auto;
+	width: 42px;
+	height: 42px;
+	border-radius: 12px;
+	border: 1px solid var(--border);
+	background: var(--bg-elev);
+	color: var(--text);
+	font-size: 18px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	padding: 0;
+}
+.composer-btn:hover { border-color: var(--accent); }
+.attach-btn { position: relative; overflow: hidden; }
+.attach-btn input[type="file"] { display: none; }
+.web-toggle.active {
+	background: rgba(16,163,127,.18);
+	border-color: var(--accent);
+	color: var(--accent);
+}
 .btn-send {
 	width: 42px;
 	height: 42px;
@@ -297,6 +323,35 @@ html, body {
 	padding: 0;
 	flex: 0 0 auto;
 }
+
+/* ---------- Dokument-Chips über dem Eingabefeld ---------- */
+.doc-dock { display: flex; flex-direction: column; gap: 8px; }
+.doc-dock:empty { display: none; }
+.doc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.doc-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 16px;
+	padding: 4px 8px 4px 10px;
+	font-size: 12px;
+	max-width: 240px;
+}
+.doc-chip-icon { flex: 0 0 auto; }
+.doc-chip-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-chip-del {
+	background: none;
+	border: none;
+	color: var(--text-dim);
+	cursor: pointer;
+	font-size: 15px;
+	line-height: 1;
+	padding: 0 2px;
+}
+.doc-chip-del:hover { color: var(--danger); }
+.web-tag { color: var(--accent); font-size: 11px; }
 
 /* ---------- Modal ---------- */
 .modal-overlay {

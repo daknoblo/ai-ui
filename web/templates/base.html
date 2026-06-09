@@ -26,6 +26,38 @@
 		document.body.addEventListener('htmx:afterSwap', scrollMessages);
 		document.body.addEventListener('htmx:sseMessage', scrollMessages);
 		window.addEventListener('load', scrollMessages);
+
+		// Web-Suche-Umschalter: Zustand pro Browser merken (localStorage), damit er
+		// über Chatwechsel hinweg erhalten bleibt. Der Wert wird beim Senden als
+		// Formularfeld "web" übermittelt.
+		function webEnabled() {
+			return localStorage.getItem('ai-ui-web') === '1';
+		}
+		function applyWebState(btn) {
+			if (!btn) return;
+			var on = webEnabled();
+			btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+			btn.classList.toggle('active', on);
+			var form = btn.closest('form');
+			if (form) {
+				var flag = form.querySelector('#web-flag');
+				if (flag) flag.value = on ? '1' : '0';
+			}
+		}
+		function toggleWeb(btn) {
+			localStorage.setItem('ai-ui-web', webEnabled() ? '0' : '1');
+			applyWebState(btn);
+		}
+		// Nach dem Absenden (Formular-Reset) den Hidden-Flag-Wert wiederherstellen.
+		function syncWebToggle(form) {
+			var btn = document.getElementById('web-toggle');
+			applyWebState(btn);
+		}
+		function initWebToggle() {
+			applyWebState(document.getElementById('web-toggle'));
+		}
+		window.addEventListener('load', initWebToggle);
+		document.body.addEventListener('htmx:afterSwap', initWebToggle);
 	</script>
 </body>
 </html>

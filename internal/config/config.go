@@ -20,6 +20,9 @@ type Config struct {
 	EmbeddingEndpoint   string   `json:"embedding_endpoint"`    // optional; fällt auf Endpoint zurück
 	EmbeddingDeployment string   `json:"embedding_deployment"`  // Deployment-Name des Embedding-Modells
 	EmbeddingAPIVersion string   `json:"embedding_api_version"` // optional; fällt auf APIVersion zurück
+	SearchProvider      string   `json:"search_provider"`       // "", "tavily", "brave", "searxng"
+	SearchEndpoint      string   `json:"search_endpoint"`       // Basis-URL für SearXNG
+	SearchMaxResults    int      `json:"search_max_results"`    // Anzahl Treffer (Default 5)
 	SystemPrompt        string   `json:"system_prompt"`
 	Temperature         float64  `json:"temperature"`
 }
@@ -53,6 +56,9 @@ func Defaults() Config {
 		EmbeddingEndpoint:   "",
 		EmbeddingDeployment: "",
 		EmbeddingAPIVersion: "",
+		SearchProvider:      "",
+		SearchEndpoint:      "",
+		SearchMaxResults:    5,
 		SystemPrompt:        "Du bist ein hilfreicher Assistent. Antworte präzise und nutze den bereitgestellten Kontext, wenn er relevant ist.",
 		Temperature:         0.7,
 	}
@@ -63,16 +69,23 @@ type Store struct {
 	path            string
 	apiKey          string
 	embeddingAPIKey string
+	searchAPIKey    string
 
 	mu  sync.RWMutex
 	cur Config
 }
 
 // NewStore erzeugt einen Konfigurationsspeicher für den angegebenen Pfad.
-// apiKey und embeddingAPIKey stammen aus der Umgebung und werden niemals
-// persistiert. Ist embeddingAPIKey leer, wird für Embeddings apiKey verwendet.
-func NewStore(path, apiKey, embeddingAPIKey string) *Store {
-	return &Store{path: path, apiKey: apiKey, embeddingAPIKey: embeddingAPIKey, cur: Defaults()}
+// Die API-Keys stammen aus der Umgebung und werden niemals persistiert.
+// Ist embeddingAPIKey leer, wird für Embeddings apiKey verwendet.
+func NewStore(path, apiKey, embeddingAPIKey, searchAPIKey string) *Store {
+	return &Store{
+		path:            path,
+		apiKey:          apiKey,
+		embeddingAPIKey: embeddingAPIKey,
+		searchAPIKey:    searchAPIKey,
+		cur:             Defaults(),
+	}
 }
 
 // Load liest die Konfiguration von der Festplatte. Existiert keine Datei,
@@ -175,6 +188,16 @@ func (s *Store) HasEmbeddingAPIKey() bool {
 // HasOwnEmbeddingAPIKey gibt an, ob ein dedizierter Embedding-Key gesetzt wurde.
 func (s *Store) HasOwnEmbeddingAPIKey() bool {
 	return s.embeddingAPIKey != ""
+}
+
+// SearchAPIKey liefert den aus der Umgebung geladenen Such-API-Key.
+func (s *Store) SearchAPIKey() string {
+	return s.searchAPIKey
+}
+
+// HasSearchAPIKey gibt an, ob ein Such-API-Key gesetzt wurde.
+func (s *Store) HasSearchAPIKey() bool {
+	return s.searchAPIKey != ""
 }
 
 // IsConfigured prüft, ob die Mindestangaben für Chat-Anfragen vorhanden sind.

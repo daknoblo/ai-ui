@@ -22,6 +22,7 @@ type Message struct {
 // Document beschreibt ein hochgeladenes Dokument.
 type Document struct {
 	ID        int64     `json:"id"`
+	ChatID    int64     `json:"chat_id"`
 	Name      string    `json:"name"`
 	MIME      string    `json:"mime"`
 	Chunks    int       `json:"chunks"`

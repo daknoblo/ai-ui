@@ -19,6 +19,10 @@
 					placeholder="gpt-4o" required>
 			</label>
 			<label>
+				Verfügbare Modelle <span class="hint">(eines pro Zeile oder per Komma; oben rechts wählbar)</span>
+				<textarea name="chat_models" rows="3" placeholder="gpt-4o&#10;gpt-4o-mini&#10;o3">{{range $i, $m := .Config.ChatModels}}{{if $i}}&#10;{{end}}{{$m}}{{end}}</textarea>
+			</label>
+			<label>
 				API-Version
 				<input type="text" name="api_version" value="{{.Config.APIVersion}}"
 					placeholder="2024-08-01-preview" required>
@@ -66,6 +70,27 @@
 
 			{{if .Saved}}<div class="config-saved">Gespeichert ✓</div>{{end}}
 
+			<div class="config-section-head">Bereitschaft &amp; Verbindung</div>
+			<p class="hint" style="margin:0">
+				Dokument-Uploads sind erst möglich, wenn Speicher und Embedding-Endpoint
+				verifiziert sind. Bitte zuerst speichern, dann testen.
+			</p>
+			<div class="verify-banner {{if .UploadsAllowed}}ok{{else}}warn{{end}}">
+				{{if .UploadsAllowed}}Uploads freigegeben ✓{{else}}Uploads gesperrt – noch nicht verifiziert{{end}}
+			</div>
+			<button type="button" class="btn btn-ghost"
+				hx-post="/verify"
+				hx-target="#verify-results"
+				hx-swap="innerHTML"
+				hx-disabled-elt="this"
+				hx-indicator="#verify-indicator">
+				Verbindung testen
+			</button>
+			<div id="verify-indicator" class="htmx-indicator hint">Prüfe Speicher und Endpoints…</div>
+			<div id="verify-results">
+				{{if .Verified}}<div class="verify-banner ok">Zuletzt verifiziert ✓</div>{{end}}
+			</div>
+
 			<div class="modal-actions">
 				<button type="button" class="btn btn-ghost"
 					hx-on:click="document.querySelector('.modal-overlay').remove()">Schließen</button>
@@ -73,5 +98,23 @@
 			</div>
 		</form>
 	</div>
+</div>
+{{end}}
+
+{{define "verify-results"}}
+<ul class="check-list">
+	{{range .Results}}
+	<li class="check {{if .OK}}ok{{else}}err{{end}}">
+		<span class="check-icon">{{if .OK}}✓{{else}}✗{{end}}</span>
+		<span class="check-name">{{.Name}}</span>
+		<span class="check-detail">{{.Detail}}</span>
+	</li>
+	{{end}}
+</ul>
+<div class="verify-banner {{if .UploadsAllowed}}ok{{else}}warn{{end}}">
+	{{if .UploadsAllowed}}Speicher &amp; Embedding bereit – Uploads freigegeben ✓{{else}}Uploads bleiben gesperrt, bis Speicher und Embedding grün sind{{end}}
+</div>
+<div id="conn-status" hx-swap-oob="true" class="status {{if .UploadsAllowed}}ok{{else}}warn{{end}}">
+	{{if .UploadsAllowed}}Bereit{{else}}Nicht verifiziert{{end}}
 </div>
 {{end}}

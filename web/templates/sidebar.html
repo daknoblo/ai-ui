@@ -10,7 +10,7 @@
 
 	<div class="sidebar-section">
 		<div class="sidebar-section-head">Dokumente</div>
-		<form hx-post="/documents"
+		<form hx-post="/chat/{{.ChatID}}/documents"
 			hx-target="#doc-list"
 			hx-swap="outerHTML"
 			hx-encoding="multipart/form-data"
@@ -32,8 +32,8 @@
 			hx-get="/config"
 			hx-target="#modal-root"
 			hx-swap="innerHTML">⚙ Einstellungen</button>
-		<div class="status {{if .Configured}}ok{{else}}warn{{end}}">
-			{{if .Configured}}Verbunden{{else}}Nicht konfiguriert{{end}}
+		<div id="conn-status" class="status {{if .UploadsReady}}ok{{else}}warn{{end}}">
+			{{if .UploadsReady}}Bereit{{else}}Nicht verifiziert{{end}}
 		</div>
 	</div>
 </aside>
@@ -66,7 +66,7 @@
 		<span class="doc-name" title="{{.Name}}">{{.Name}}</span>
 		<span class="doc-chunks">{{.Chunks}}</span>
 		<button class="doc-del"
-			hx-delete="/documents/{{.ID}}"
+			hx-delete="/chat/{{.ChatID}}/documents/{{.ID}}"
 			hx-target="#doc-list"
 			hx-swap="outerHTML"
 			title="Entfernen">×</button>

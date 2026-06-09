@@ -27,8 +27,9 @@ func NewIngestor(store *storage.Store, client *llm.Client) *Ingestor {
 }
 
 // Ingest verarbeitet ein einzelnes Dokument und liefert die erzeugte Document-ID
-// sowie die Anzahl gespeicherter Chunks.
-func (in *Ingestor) Ingest(ctx context.Context, filename, mime string, data []byte) (int64, int, error) {
+// sowie die Anzahl gespeicherter Chunks. Das Dokument wird dem angegebenen Chat
+// zugeordnet.
+func (in *Ingestor) Ingest(ctx context.Context, chatID int64, filename, mime string, data []byte) (int64, int, error) {
 	text, err := docparse.Extract(filename, mime, data)
 	if err != nil {
 		return 0, 0, err
@@ -57,7 +58,7 @@ func (in *Ingestor) Ingest(ctx context.Context, filename, mime string, data []by
 		embeddings = append(embeddings, vecs...)
 	}
 
-	docID, err := in.store.CreateDocument(ctx, filename, mime)
+	docID, err := in.store.CreateDocument(ctx, chatID, filename, mime)
 	if err != nil {
 		return 0, 0, err
 	}

@@ -24,6 +24,7 @@ type Server struct {
 	ingestor  *rag.Ingestor
 	retriever *rag.Retriever
 	tmpl      *template.Template
+	ready     *readiness
 }
 
 // New erzeugt einen Server und parst die Templates.
@@ -41,6 +42,7 @@ func New(cfg *config.Store, store *storage.Store) *Server {
 		ingestor:  rag.NewIngestor(store, client),
 		retriever: rag.NewRetriever(store, client),
 		tmpl:      tmpl,
+		ready:     &readiness{},
 	}
 }
 
@@ -64,9 +66,11 @@ func (s *Server) Routes() http.Handler {
 
 	r.Get("/config", s.handleConfigGet)
 	r.Post("/config", s.handleConfigPost)
+	r.Post("/model", s.handleSetModel)
+	r.Post("/verify", s.handleVerify)
 
-	r.Post("/documents", s.handleUpload)
-	r.Delete("/documents/{id}", s.handleDeleteDocument)
+	r.Post("/chat/{id}/documents", s.handleUpload)
+	r.Delete("/chat/{cid}/documents/{did}", s.handleDeleteDocument)
 
 	return r
 }

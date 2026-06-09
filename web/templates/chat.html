@@ -1,34 +1,61 @@
 {{define "content"}}
-<div class="chat-header">
-	<h1 id="chat-title">{{if .CurrentChat}}{{.CurrentChat.Title}}{{else}}Neuer Chat{{end}}</h1>
-</div>
-
-<div id="messages" class="messages">
-	{{if not .Messages}}
-	<div class="welcome">
-		<h2>Womit kann ich helfen?</h2>
-		<p>Stelle eine Frage. Hochgeladene Dokumente werden automatisch als Kontext genutzt.</p>
-		{{if not .Configured}}
-		<p class="warn-text">⚠ Bitte zuerst unter <strong>Einstellungen</strong> den Azure-Endpoint konfigurieren.</p>
+<div class="chat-main" id="chat-dropzone" data-chat-id="{{.ChatID}}" data-uploads-ready="{{if .UploadsReady}}1{{else}}0{{end}}">
+	<div class="chat-header">
+		<h1 id="chat-title">{{if .CurrentChat}}{{.CurrentChat.Title}}{{else}}Neuer Chat{{end}}</h1>
+		{{if .Models}}
+		<form class="model-picker" hx-post="/model" hx-trigger="change" hx-swap="none">
+			<label class="model-label" for="model-select">Modell</label>
+			<select id="model-select" name="model">
+				<option value="" {{if eq .CurrentModel ""}}selected{{end}}>Auto (Router)</option>
+				{{range .Models}}
+				<option value="{{.}}" {{if eq . $.CurrentModel}}selected{{end}}>{{.}}</option>
+				{{end}}
+			</select>
+		</form>
 		{{end}}
 	</div>
-	{{end}}
-	{{range .Messages}}
-		{{template "message" .}}
-	{{end}}
-</div>
 
-<form id="chat-form" class="composer"
-	hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
-	hx-target="#messages"
-	hx-swap="beforeend"
-	hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';}">
-	<textarea name="message" rows="1" placeholder="Nachricht schreiben…"
-		oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px';"
-		onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"
-		required></textarea>
-	<button type="submit" class="btn btn-send" title="Senden">↑</button>
-</form>
+	<div id="messages" class="messages">
+		{{if not .Messages}}
+		<div class="welcome">
+			<h2>Womit kann ich helfen?</h2>
+			<p>Stelle eine Frage. Hochgeladene Dokumente werden automatisch als Kontext genutzt.</p>
+			<p class="welcome-hint">Tipp: Ziehe Dokumente einfach in dieses Fenster, um sie als Kontext hinzuzufügen.</p>
+			{{if not .Configured}}
+			<p class="warn-text">⚠ Bitte zuerst unter <strong>Einstellungen</strong> den Azure-Endpoint konfigurieren.</p>
+			{{end}}
+		</div>
+		{{end}}
+		{{range .Messages}}
+			{{template "message" .}}
+		{{end}}
+	</div>
+
+	<form id="chat-form" class="composer"
+		hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
+		hx-target="#messages"
+		hx-swap="beforeend"
+		hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';}">
+		<textarea name="message" rows="1" placeholder="Nachricht schreiben…"
+			oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px';"
+			onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"
+			required></textarea>
+		<button type="submit" class="btn btn-send" title="Senden">↑</button>
+	</form>
+
+	<div class="drop-overlay" id="drop-overlay" aria-hidden="true">
+		<div class="drop-inner drop-ready">
+			<div class="drop-icon">⬇</div>
+			<div>Dokumente hier ablegen</div>
+			<div class="drop-sub">Text, Markdown, PDF oder DOCX</div>
+		</div>
+		<div class="drop-inner drop-blocked">
+			<div class="drop-icon">⛔</div>
+			<div>Uploads gesperrt</div>
+			<div class="drop-sub">Bitte zuerst in den Einstellungen die Verbindung testen</div>
+		</div>
+	</div>
+</div>
 {{end}}
 
 {{define "message"}}

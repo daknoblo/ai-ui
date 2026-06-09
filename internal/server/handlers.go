@@ -23,14 +23,18 @@ const (
 
 // pageData bündelt alle Daten für das Rendern einer Vollseite.
 type pageData struct {
-	Title       string
-	Chats       []storage.Chat
-	CurrentChat *storage.Chat
-	Messages    []storage.Message
-	Documents   []storage.Document
-	Configured  bool
-	Notice      string
-	NoticeErr   bool
+	Title        string
+	Chats        []storage.Chat
+	CurrentChat  *storage.Chat
+	Messages     []storage.Message
+	Documents    []storage.Document
+	Configured   bool
+	ChatID       int64
+	Notice       string
+	NoticeErr    bool
+	Models       []string
+	CurrentModel string
+	UploadsReady bool
 }
 
 // buildPageData lädt Chats, Dokumente und ggf. den aktuellen Chat samt Nachrichten.
@@ -39,25 +43,30 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 	if err != nil {
 		return pageData{}, err
 	}
-	docs, err := s.store.ListDocuments(ctx)
-	if err != nil {
-		return pageData{}, err
-	}
+	cfg := s.cfg.Get()
 
 	pd := pageData{
-		Title:       "AI UI",
-		Chats:       chats,
-		CurrentChat: current,
-		Documents:   docs,
-		Configured:  s.cfg.IsConfigured(),
+		Title:        "AI UI",
+		Chats:        chats,
+		CurrentChat:  current,
+		Configured:   s.cfg.IsConfigured(),
+		Models:       cfg.ChatModels,
+		CurrentModel: cfg.ChatModel,
+		UploadsReady: s.ready.uploadsAllowed(),
 	}
 	if current != nil {
 		msgs, err := s.store.ListMessages(ctx, current.ID)
 		if err != nil {
 			return pageData{}, err
 		}
+		docs, err := s.store.ListDocumentsByChat(ctx, current.ID)
+		if err != nil {
+			return pageData{}, err
+		}
 		pd.Messages = msgs
+		pd.Documents = docs
 		pd.Title = current.Title
+		pd.ChatID = current.ID
 	}
 	return pd, nil
 }
@@ -227,7 +236,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	messages := s.buildLLMMessages(ctx, s.cfg.Get(), history, query)
+	messages := s.buildLLMMessages(ctx, id, s.cfg.Get(), history, query)
 
 	var acc strings.Builder
 	streamErr := s.llm.ChatStream(ctx, messages, func(delta string) error {
@@ -255,13 +264,13 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	_ = sse.send("done", "")
 }
 
-// buildLLMMessages baut die Nachrichtenliste inkl. RAG-Kontext.
-func (s *Server) buildLLMMessages(ctx context.Context, cfg config.Config, history []storage.Message, query string) []llm.Message {
+// buildLLMMessages baut die Nachrichtenliste inkl. RAG-Kontext (auf den Chat beschränkt).
+func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.Config, history []storage.Message, query string) []llm.Message {
 	system := cfg.SystemPrompt
 
 	// Relevante Dokumentabschnitte abrufen (sofern Embedding konfiguriert).
 	if cfg.EmbeddingDeployment != "" && query != "" {
-		results, err := s.retriever.Retrieve(ctx, query, retrievalTopK)
+		results, err := s.retriever.Retrieve(ctx, chatID, query, retrievalTopK)
 		if err != nil {
 			slog.Warn("retrieval fehlgeschlagen", "err", err)
 		} else if len(results) > 0 {
@@ -298,6 +307,7 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	cfg := s.cfg.Get()
 	cfg.Endpoint = strings.TrimSpace(r.FormValue("endpoint"))
 	cfg.ChatDeployment = strings.TrimSpace(r.FormValue("chat_deployment"))
+	cfg.ChatModels = parseModels(r.FormValue("chat_models"))
 	cfg.APIVersion = strings.TrimSpace(r.FormValue("api_version"))
 	cfg.EmbeddingEndpoint = strings.TrimSpace(r.FormValue("embedding_endpoint"))
 	cfg.EmbeddingDeployment = strings.TrimSpace(r.FormValue("embedding_deployment"))
@@ -307,16 +317,106 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 		cfg.Temperature = t
 	}
 
+	// Aktuell erzwungenes Modell verwerfen, falls es nicht mehr in der Liste steht.
+	if cfg.ChatModel != "" && !containsString(cfg.ChatModels, cfg.ChatModel) {
+		cfg.ChatModel = ""
+	}
+
 	if err := s.cfg.Save(cfg); err != nil {
 		httpError(w, err)
 		return
 	}
+	// Konfiguration geändert: Verifizierung muss erneut erfolgen.
+	s.ready.invalidate()
 	s.renderConfig(w, true)
+}
+
+// handleVerify führt alle Bereitschaftsprüfungen aus und liefert das Ergebnis.
+func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
+	results := s.runChecks(r.Context())
+	data := struct {
+		Results        []checkResult
+		Verified       bool
+		UploadsAllowed bool
+	}{
+		Results:        results,
+		Verified:       s.ready.verified(),
+		UploadsAllowed: s.ready.uploadsAllowed(),
+	}
+	s.render(w, "verify-results", data)
+}
+
+// handleSetModel übernimmt die Modellauswahl aus dem Header-Menü. Die Auswahl
+// ist global und bleibt damit beim Wechsel zwischen Chats erhalten.
+func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		httpError(w, err)
+		return
+	}
+	model := strings.TrimSpace(r.FormValue("model"))
+	if err := s.cfg.SetChatModel(model); err != nil {
+		slog.Warn("modellauswahl abgelehnt", "model", model, "err", err)
+		http.Error(w, "ungültiges modell", http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// parseModels zerlegt eine durch Zeilen oder Kommas getrennte Liste in
+// bereinigte, eindeutige Modellnamen.
+func parseModels(raw string) []string {
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r'
+	})
+	seen := make(map[string]struct{}, len(fields))
+	var out []string
+	for _, f := range fields {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		if _, ok := seen[f]; ok {
+			continue
+		}
+		seen[f] = struct{}{}
+		out = append(out, f)
+	}
+	return out
+}
+
+// containsString prüft, ob s in list enthalten ist.
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // handleUpload nimmt ein Dokument entgegen und verarbeitet es (RAG-Ingestion).
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	chatID, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.GetChat(ctx, chatID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Uploads sind erst erlaubt, wenn Storage und Embedding-Endpoint verifiziert
+	// wurden. So gelangen keine Dokumente in die Pipeline, bevor die benötigten
+	// Komponenten nachweislich bereit sind.
+	if !s.ready.uploadsAllowed() {
+		s.renderDocList(w, r, chatID,
+			"Upload gesperrt – bitte zuerst in den Einstellungen die Verbindung testen (Speicher & Embedding-Endpoint müssen bereit sein).", true)
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
 		httpError(w, err)
@@ -332,7 +432,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	ecfg := s.cfg.Get()
 	if ecfg.EmbeddingDeployment == "" || ecfg.EmbeddingHost() == "" || !s.cfg.HasEmbeddingAPIKey() {
-		s.renderDocList(w, r, "Embedding nicht konfiguriert – bitte zuerst Einstellungen ausfüllen.", true)
+		s.renderDocList(w, r, chatID, "Embedding nicht konfiguriert – bitte zuerst Einstellungen ausfüllen.", true)
 		return
 	}
 
@@ -349,27 +449,32 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mime := header.Header.Get("Content-Type")
-	_, n, err := s.ingestor.Ingest(ctx, header.Filename, mime, data)
+	_, n, err := s.ingestor.Ingest(ctx, chatID, header.Filename, mime, data)
 	if err != nil {
 		slog.Error("ingest", "file", header.Filename, "err", err)
-		s.renderDocList(w, r, "Verarbeitung fehlgeschlagen: "+err.Error(), true)
+		s.renderDocList(w, r, chatID, "Verarbeitung fehlgeschlagen: "+err.Error(), true)
 		return
 	}
-	s.renderDocList(w, r, fmt.Sprintf("„%s“ hinzugefügt (%d Abschnitte).", header.Filename, n), false)
+	s.renderDocList(w, r, chatID, fmt.Sprintf("„%s“ hinzugefügt (%d Abschnitte).", header.Filename, n), false)
 }
 
-// handleDeleteDocument entfernt ein Dokument.
+// handleDeleteDocument entfernt ein Dokument aus einem Chat.
 func (s *Server) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(r)
+	chatID, err := strconv.ParseInt(chi.URLParam(r, "cid"), 10, 64)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.DeleteDocument(r.Context(), id); err != nil {
+	docID, err := strconv.ParseInt(chi.URLParam(r, "did"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.DeleteDocument(r.Context(), docID); err != nil {
 		httpError(w, err)
 		return
 	}
-	s.renderDocList(w, r, "", false)
+	s.renderDocList(w, r, chatID, "", false)
 }
 
 // ---- Render-Helfer ----
@@ -382,28 +487,32 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 
 func (s *Server) renderConfig(w http.ResponseWriter, saved bool) {
 	data := struct {
-		Config            config.Config
-		HasKey            bool
-		HasEmbeddingKey   bool
+		Config             config.Config
+		HasKey             bool
+		HasEmbeddingKey    bool
 		HasOwnEmbeddingKey bool
-		Saved             bool
+		Saved              bool
+		Verified           bool
+		UploadsAllowed     bool
 	}{
 		Config:             s.cfg.Get(),
 		HasKey:             s.cfg.HasAPIKey(),
 		HasEmbeddingKey:    s.cfg.HasEmbeddingAPIKey(),
 		HasOwnEmbeddingKey: s.cfg.HasOwnEmbeddingAPIKey(),
 		Saved:              saved,
+		Verified:           s.ready.verified(),
+		UploadsAllowed:     s.ready.uploadsAllowed(),
 	}
 	s.render(w, "config", data)
 }
 
-func (s *Server) renderDocList(w http.ResponseWriter, r *http.Request, notice string, isErr bool) {
-	docs, err := s.store.ListDocuments(r.Context())
+func (s *Server) renderDocList(w http.ResponseWriter, r *http.Request, chatID int64, notice string, isErr bool) {
+	docs, err := s.store.ListDocumentsByChat(r.Context(), chatID)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	s.render(w, "doclist", pageData{Documents: docs, Notice: notice, NoticeErr: isErr})
+	s.render(w, "doclist", pageData{ChatID: chatID, Documents: docs, Notice: notice, NoticeErr: isErr})
 }
 
 // renderMarkdownString rendert Markdown zu einem HTML-String (für SSE).

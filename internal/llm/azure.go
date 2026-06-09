@@ -35,9 +35,11 @@ func New(store *config.Store) *Client {
 
 // chatRequest ist der Request-Body für Chat Completions.
 type chatRequest struct {
+	Model       string    `json:"model,omitempty"`
 	Messages    []Message `json:"messages"`
 	Temperature float64   `json:"temperature"`
 	Stream      bool      `json:"stream"`
+	MaxTokens   int       `json:"max_tokens,omitempty"`
 }
 
 // streamChunk ist ein einzelnes SSE-Delta der Chat-Completions-Antwort.
@@ -64,6 +66,7 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta fun
 		strings.TrimRight(cfg.Endpoint, "/"), cfg.ChatDeployment, cfg.APIVersion)
 
 	body, err := json.Marshal(chatRequest{
+		Model:       cfg.ChatModel,
 		Messages:    messages,
 		Temperature: cfg.Temperature,
 		Stream:      true,
@@ -117,6 +120,68 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta fun
 		}
 	}
 	return scanner.Err()
+}
+
+// VerifyChat prüft mit einer minimalen Anfrage, ob der Chat-Endpoint erreichbar
+// ist und gültig antwortet.
+func (c *Client) VerifyChat(ctx context.Context) error {
+	cfg := c.store.Get()
+	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || cfg.APIVersion == "" {
+		return fmt.Errorf("endpoint, chat-deployment und api-version erforderlich")
+	}
+	if !c.store.HasAPIKey() {
+		return fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
+	}
+
+	url := fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
+		strings.TrimRight(cfg.Endpoint, "/"), cfg.ChatDeployment, cfg.APIVersion)
+
+	body, err := json.Marshal(chatRequest{
+		Model:     cfg.ChatModel,
+		Messages:  []Message{{Role: "user", Content: "ping"}},
+		Stream:    false,
+		MaxTokens: 1,
+	})
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("api-key", c.store.APIKey())
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return readError(resp)
+	}
+	return nil
+}
+
+// VerifyEmbedding prüft mit einer minimalen Anfrage, ob der Embedding-Endpoint
+// erreichbar ist und ein gültiges Embedding liefert.
+func (c *Client) VerifyEmbedding(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	vecs, err := c.Embed(ctx, []string{"ping"})
+	if err != nil {
+		return err
+	}
+	if len(vecs) == 0 || len(vecs[0]) == 0 {
+		return fmt.Errorf("kein gültiges embedding erhalten")
+	}
+	return nil
 }
 
 // embeddingRequest ist der Request-Body für die Embeddings-API.

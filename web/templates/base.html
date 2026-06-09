@@ -38,20 +38,16 @@
 			var on = webEnabled();
 			btn.setAttribute('aria-pressed', on ? 'true' : 'false');
 			btn.classList.toggle('active', on);
-			var form = btn.closest('form');
-			if (form) {
-				var flag = form.querySelector('#web-flag');
-				if (flag) flag.value = on ? '1' : '0';
-			}
+			var flag = document.getElementById('web-flag');
+			if (flag) flag.value = on ? '1' : '0';
 		}
 		function toggleWeb(btn) {
 			localStorage.setItem('ai-ui-web', webEnabled() ? '0' : '1');
 			applyWebState(btn);
 		}
 		// Nach dem Absenden (Formular-Reset) den Hidden-Flag-Wert wiederherstellen.
-		function syncWebToggle(form) {
-			var btn = document.getElementById('web-toggle');
-			applyWebState(btn);
+		function syncWebToggle() {
+			applyWebState(document.getElementById('web-toggle'));
 		}
 		function initWebToggle() {
 			applyWebState(document.getElementById('web-toggle'));

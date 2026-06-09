@@ -11,8 +11,9 @@ import (
 
 // Result ist ein Treffer der Vektorsuche.
 type Result struct {
-	Text  string
-	Score float32
+	Text       string
+	Score      float32
+	DocumentID int64
 }
 
 // Retriever führt eine Brute-Force-Cosine-Suche über alle gespeicherten Chunks aus.
@@ -57,17 +58,79 @@ func (r *Retriever) Retrieve(ctx context.Context, chatID int64, query string, to
 		if len(c.Embedding) != len(qv) {
 			continue // inkompatible Dimensionen überspringen
 		}
-		scored = append(scored, Result{Text: c.Text, Score: cosine(qv, c.Embedding)})
+		scored = append(scored, Result{Text: c.Text, Score: cosine(qv, c.Embedding), DocumentID: c.DocumentID})
 	}
 
 	sort.Slice(scored, func(i, j int) bool {
 		return scored[i].Score > scored[j].Score
 	})
 
-	if topK > 0 && len(scored) > topK {
-		scored = scored[:topK]
+	if topK <= 0 {
+		topK = 1
 	}
-	return scored, nil
+	return balanceByDocument(scored, topK), nil
+}
+
+// balanceByDocument wählt Ergebnisse so aus, dass möglichst jedes Dokument
+// vertreten ist: zuerst der beste Chunk je Dokument (nach Relevanz geordnet),
+// danach werden die verbleibenden Plätze mit den global besten Chunks gefüllt.
+// So dominiert nicht ein einzelnes Dokument den gesamten Kontext.
+func balanceByDocument(scored []Result, topK int) []Result {
+	if len(scored) == 0 {
+		return nil
+	}
+
+	// Anzahl Dokumente bestimmen, um genügend Platz für eine Repräsentation
+	// jedes Dokuments zu lassen.
+	docSeen := make(map[int64]bool)
+	for _, r := range scored {
+		docSeen[r.DocumentID] = true
+	}
+	numDocs := len(docSeen)
+
+	// Budget: mindestens topK, aber so groß, dass jedes Dokument einen Platz
+	// bekommt – mit einer Obergrenze, um den Prompt nicht zu sprengen.
+	const maxChunks = 12
+	budget := topK
+	if numDocs > budget {
+		budget = numDocs
+	}
+	if budget > maxChunks {
+		budget = maxChunks
+	}
+
+	var out []Result
+	used := make([]bool, len(scored))
+
+	// 1. Durchgang: bester Chunk je Dokument (scored ist bereits nach Score sortiert).
+	picked := make(map[int64]bool)
+	for i, r := range scored {
+		if len(out) >= budget {
+			break
+		}
+		if !picked[r.DocumentID] {
+			picked[r.DocumentID] = true
+			out = append(out, r)
+			used[i] = true
+		}
+	}
+
+	// 2. Durchgang: verbleibende Plätze mit den nächstbesten Chunks füllen.
+	for i, r := range scored {
+		if len(out) >= budget {
+			break
+		}
+		if !used[i] {
+			out = append(out, r)
+			used[i] = true
+		}
+	}
+
+	// Final nach Relevanz sortieren, damit die stärksten Treffer zuerst stehen.
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Score > out[j].Score
+	})
+	return out
 }
 
 // cosine berechnet die Kosinus-Ähnlichkeit zweier gleich langer Vektoren.

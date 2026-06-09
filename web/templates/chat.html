@@ -40,9 +40,9 @@
 			hx-swap="beforeend"
 			hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';syncWebToggle(this);}">
 			<input type="hidden" name="web" id="web-flag" value="0">
-			<label class="composer-btn attach-btn" title="Dokument anhängen">
+			<label class="composer-btn attach-btn" title="Dokumente anhängen">
 				📎
-				<input type="file" name="file" accept=".txt,.md,.markdown,.json,.pdf,.docx"
+				<input type="file" name="file" accept=".txt,.md,.markdown,.json,.pdf,.docx" multiple
 					hx-post="/chat/{{.ChatID}}/documents"
 					hx-trigger="change"
 					hx-target="#doc-list"

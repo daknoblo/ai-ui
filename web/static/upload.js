@@ -78,15 +78,16 @@
 		var files = e.dataTransfer.files;
 		if (!files || files.length === 0) return;
 
-		uploadSequentially(chatId, Array.prototype.slice.call(files), 0);
+		uploadFiles(chatId, files);
 	});
 
-	// Dateien nacheinander hochladen, damit der Single-Writer der DB nicht
-	// überlastet wird und jede Antwort die Liste aktualisiert.
-	function uploadSequentially(chatId, files, index) {
-		if (index >= files.length) return;
+	// Alle abgelegten Dateien in einer Anfrage hochladen; der Server verarbeitet
+	// sie und liefert die aktualisierte Dokumentliste samt Sammelmeldung zurück.
+	function uploadFiles(chatId, fileList) {
 		var form = new FormData();
-		form.append("file", files[index]);
+		for (var i = 0; i < fileList.length; i++) {
+			form.append("file", fileList[i]);
+		}
 
 		fetch("/chat/" + encodeURIComponent(chatId) + "/documents", {
 			method: "POST",
@@ -100,9 +101,6 @@
 			})
 			.catch(function () {
 				/* Fehler werden serverseitig als Notiz gerendert; hier nichts tun. */
-			})
-			.finally(function () {
-				uploadSequentially(chatId, files, index + 1);
 			});
 	}
 

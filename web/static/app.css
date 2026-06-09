@@ -159,6 +159,17 @@ html, body {
 .status.warn { color: var(--warn); }
 .status.err { color: var(--danger); }
 .status.err .status-dot { animation: blink 1.2s step-start infinite; }
+.storage-line {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	font-size: 11px;
+	color: var(--text-dim);
+	margin-top: 4px;
+}
+.storage-icon { flex: 0 0 auto; opacity: .8; }
+.storage-docs { opacity: .8; }
 .empty-hint { color: var(--text-dim); font-size: 13px; padding: 4px 8px; }
 
 /* ---------- Buttons ---------- */

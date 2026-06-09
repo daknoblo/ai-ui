@@ -67,4 +67,8 @@
 <div class="status {{.Level}}" title="{{if .Uploads}}Uploads freigegeben{{else}}Uploads gesperrt – Verbindung prüfen{{end}}">
 	<span class="status-dot"></span>{{.Label}}
 </div>
+<div class="storage-line" title="{{.DocCount}} Dokument(e) · Datenbankgröße inkl. Embeddings">
+	<span class="storage-icon">💾</span>{{.DiskHuman}}
+	<span class="storage-docs">· {{.DocCount}} Dok.</span>
+</div>
 {{end}}

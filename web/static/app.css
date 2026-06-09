@@ -167,9 +167,20 @@ html, body {
 
 /* ---------- Main / Chat ---------- */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.chat-main {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
+	position: relative;
+}
 .chat-header {
 	padding: 14px 24px;
 	border-bottom: 1px solid var(--border);
+	display: flex;
+	align-items: center;
+	gap: 16px;
 }
 .chat-header h1 {
 	margin: 0;
@@ -178,7 +189,29 @@ html, body {
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+	flex: 1;
+	min-width: 0;
 }
+.model-picker {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 0 0 auto;
+	margin: 0;
+}
+.model-label { font-size: 12px; color: var(--text-dim); }
+.model-picker select {
+	background: var(--bg-elev);
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 6px 28px 6px 10px;
+	font: inherit;
+	font-size: 13px;
+	cursor: pointer;
+	max-width: 200px;
+}
+.model-picker select:focus { outline: none; border-color: var(--accent); }
 
 .messages {
 	flex: 1;
@@ -190,6 +223,7 @@ html, body {
 }
 .welcome { margin: auto; text-align: center; color: var(--text-dim); max-width: 460px; }
 .welcome h2 { color: var(--text); }
+.welcome-hint { font-size: 13px; opacity: .8; }
 .warn-text { color: var(--warn); }
 
 .msg { max-width: 760px; width: 100%; margin: 0 auto; }
@@ -306,6 +340,50 @@ html, body {
 .config-secret code { background: #0d0d10; padding: 1px 5px; border-radius: 4px; }
 .config-saved { color: var(--accent); font-size: 13px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ---------- Drag & Drop ---------- */
+.drop-overlay {
+	position: absolute;
+	inset: 10px;
+	border: 2px dashed var(--accent);
+	border-radius: 14px;
+	background: rgba(16,163,127,.10);
+	backdrop-filter: blur(2px);
+	display: none;
+	align-items: center;
+	justify-content: center;
+	z-index: 30;
+	pointer-events: none;
+}
+.chat-main.dragover .drop-overlay { display: flex; border-color: var(--accent); background: rgba(16,163,127,.10); }
+.chat-main.dragover-blocked .drop-overlay { display: flex; border-color: var(--danger); background: rgba(224,86,74,.10); }
+.drop-inner { text-align: center; color: var(--accent); display: none; }
+.chat-main.dragover .drop-ready { display: block; }
+.chat-main.dragover-blocked .drop-blocked { display: block; color: var(--danger); }
+.drop-icon { font-size: 38px; line-height: 1; margin-bottom: 8px; }
+.drop-sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+/* ---------- Verifizierung / Checks ---------- */
+.verify-banner { font-size: 13px; padding: 8px 10px; border-radius: 8px; }
+.verify-banner.ok { color: var(--accent); background: rgba(16,163,127,.12); }
+.verify-banner.warn { color: var(--warn); background: rgba(224,160,48,.12); }
+.check-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.check {
+	display: grid;
+	grid-template-columns: auto auto 1fr;
+	gap: 8px;
+	align-items: baseline;
+	font-size: 13px;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 8px 10px;
+}
+.check-icon { font-weight: 700; }
+.check.ok .check-icon { color: var(--accent); }
+.check.err .check-icon { color: var(--danger); }
+.check-name { color: var(--text); white-space: nowrap; }
+.check-detail { color: var(--text-dim); overflow-wrap: anywhere; }
 
 /* ---------- Scrollbars ---------- */
 ::-webkit-scrollbar { width: 9px; height: 9px; }

@@ -26,10 +26,11 @@ func NewRetriever(store *storage.Store, client *llm.Client) *Retriever {
 	return &Retriever{store: store, llm: client}
 }
 
-// Retrieve liefert die topK relevantesten Chunks zur Anfrage.
-// Sind keine Dokumente vorhanden, wird eine leere Liste zurückgegeben.
-func (r *Retriever) Retrieve(ctx context.Context, query string, topK int) ([]Result, error) {
-	count, err := r.store.CountChunks(ctx)
+// Retrieve liefert die topK relevantesten Chunks zur Anfrage, beschränkt auf
+// die Dokumente des angegebenen Chats. Sind keine Dokumente vorhanden, wird eine
+// leere Liste zurückgegeben.
+func (r *Retriever) Retrieve(ctx context.Context, chatID int64, query string, topK int) ([]Result, error) {
+	count, err := r.store.CountChunksByChat(ctx, chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +47,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, topK int) ([]Res
 	}
 	qv := vecs[0]
 
-	chunks, err := r.store.AllChunks(ctx)
+	chunks, err := r.store.ChunksByChat(ctx, chatID)
 	if err != nil {
 		return nil, err
 	}

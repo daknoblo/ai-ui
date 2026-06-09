@@ -35,6 +35,18 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// Ping prüft, ob die Datenbank erreichbar und schreibbar ist.
+func (s *Store) Ping(ctx context.Context) error {
+	if err := s.db.PingContext(ctx); err != nil {
+		return err
+	}
+	// Schreibbarkeit verifizieren (Datenpfad gemountet & beschreibbar?).
+	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS _healthcheck (id INTEGER PRIMARY KEY)`); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Migrate legt das Schema an, falls es noch nicht existiert.
 func (s *Store) Migrate(ctx context.Context) error {
 	const schema = `
@@ -54,10 +66,12 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id);
 CREATE TABLE IF NOT EXISTS documents (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	chat_id    INTEGER REFERENCES chats(id) ON DELETE CASCADE,
 	name       TEXT NOT NULL,
 	mime       TEXT NOT NULL,
 	created_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_documents_chat ON documents(chat_id);
 CREATE TABLE IF NOT EXISTS chunks (
 	id          INTEGER PRIMARY KEY AUTOINCREMENT,
 	document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -67,7 +81,49 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(document_id);
 `
-	_, err := s.db.ExecContext(ctx, schema)
+	if _, err := s.db.ExecContext(ctx, schema); err != nil {
+		return err
+	}
+	// Bestehende Datenbanken nachrüsten: chat_id-Spalte ergänzen, falls sie fehlt.
+	if err := s.ensureDocumentChatColumn(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ensureDocumentChatColumn fügt documents.chat_id für ältere Schemata hinzu.
+func (s *Store) ensureDocumentChatColumn(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(documents)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasChatID := false
+	for rows.Next() {
+		var (
+			cid       int
+			name      string
+			ctype     string
+			notnull   int
+			dfltValue any
+			pk        int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		if name == "chat_id" {
+			hasChatID = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasChatID {
+		return nil
+	}
+	_, err = s.db.ExecContext(ctx,
+		`ALTER TABLE documents ADD COLUMN chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE`)
 	return err
 }
 
@@ -184,11 +240,11 @@ func (s *Store) ListMessages(ctx context.Context, chatID int64) ([]Message, erro
 
 // ---- Documents & Chunks ----
 
-// CreateDocument legt ein Dokument an und liefert dessen ID.
-func (s *Store) CreateDocument(ctx context.Context, name, mime string) (int64, error) {
+// CreateDocument legt ein Dokument für einen Chat an und liefert dessen ID.
+func (s *Store) CreateDocument(ctx context.Context, chatID int64, name, mime string) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO documents (name, mime, created_at) VALUES (?, ?, ?)`,
-		name, mime, nowStr())
+		`INSERT INTO documents (chat_id, name, mime, created_at) VALUES (?, ?, ?, ?)`,
+		chatID, name, mime, nowStr())
 	if err != nil {
 		return 0, err
 	}
@@ -203,12 +259,13 @@ func (s *Store) AddChunk(ctx context.Context, documentID int64, ordinal int, tex
 	return err
 }
 
-// ListDocuments liefert alle Dokumente mit Chunk-Anzahl.
-func (s *Store) ListDocuments(ctx context.Context) ([]Document, error) {
+// ListDocumentsByChat liefert die Dokumente eines Chats mit Chunk-Anzahl.
+func (s *Store) ListDocumentsByChat(ctx context.Context, chatID int64) ([]Document, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT d.id, d.name, d.mime, d.created_at, COUNT(c.id)
+		`SELECT d.id, d.chat_id, d.name, d.mime, d.created_at, COUNT(c.id)
 		 FROM documents d LEFT JOIN chunks c ON c.document_id = d.id
-		 GROUP BY d.id ORDER BY d.created_at DESC`)
+		 WHERE d.chat_id = ?
+		 GROUP BY d.id ORDER BY d.created_at DESC`, chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +275,7 @@ func (s *Store) ListDocuments(ctx context.Context) ([]Document, error) {
 	for rows.Next() {
 		var d Document
 		var created string
-		if err := rows.Scan(&d.ID, &d.Name, &d.MIME, &created, &d.Chunks); err != nil {
+		if err := rows.Scan(&d.ID, &d.ChatID, &d.Name, &d.MIME, &created, &d.Chunks); err != nil {
 			return nil, err
 		}
 		d.CreatedAt = parseTime(created)
@@ -233,10 +290,12 @@ func (s *Store) DeleteDocument(ctx context.Context, id int64) error {
 	return err
 }
 
-// AllChunks liefert alle Chunks samt dekodierter Embeddings für die Suche.
-func (s *Store) AllChunks(ctx context.Context) ([]Chunk, error) {
+// ChunksByChat liefert alle Chunks der Dokumente eines Chats samt Embeddings.
+func (s *Store) ChunksByChat(ctx context.Context, chatID int64) ([]Chunk, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, document_id, ordinal, text, embedding FROM chunks`)
+		`SELECT c.id, c.document_id, c.ordinal, c.text, c.embedding
+		 FROM chunks c JOIN documents d ON d.id = c.document_id
+		 WHERE d.chat_id = ?`, chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -255,10 +314,12 @@ func (s *Store) AllChunks(ctx context.Context) ([]Chunk, error) {
 	return chunks, rows.Err()
 }
 
-// CountChunks liefert die Gesamtanzahl gespeicherter Chunks.
-func (s *Store) CountChunks(ctx context.Context) (int, error) {
+// CountChunksByChat liefert die Anzahl Chunks der Dokumente eines Chats.
+func (s *Store) CountChunksByChat(ctx context.Context, chatID int64) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunks`).Scan(&n)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM chunks c JOIN documents d ON d.id = c.document_id WHERE d.chat_id = ?`,
+		chatID).Scan(&n)
 	return n, err
 }
 

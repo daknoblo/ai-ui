@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,14 +12,16 @@ import (
 // NICHT hier gespeichert, sondern ausschließlich zur Laufzeit aus der
 // Umgebungsvariable AZURE_API_KEY bezogen.
 type Config struct {
-	Endpoint            string  `json:"endpoint"`              // Chat: z.B. https://my-router.openai.azure.com
-	ChatDeployment      string  `json:"chat_deployment"`       // Deployment-Name des Chat-Modells
-	APIVersion          string  `json:"api_version"`           // z.B. 2024-08-01-preview
-	EmbeddingEndpoint   string  `json:"embedding_endpoint"`    // optional; fällt auf Endpoint zurück
-	EmbeddingDeployment string  `json:"embedding_deployment"`  // Deployment-Name des Embedding-Modells
-	EmbeddingAPIVersion string  `json:"embedding_api_version"` // optional; fällt auf APIVersion zurück
-	SystemPrompt        string  `json:"system_prompt"`
-	Temperature         float64 `json:"temperature"`
+	Endpoint            string   `json:"endpoint"`              // Chat: z.B. https://my-router.openai.azure.com
+	ChatDeployment      string   `json:"chat_deployment"`       // Deployment-Name des Chat-Modells (bzw. Routers)
+	ChatModel           string   `json:"chat_model"`            // optional; erzwingt ein Modell statt Router-Auswahl
+	ChatModels          []string `json:"chat_models"`           // auswählbare Modelle für das Header-Menü
+	APIVersion          string   `json:"api_version"`           // z.B. 2024-08-01-preview
+	EmbeddingEndpoint   string   `json:"embedding_endpoint"`    // optional; fällt auf Endpoint zurück
+	EmbeddingDeployment string   `json:"embedding_deployment"`  // Deployment-Name des Embedding-Modells
+	EmbeddingAPIVersion string   `json:"embedding_api_version"` // optional; fällt auf APIVersion zurück
+	SystemPrompt        string   `json:"system_prompt"`
+	Temperature         float64  `json:"temperature"`
 }
 
 // EmbeddingVersion liefert die für Embeddings zu nutzende API-Version.
@@ -44,6 +47,8 @@ func Defaults() Config {
 	return Config{
 		Endpoint:            "",
 		ChatDeployment:      "",
+		ChatModel:           "",
+		ChatModels:          nil,
 		APIVersion:          "2024-08-01-preview",
 		EmbeddingEndpoint:   "",
 		EmbeddingDeployment: "",
@@ -107,6 +112,35 @@ func (s *Store) Get() Config {
 func (s *Store) Save(cfg Config) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.writeLocked(cfg); err != nil {
+		return err
+	}
+	s.cur = cfg
+	return nil
+}
+
+// SetChatModel ändert nur das aktiv erzwungene Modell und speichert die Konfig.
+// Ein leerer Wert bedeutet "Router entscheidet". Werte außerhalb der gepflegten
+// Liste werden abgelehnt, leere Eingabe ist immer erlaubt.
+func (s *Store) SetChatModel(model string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if model != "" {
+		allowed := false
+		for _, m := range s.cur.ChatModels {
+			if m == model {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return fmt.Errorf("unbekanntes modell: %s", model)
+		}
+	}
+
+	cfg := s.cur
+	cfg.ChatModel = model
 	if err := s.writeLocked(cfg); err != nil {
 		return err
 	}

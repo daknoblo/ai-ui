@@ -14,6 +14,8 @@ services:
       - AZURE_EMBEDDING_API_KEY=${AZURE_EMBEDDING_API_KEY:-}
       - PORT=8080
       - DATA_DIR=/data
+      # Intervall der periodischen Verbindungsprüfung (z.B. 30s, 2m; 0/off = aus).
+      - HEALTHCHECK_INTERVAL=${HEALTHCHECK_INTERVAL:-60s}
     volumes:
       # Persistenter Datenpfad: Chats, Dokumente, Embeddings und Konfiguration.
       - ai-ui-data:/data

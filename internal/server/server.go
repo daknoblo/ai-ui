@@ -13,6 +13,7 @@ import (
 	"github.com/daknoblo/ai-ui/internal/llm"
 	"github.com/daknoblo/ai-ui/internal/rag"
 	"github.com/daknoblo/ai-ui/internal/storage"
+	"github.com/daknoblo/ai-ui/internal/websearch"
 	"github.com/daknoblo/ai-ui/web"
 )
 
@@ -23,6 +24,7 @@ type Server struct {
 	llm       *llm.Client
 	ingestor  *rag.Ingestor
 	retriever *rag.Retriever
+	search    *websearch.Client
 	tmpl      *template.Template
 	ready     *readiness
 }
@@ -41,6 +43,7 @@ func New(cfg *config.Store, store *storage.Store) *Server {
 		llm:       client,
 		ingestor:  rag.NewIngestor(store, client),
 		retriever: rag.NewRetriever(store, client),
+		search:    websearch.New(cfg),
 		tmpl:      tmpl,
 		ready:     &readiness{},
 	}

@@ -45,6 +45,32 @@
 					placeholder="2023-05-15">
 			</label>
 
+			<div class="config-section-head">Web-Suche (optional)</div>
+			<label>
+				Anbieter
+				<select name="search_provider">
+					<option value="" {{if eq .Config.SearchProvider ""}}selected{{end}}>Aus</option>
+					<option value="tavily" {{if eq .Config.SearchProvider "tavily"}}selected{{end}}>Tavily</option>
+					<option value="brave" {{if eq .Config.SearchProvider "brave"}}selected{{end}}>Brave Search</option>
+					<option value="searxng" {{if eq .Config.SearchProvider "searxng"}}selected{{end}}>SearXNG (selbst gehostet)</option>
+				</select>
+			</label>
+			<label>
+				SearXNG-Endpoint <span class="hint">(nur für SearXNG)</span>
+				<input type="url" name="search_endpoint" value="{{.Config.SearchEndpoint}}"
+					placeholder="https://searxng.example.com">
+			</label>
+			<label>
+				Anzahl Treffer
+				<input type="number" name="search_max_results" value="{{.Config.SearchMaxResults}}"
+					min="1" max="10" step="1">
+			</label>
+			<div class="config-secret {{if .HasSearchKey}}ok{{else}}warn{{end}}">
+				Such-API-Key (Secret):
+				{{if .HasSearchKey}}über Umgebungsvariable SEARCH_API_KEY gesetzt ✓
+				{{else}}nicht gesetzt — für Tavily/Brave die Umgebungsvariable <code>SEARCH_API_KEY</code> setzen (SearXNG benötigt keinen Key){{end}}
+			</div>
+
 			<div class="config-section-head">Verhalten</div>
 			<label>
 				System-Prompt

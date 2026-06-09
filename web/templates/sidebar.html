@@ -71,4 +71,10 @@
 	<span class="storage-icon">💾</span>{{.DiskHuman}}
 	<span class="storage-docs">· {{.DocCount}} {{if eq .DocCount 1}}Dokument{{else}}Dokumente{{end}}</span>
 </div>
+{{if .HasUsage}}
+<div class="usage-line" title="Token-Verbrauch seit Serverstart&#10;Chat: {{.Metrics.ChatTotalTokens}} ({{.Metrics.ChatPromptTokens}} Eingabe / {{.Metrics.ChatComplTokens}} Antwort) über {{.Metrics.ChatRequests}} Anfragen&#10;Embeddings: {{.Metrics.EmbedTokens}} über {{.Metrics.EmbedRequests}} Anfragen&#10;Letzte Antwort: {{.Metrics.LastTotalTokens}} ({{.Metrics.LastPromptTokens}} Eingabe / {{.Metrics.LastComplTokens}} Antwort)">
+	<span class="usage-icon">🪙</span>{{.TotalHuman}} Tokens
+	{{if gt .Metrics.LastTotalTokens 0}}<span class="usage-last">· zuletzt {{.Metrics.LastTotalTokens}}</span>{{end}}
+</div>
+{{end}}
 {{end}}

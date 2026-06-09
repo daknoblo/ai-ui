@@ -21,63 +21,95 @@ type Message struct {
 
 // Client spricht mit dem Azure-OpenAI-kompatiblen Model-Router.
 type Client struct {
-	store *config.Store
-	http  *http.Client
+	store   *config.Store
+	http    *http.Client
+	metrics *Metrics
 }
 
 // New erzeugt einen neuen LLM-Client.
 func New(store *config.Store) *Client {
 	return &Client{
-		store: store,
-		http:  &http.Client{Timeout: 5 * time.Minute},
+		store:   store,
+		http:    &http.Client{Timeout: 5 * time.Minute},
+		metrics: &Metrics{},
 	}
+}
+
+// Metrics liefert einen Snapshot des kumulativen Token-Verbrauchs.
+func (c *Client) Metrics() MetricsSnapshot {
+	return c.metrics.Snapshot()
+}
+
+// Usage beschreibt den Token-Verbrauch einer Anfrage.
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// streamOptions aktiviert die Usage-Ausgabe am Ende eines Streams.
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 // chatRequest ist der Request-Body für Chat Completions.
 type chatRequest struct {
-	Model       string    `json:"model,omitempty"`
-	Messages    []Message `json:"messages"`
-	Temperature float64   `json:"temperature"`
-	Stream      bool      `json:"stream"`
-	MaxTokens   int       `json:"max_tokens,omitempty"`
+	Model         string         `json:"model,omitempty"`
+	Messages      []Message      `json:"messages"`
+	Temperature   float64        `json:"temperature"`
+	Stream        bool           `json:"stream"`
+	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+	MaxTokens     int            `json:"max_tokens,omitempty"`
 }
 
 // streamChunk ist ein einzelnes SSE-Delta der Chat-Completions-Antwort.
 type streamChunk struct {
+	Model   string `json:"model"`
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
+	Usage *Usage `json:"usage"`
+}
+
+// ChatResult bündelt die Metadaten einer abgeschlossenen Chat-Antwort.
+type ChatResult struct {
+	Usage Usage
+	Model string // tatsächlich verwendetes Modell (vom Router gemeldet)
 }
 
 // ChatStream sendet die Nachrichten und ruft onDelta für jedes Text-Token auf.
-func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta func(string) error) error {
+// Liefert nach Abschluss Token-Nutzung und das tatsächlich verwendete Modell
+// (sofern der Endpoint diese meldet).
+func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta func(string) error) (ChatResult, error) {
+	var result ChatResult
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || cfg.APIVersion == "" {
-		return fmt.Errorf("konfiguration unvollständig: endpoint, chat-deployment und api-version erforderlich")
+		return result, fmt.Errorf("konfiguration unvollständig: endpoint, chat-deployment und api-version erforderlich")
 	}
 	if !c.store.HasAPIKey() {
-		return fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
+		return result, fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
 	}
 
 	url := fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
 		strings.TrimRight(cfg.Endpoint, "/"), cfg.ChatDeployment, cfg.APIVersion)
 
 	body, err := json.Marshal(chatRequest{
-		Model:       cfg.ChatModel,
-		Messages:    messages,
-		Temperature: cfg.Temperature,
-		Stream:      true,
+		Model:         cfg.ChatModel,
+		Messages:      messages,
+		Temperature:   cfg.Temperature,
+		Stream:        true,
+		StreamOptions: &streamOptions{IncludeUsage: true},
 	})
 	if err != nil {
-		return err
+		return result, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return result, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("api-key", c.store.APIKey())
@@ -85,12 +117,12 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta fun
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return readError(resp)
+		return result, readError(resp)
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -111,15 +143,25 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta fun
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue // unvollständige/leere Zeilen überspringen
 		}
+		if chunk.Model != "" {
+			result.Model = chunk.Model
+		}
+		if chunk.Usage != nil {
+			result.Usage = *chunk.Usage
+		}
 		for _, ch := range chunk.Choices {
 			if ch.Delta.Content != "" {
 				if err := onDelta(ch.Delta.Content); err != nil {
-					return err
+					return result, err
 				}
 			}
 		}
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return result, err
+	}
+	c.metrics.recordChat(result.Usage)
+	return result, nil
 }
 
 // VerifyChat prüft mit einer minimalen Anfrage, ob der Chat-Endpoint erreichbar
@@ -209,6 +251,7 @@ type embeddingResponse struct {
 		Embedding []float32 `json:"embedding"`
 		Index     int       `json:"index"`
 	} `json:"data"`
+	Usage Usage `json:"usage"`
 }
 
 // Embed erzeugt Embeddings für die übergebenen Texte.
@@ -250,6 +293,8 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
+
+	c.metrics.recordEmbedding(out.Usage.TotalTokens)
 
 	result := make([][]float32, len(out.Data))
 	for _, d := range out.Data {

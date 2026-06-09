@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"os"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -13,7 +14,8 @@ import (
 
 // Store kapselt den Zugriff auf die SQLite-Datenbank.
 type Store struct {
-	db *sql.DB
+	db   *sql.DB
+	path string
 }
 
 // Open öffnet (oder erstellt) die SQLite-Datenbank am angegebenen Pfad.
@@ -27,12 +29,24 @@ func Open(path string) (*Store, error) {
 	if err := db.Ping(); err != nil {
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, path: path}, nil
 }
 
 // Close schließt die Datenbankverbindung.
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// DiskUsage liefert die aktuelle Größe der Datenbank in Bytes, inklusive der
+// WAL- und SHM-Hilfsdateien (SQLite legt diese im WAL-Modus an).
+func (s *Store) DiskUsage() int64 {
+	var total int64
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if info, err := os.Stat(s.path + suffix); err == nil {
+			total += info.Size()
+		}
+	}
+	return total
 }
 
 // Ping prüft, ob die Datenbank erreichbar und schreibbar ist.
@@ -320,6 +334,13 @@ func (s *Store) CountChunksByChat(ctx context.Context, chatID int64) (int, error
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM chunks c JOIN documents d ON d.id = c.document_id WHERE d.chat_id = ?`,
 		chatID).Scan(&n)
+	return n, err
+}
+
+// CountDocuments liefert die Gesamtanzahl gespeicherter Dokumente.
+func (s *Store) CountDocuments(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM documents`).Scan(&n)
 	return n, err
 }
 

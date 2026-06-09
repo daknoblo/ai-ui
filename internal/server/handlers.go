@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,9 +18,10 @@ import (
 )
 
 const (
-	maxUploadBytes = 25 << 20 // 25 MiB
-	retrievalTopK  = 4
-	defaultTitle   = "Neuer Chat"
+	maxUploadBytes      = 25 << 20  // 25 MiB pro Datei
+	maxTotalUploadBytes = 150 << 20 // 150 MiB pro Anfrage (Mehrfach-Upload)
+	retrievalTopK       = 4
+	defaultTitle        = "Neuer Chat"
 )
 
 // pageData bündelt alle Daten für das Rendern einer Vollseite.
@@ -391,12 +394,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 // statusData bereitet die Daten für den Status-Badge auf.
 func (s *Server) statusData() statusBadge {
 	snap := s.ready.snapshot()
+	docs, _ := s.store.CountDocuments(context.Background())
 	b := statusBadge{
 		Configured: s.cfg.IsConfigured(),
 		Checked:    snap.Checked,
 		AllOK:      snap.AllOK,
 		Uploads:    snap.Uploads,
+		DiskBytes:  s.store.DiskUsage(),
+		DocCount:   docs,
 	}
+	b.DiskHuman = humanBytes(b.DiskBytes)
 	switch {
 	case !b.Configured:
 		b.Label = "Nicht konfiguriert"
@@ -429,6 +436,9 @@ type statusBadge struct {
 	Checked    bool
 	AllOK      bool
 	Uploads    bool
+	DiskBytes  int64
+	DiskHuman  string
+	DocCount   int
 	Label      string
 	Level      string // ok | warn | err
 }
@@ -504,18 +514,11 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, maxTotalUploadBytes)
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
 		httpError(w, err)
 		return
 	}
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	defer file.Close()
 
 	ecfg := s.cfg.Get()
 	if ecfg.EmbeddingDeployment == "" || ecfg.EmbeddingHost() == "" || !s.cfg.HasEmbeddingAPIKey() {
@@ -523,26 +526,81 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var headers []*multipart.FileHeader
+	if r.MultipartForm != nil {
+		headers = r.MultipartForm.File["file"]
+	}
+	if len(headers) == 0 {
+		s.renderDocList(w, r, chatID, "Keine Datei empfangen.", true)
+		return
+	}
+
+	var (
+		added    int
+		failures []string
+	)
+	for _, header := range headers {
+		if header.Size > maxUploadBytes {
+			failures = append(failures, fmt.Sprintf("„%s“ (zu groß)", header.Filename))
+			continue
+		}
+		data, err := readMultipartFile(header)
+		if err != nil {
+			slog.Error("upload lesen", "file", header.Filename, "err", err)
+			failures = append(failures, fmt.Sprintf("„%s“ (Lesefehler)", header.Filename))
+			continue
+		}
+		mime := header.Header.Get("Content-Type")
+		if _, _, err := s.ingestor.Ingest(ctx, chatID, header.Filename, mime, data); err != nil {
+			slog.Error("ingest", "file", header.Filename, "err", err)
+			failures = append(failures, fmt.Sprintf("„%s“ (%s)", header.Filename, err.Error()))
+			continue
+		}
+		added++
+	}
+
+	notice, isErr := uploadSummary(added, failures)
+	s.renderDocList(w, r, chatID, notice, isErr)
+}
+
+// readMultipartFile liest den gesamten Inhalt einer hochgeladenen Datei.
+func readMultipartFile(header *multipart.FileHeader) ([]byte, error) {
+	f, err := header.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
 	data := make([]byte, 0, header.Size)
 	buf := make([]byte, 32*1024)
 	for {
-		n, rerr := file.Read(buf)
+		n, rerr := f.Read(buf)
 		if n > 0 {
 			data = append(data, buf[:n]...)
 		}
 		if rerr != nil {
-			break
+			if rerr == io.EOF {
+				break
+			}
+			return nil, rerr
 		}
 	}
+	return data, nil
+}
 
-	mime := header.Header.Get("Content-Type")
-	_, n, err := s.ingestor.Ingest(ctx, chatID, header.Filename, mime, data)
-	if err != nil {
-		slog.Error("ingest", "file", header.Filename, "err", err)
-		s.renderDocList(w, r, chatID, "Verarbeitung fehlgeschlagen: "+err.Error(), true)
-		return
+// uploadSummary baut die Statusmeldung für einen (Mehrfach-)Upload.
+func uploadSummary(added int, failures []string) (string, bool) {
+	switch {
+	case added > 0 && len(failures) == 0:
+		if added == 1 {
+			return "1 Dokument hinzugefügt.", false
+		}
+		return fmt.Sprintf("%d Dokumente hinzugefügt.", added), false
+	case added > 0 && len(failures) > 0:
+		return fmt.Sprintf("%d hinzugefügt. Fehlgeschlagen: %s", added, strings.Join(failures, ", ")), true
+	default:
+		return "Verarbeitung fehlgeschlagen: " + strings.Join(failures, ", "), true
 	}
-	s.renderDocList(w, r, chatID, fmt.Sprintf("„%s“ hinzugefügt (%d Abschnitte).", header.Filename, n), false)
 }
 
 // handleDeleteDocument entfernt ein Dokument aus einem Chat.
@@ -640,4 +698,18 @@ func makeTitle(msg string) string {
 		return strings.TrimSpace(string(runes[:40])) + "…"
 	}
 	return msg
+}
+
+// humanBytes formatiert eine Byte-Größe als lesbare Zeichenkette (z.B. "2.4 MB").
+func humanBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }

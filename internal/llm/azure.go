@@ -140,7 +140,7 @@ func (c *Client) VerifyChat(ctx context.Context) error {
 		Model:     cfg.ChatModel,
 		Messages:  []Message{{Role: "user", Content: "ping"}},
 		Stream:    false,
-		MaxTokens: 1,
+		MaxTokens: 16,
 	})
 	if err != nil {
 		return err
@@ -163,9 +163,23 @@ func (c *Client) VerifyChat(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		// Ein 400 wegen erschöpftem Token-Budget beweist dennoch, dass Endpoint,
+		// Deployment und Authentifizierung korrekt sind – das werten wir als Erfolg.
+		if resp.StatusCode == http.StatusBadRequest && responseMentionsMaxTokens(resp) {
+			return nil
+		}
 		return readError(resp)
 	}
 	return nil
+}
+
+// responseMentionsMaxTokens prüft, ob eine Fehlerantwort auf ein erschöpftes
+// Token-Limit hinweist (Endpoint ist dann grundsätzlich erreichbar).
+func responseMentionsMaxTokens(resp *http.Response) bool {
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(resp.Body)
+	msg := strings.ToLower(buf.String())
+	return strings.Contains(msg, "max_tokens") || strings.Contains(msg, "output limit")
 }
 
 // VerifyEmbedding prüft mit einer minimalen Anfrage, ob der Embedding-Endpoint

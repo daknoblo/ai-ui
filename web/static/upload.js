@@ -78,33 +78,132 @@
 		var files = e.dataTransfer.files;
 		if (!files || files.length === 0) return;
 
-		uploadFiles(chatId, files);
+		uploadFiles(chatId, Array.prototype.slice.call(files));
 	});
 
-	// Alle abgelegten Dateien in einer Anfrage hochladen; der Server verarbeitet
-	// sie und liefert die aktualisierte Dokumentliste samt Sammelmeldung zurück.
-	function uploadFiles(chatId, fileList) {
-		var form = new FormData();
-		for (var i = 0; i < fileList.length; i++) {
-			form.append("file", fileList[i]);
+	// handleAttach wird vom Datei-Input (📎) aufgerufen. Der Upload läuft
+	// asynchron und unabhängig vom Chat-Eingabefeld, damit eine begonnene
+	// Nachricht nicht verloren geht.
+	window.handleAttach = function (input) {
+		var chatId = input.getAttribute("data-chat-id");
+		var files = input.files;
+		if (!chatId || !files || files.length === 0) {
+			input.value = "";
+			return;
+		}
+		uploadFiles(chatId, Array.prototype.slice.call(files));
+		input.value = ""; // erlaubt erneutes Wählen derselben Datei
+	};
+
+	// uploadFiles lädt mehrere Dateien nacheinander hoch und zeigt dabei den
+	// Fortschritt an. Jede Datei wird einzeln verarbeitet, sodass der Nutzer den
+	// Verlauf sieht und die Dokumentliste fortlaufend aktualisiert wird.
+	function uploadFiles(chatId, files) {
+		var total = files.length;
+		var done = 0;
+		var failed = 0;
+
+		showProgress("Lade Dokumente hoch…", 0, total);
+
+		function next(index) {
+			if (index >= total) {
+				var msg = done + " von " + total + " verarbeitet";
+				if (failed > 0) msg += " (" + failed + " fehlgeschlagen)";
+				finishProgress(msg, failed > 0);
+				return;
+			}
+
+			var file = files[index];
+			var form = new FormData();
+			form.append("file", file);
+
+			var xhr = new XMLHttpRequest();
+			xhr.open("POST", "/chat/" + encodeURIComponent(chatId) + "/documents");
+
+			// Netzwerk-Fortschritt der aktuellen Datei in die Gesamtanzeige mappen.
+			xhr.upload.onprogress = function (evt) {
+				var fileFrac = evt.lengthComputable ? evt.loaded / evt.total : 0;
+				var overall = (index + fileFrac) / total;
+				updateProgress(
+					"Verarbeite " + (index + 1) + " von " + total + ": " + file.name,
+					overall
+				);
+			};
+
+			xhr.onload = function () {
+				if (xhr.status >= 200 && xhr.status < 300) {
+					done++;
+					replaceDocList(xhr.responseText);
+				} else {
+					failed++;
+				}
+				updateProgress(
+					"Verarbeite " + (index + 1) + " von " + total + "…",
+					(index + 1) / total
+				);
+				next(index + 1);
+			};
+
+			xhr.onerror = function () {
+				failed++;
+				next(index + 1);
+			};
+
+			xhr.send(form);
 		}
 
-		fetch("/chat/" + encodeURIComponent(chatId) + "/documents", {
-			method: "POST",
-			body: form,
-		})
-			.then(function (resp) {
-				return resp.text();
-			})
-			.then(function (html) {
-				replaceDocList(html);
-			})
-			.catch(function () {
-				/* Fehler werden serverseitig als Notiz gerendert; hier nichts tun. */
-			});
+		next(0);
 	}
 
-	// Ersetzt die Dokumentliste in der Seitenleiste durch das Server-Fragment.
+	// ---- Fortschrittsanzeige ----
+
+	function progressEl() {
+		return document.getElementById("upload-status");
+	}
+
+	function showProgress(label, current, total) {
+		var el = progressEl();
+		if (!el) return;
+		el.hidden = false;
+		el.innerHTML =
+			'<div class="upload-progress-label">' +
+			escapeHTML(label) +
+			'</div><div class="upload-progress-bar"><div class="upload-progress-fill" style="width:0%"></div></div>';
+	}
+
+	function updateProgress(label, frac) {
+		var el = progressEl();
+		if (!el) return;
+		el.hidden = false;
+		var pct = Math.max(0, Math.min(100, Math.round(frac * 100)));
+		var labelEl = el.querySelector(".upload-progress-label");
+		var fillEl = el.querySelector(".upload-progress-fill");
+		if (labelEl) labelEl.textContent = label + " (" + pct + "%)";
+		if (fillEl) fillEl.style.width = pct + "%";
+	}
+
+	function finishProgress(label, isError) {
+		var el = progressEl();
+		if (!el) return;
+		var fillEl = el.querySelector(".upload-progress-fill");
+		if (fillEl) fillEl.style.width = "100%";
+		var labelEl = el.querySelector(".upload-progress-label");
+		if (labelEl) labelEl.textContent = label;
+		el.classList.toggle("error", !!isError);
+		// Anzeige nach kurzer Zeit ausblenden.
+		setTimeout(function () {
+			el.hidden = true;
+			el.classList.remove("error");
+		}, 4000);
+	}
+
+	function escapeHTML(s) {
+		var d = document.createElement("div");
+		d.textContent = s;
+		return d.innerHTML;
+	}
+
+	// Ersetzt die Dokumentliste durch das Server-Fragment.
 	function replaceDocList(html) {
 		var current = document.getElementById("doc-list");
 		if (!current) return;

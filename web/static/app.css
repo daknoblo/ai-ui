@@ -290,6 +290,13 @@ html, body {
 	align-items: flex-end;
 	width: 100%;
 }
+.composer-form {
+	display: flex;
+	gap: 8px;
+	align-items: flex-end;
+	flex: 1;
+	min-width: 0;
+}
 .composer textarea {
 	flex: 1;
 	resize: none;
@@ -335,9 +342,30 @@ html, body {
 	flex: 0 0 auto;
 }
 
+/* ---------- Upload-Fortschritt ---------- */
+.upload-status {
+	font-size: 12px;
+	color: var(--text-dim);
+}
+.upload-progress-label { margin-bottom: 4px; }
+.upload-progress-bar {
+	height: 6px;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	overflow: hidden;
+}
+.upload-progress-fill {
+	height: 100%;
+	width: 0;
+	background: var(--accent);
+	transition: width .2s ease;
+}
+.upload-status.error .upload-progress-fill { background: var(--danger); }
+.upload-status.error .upload-progress-label { color: var(--warn); }
+
 /* ---------- Dokument-Chips über dem Eingabefeld ---------- */
 .doc-dock { display: flex; flex-direction: column; gap: 8px; }
-.doc-dock:empty { display: none; }
 .doc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .doc-chip {
 	display: inline-flex;

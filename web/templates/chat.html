@@ -32,33 +32,32 @@
 	</div>
 
 	<div class="composer-dock">
+		<div id="upload-status" class="upload-status" hidden></div>
 		{{template "doclist" .}}
 
-		<form id="chat-form" class="composer"
-			hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
-			hx-target="#messages"
-			hx-swap="beforeend"
-			hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';syncWebToggle(this);}">
-			<input type="hidden" name="web" id="web-flag" value="0">
+		<div class="composer">
 			<label class="composer-btn attach-btn" title="Dokumente anhängen">
 				📎
-				<input type="file" name="file" accept=".txt,.md,.markdown,.json,.pdf,.docx" multiple
-					hx-post="/chat/{{.ChatID}}/documents"
-					hx-trigger="change"
-					hx-target="#doc-list"
-					hx-swap="outerHTML"
-					hx-encoding="multipart/form-data"
-					hx-on::after-request="this.value=''">
+				<input type="file" id="attach-input" accept=".txt,.md,.markdown,.json,.pdf,.docx" multiple
+					data-chat-id="{{.ChatID}}"
+					onchange="handleAttach(this)">
 			</label>
 			<button type="button" class="composer-btn web-toggle" id="web-toggle"
 				aria-pressed="false" title="Websuche für die nächste Nachricht"
 				onclick="toggleWeb(this)" {{if not .SearchEnabled}}hidden{{end}}>🌐</button>
-			<textarea name="message" rows="1" placeholder="Nachricht schreiben…"
-				oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px';"
-				onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"
-				required></textarea>
-			<button type="submit" class="btn btn-send" title="Senden">↑</button>
-		</form>
+			<form id="chat-form" class="composer-form"
+				hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
+				hx-target="#messages"
+				hx-swap="beforeend"
+				hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';syncWebToggle();}">
+				<input type="hidden" name="web" id="web-flag" value="0">
+				<textarea name="message" rows="1" placeholder="Nachricht schreiben…"
+					oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px';"
+					onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"
+					required></textarea>
+				<button type="submit" class="btn btn-send" title="Senden">↑</button>
+			</form>
+		</div>
 	</div>
 
 	<div class="drop-overlay" id="drop-overlay" aria-hidden="true">

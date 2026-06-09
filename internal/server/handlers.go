@@ -20,7 +20,7 @@ import (
 const (
 	maxUploadBytes      = 25 << 20  // 25 MiB pro Datei
 	maxTotalUploadBytes = 150 << 20 // 150 MiB pro Anfrage (Mehrfach-Upload)
-	retrievalTopK       = 4
+	retrievalTopK       = 8
 	defaultTitle        = "Neuer Chat"
 )
 

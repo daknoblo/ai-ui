@@ -68,6 +68,7 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/config", s.handleConfigPost)
 	r.Post("/model", s.handleSetModel)
 	r.Post("/verify", s.handleVerify)
+	r.Get("/status", s.handleStatus)
 
 	r.Post("/chat/{id}/documents", s.handleUpload)
 	r.Delete("/chat/{cid}/documents/{did}", s.handleDeleteDocument)

@@ -876,7 +876,7 @@ func readMultipartFile(header *multipart.FileHeader) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	data := make([]byte, 0, header.Size)
 	buf := make([]byte, 32*1024)

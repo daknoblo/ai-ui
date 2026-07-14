@@ -121,7 +121,7 @@ func (s *Store) ensureDocumentChatColumn(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	hasChatID := false
 	for rows.Next() {
@@ -172,7 +172,7 @@ func (s *Store) ListChats(ctx context.Context) ([]Chat, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var chats []Chat
 	for rows.Next() {
@@ -265,7 +265,7 @@ func (s *Store) ListMessages(ctx context.Context, chatID int64) ([]Message, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var msgs []Message
 	for rows.Next() {
@@ -311,7 +311,7 @@ func (s *Store) ListDocumentsByChat(ctx context.Context, chatID int64) ([]Docume
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var docs []Document
 	for rows.Next() {
@@ -361,7 +361,7 @@ func (s *Store) ChunksByChat(ctx context.Context, chatID int64) ([]Chunk, error)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var chunks []Chunk
 	for rows.Next() {
@@ -446,7 +446,7 @@ func (s *Store) UsageSummaryTotals(ctx context.Context) (UsageSummary, error) {
 	if err != nil {
 		return u, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var kind string
 		var req, pt, ct, tt int64
@@ -476,7 +476,7 @@ func (s *Store) UsageByDay(ctx context.Context, limit int) ([]UsageDay, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []UsageDay
 	for rows.Next() {
 		var d UsageDay
@@ -497,7 +497,7 @@ func (s *Store) UsageByModel(ctx context.Context) ([]UsageModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []UsageModel
 	for rows.Next() {
 		var m UsageModel

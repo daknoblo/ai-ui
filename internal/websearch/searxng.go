@@ -41,7 +41,7 @@ func (p *searxngProvider) Search(ctx context.Context, query string, maxResults i
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, readSearchError("searxng", resp)

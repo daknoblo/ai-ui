@@ -53,7 +53,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.Migrate(context.Background()); err != nil {
 		return err

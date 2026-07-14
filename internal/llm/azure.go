@@ -200,7 +200,7 @@ func (c *Client) streamTurn(ctx context.Context, messages []Message, tools []Too
 	if err != nil {
 		return result, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return result, readError(resp)
@@ -318,7 +318,7 @@ func (c *Client) VerifyChat(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		// Ein 400 wegen erschöpftem Token-Budget beweist dennoch, dass Endpoint,
@@ -376,7 +376,7 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, readError(resp)
@@ -464,7 +464,7 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, readError(resp)

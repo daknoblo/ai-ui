@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -254,16 +255,33 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Web-Suche, falls für diese Anfrage angefordert und konfiguriert.
-	web := r.URL.Query().Get("web") == "1" && s.search.Enabled()
+	// Web-Suche: erzwungen per Toggle (?web=1) oder automatisch per Tool-Calling.
+	cfg := s.cfg.Get()
+	forceWeb := r.URL.Query().Get("web") == "1" && s.search.Enabled()
+	autoWeb := cfg.SearchAuto && s.search.Enabled() && !forceWeb
 
-	messages := s.buildLLMMessages(ctx, id, s.cfg.Get(), history, query, web)
+	messages := s.buildLLMMessages(ctx, id, cfg, history, query, forceWeb)
 
 	var acc strings.Builder
-	result, streamErr := s.llm.ChatStream(ctx, messages, func(delta string) error {
+	onDelta := func(delta string) error {
 		acc.WriteString(delta)
 		return sse.send("token", renderMarkdownString(acc.String()))
-	})
+	}
+
+	var (
+		result    llm.ChatResult
+		streamErr error
+	)
+	if autoWeb {
+		result, streamErr = s.streamWithSearch(ctx, sse, messages, onDelta)
+		// Fallback ohne Tools, falls der Router kein Tool-Calling unterstützt.
+		if streamErr != nil && acc.Len() == 0 {
+			slog.Warn("tool-calling fehlgeschlagen, fallback ohne tools", "err", streamErr)
+			result, streamErr = s.llm.ChatStream(ctx, messages, onDelta)
+		}
+	} else {
+		result, streamErr = s.llm.ChatStream(ctx, messages, onDelta)
+	}
 
 	if streamErr != nil {
 		slog.Error("chat-stream", "err", streamErr)
@@ -343,6 +361,119 @@ func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.
 	return msgs
 }
 
+// maxToolIterations begrenzt die Runden im Tool-Loop, um Endlosschleifen zu vermeiden.
+const maxToolIterations = 4
+
+// webSearchTool definiert das dem Modell angebotene Websuche-Werkzeug.
+func webSearchTool() llm.Tool {
+	return llm.Tool{
+		Type: "function",
+		Function: llm.ToolFunction{
+			Name:        "web_search",
+			Description: "Durchsucht das Web nach aktuellen Informationen. Nutze dieses Werkzeug, wenn die Frage aktuelle Ereignisse, Nachrichten, Preise, Zahlen oder Fakten betrifft, die sich seit deinem Trainingsstand geändert haben könnten.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"query": {"type": "string", "description": "Die Suchanfrage in natürlicher Sprache"}
+				},
+				"required": ["query"]
+			}`),
+		},
+	}
+}
+
+// streamWithSearch führt den Tool-Loop aus: Das Modell kann das web_search-Tool
+// selbst aufrufen; die Ergebnisse werden zurückgespeist, bis eine finale Antwort
+// (ohne Tool-Aufruf) gestreamt wird.
+func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, messages []llm.Message, onDelta func(string) error) (llm.ChatResult, error) {
+	tools := []llm.Tool{webSearchTool()}
+	var final llm.ChatResult
+
+	for i := 0; i < maxToolIterations; i++ {
+		turn, err := s.llm.ChatStreamWithTools(ctx, messages, tools, onDelta)
+		if err != nil {
+			return final, err
+		}
+		if turn.Model != "" {
+			final.Model = turn.Model
+		}
+		final.Usage.PromptTokens += turn.Usage.PromptTokens
+		final.Usage.CompletionTokens += turn.Usage.CompletionTokens
+		final.Usage.TotalTokens += turn.Usage.TotalTokens
+
+		// Keine Tool-Aufrufe → finale Antwort wurde bereits gestreamt.
+		if len(turn.ToolCalls) == 0 {
+			return final, nil
+		}
+
+		// Assistenten-Nachricht mit den angeforderten Tool-Aufrufen anhängen.
+		messages = append(messages, llm.Message{
+			Role:      "assistant",
+			Content:   turn.Content,
+			ToolCalls: turn.ToolCalls,
+		})
+		// Jeden Tool-Aufruf ausführen und das Ergebnis zurückspeisen.
+		for _, tc := range turn.ToolCalls {
+			resultText := s.executeToolCall(ctx, sse, tc)
+			messages = append(messages, llm.Message{
+				Role:       "tool",
+				ToolCallID: tc.ID,
+				Name:       tc.Function.Name,
+				Content:    resultText,
+			})
+		}
+	}
+
+	// Maximale Rundenzahl erreicht: letzte Antwort ohne Tools erzwingen.
+	turn, err := s.llm.ChatStream(ctx, messages, onDelta)
+	if err != nil {
+		return final, err
+	}
+	if turn.Model != "" {
+		final.Model = turn.Model
+	}
+	final.Usage.PromptTokens += turn.Usage.PromptTokens
+	final.Usage.CompletionTokens += turn.Usage.CompletionTokens
+	final.Usage.TotalTokens += turn.Usage.TotalTokens
+	return final, nil
+}
+
+// executeToolCall führt einen Tool-Aufruf aus und liefert das Ergebnis als Text
+// für das Modell. Aktuell wird nur "web_search" unterstützt.
+func (s *Server) executeToolCall(ctx context.Context, sse *sseWriter, tc llm.ToolCall) string {
+	if tc.Function.Name != "web_search" {
+		return "Unbekanntes Werkzeug: " + tc.Function.Name
+	}
+
+	var args struct {
+		Query string `json:"query"`
+	}
+	_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+	query := strings.TrimSpace(args.Query)
+	if query == "" {
+		return "Leere Suchanfrage."
+	}
+
+	// Status in der UI anzeigen.
+	_ = sse.send("tool", s.renderString("tool-status", query))
+
+	results, err := s.search.Search(ctx, query)
+	if err != nil {
+		slog.Warn("websuche (tool) fehlgeschlagen", "query", query, "err", err)
+		return "Websuche fehlgeschlagen: " + err.Error()
+	}
+	if len(results) == 0 {
+		return "Keine Web-Ergebnisse gefunden."
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Web-Ergebnisse (zitiere relevante Quellen mit ihrer URL):\n\n")
+	for i, res := range results {
+		fmt.Fprintf(&sb, "[%d] %s\nURL: %s\n%s\n\n", i+1, res.Title, res.URL, res.Content)
+	}
+	return sb.String()
+}
+
 // handleConfigGet liefert den Einstellungs-Dialog.
 func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 	s.renderConfig(w, false)
@@ -367,6 +498,7 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	if n, err := strconv.Atoi(strings.TrimSpace(r.FormValue("search_max_results"))); err == nil && n > 0 {
 		cfg.SearchMaxResults = n
 	}
+	cfg.SearchAuto = r.FormValue("search_auto") == "on"
 	cfg.SystemPrompt = r.FormValue("system_prompt")
 	if t, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("temperature")), 64); err == nil {
 		cfg.Temperature = t

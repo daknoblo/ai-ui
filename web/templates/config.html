@@ -74,6 +74,10 @@
 				<input type="number" name="search_max_results" value="{{.Config.SearchMaxResults}}"
 					min="1" max="10" step="1">
 			</label>
+			<label class="config-check">
+				<input type="checkbox" name="search_auto" {{if .Config.SearchAuto}}checked{{end}}>
+				<span>Automatisch (Tool-Calling) — das Modell entscheidet selbst, wann es das Web durchsucht <span class="hint">(erfordert Tool-Calling-Unterstützung des Routers)</span></span>
+			</label>
 			<div class="config-secret {{if .HasSearchKey}}ok{{else}}warn{{end}}">
 				Such-API-Key (Secret):
 				{{if .HasSearchKey}}über Umgebungsvariable SEARCH_API_KEY gesetzt ✓

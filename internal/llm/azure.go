@@ -14,10 +14,41 @@ import (
 	"github.com/daknoblo/ai-ui/internal/config"
 )
 
-// Message ist eine Chat-Nachricht im OpenAI-Format.
+// Message ist eine Chat-Nachricht im OpenAI-Format. Für Tool-Calling werden
+// zusätzliche Felder genutzt (ToolCalls für Assistenten-Aufrufe, ToolCallID/Name
+// für Tool-Ergebnisse).
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Name       string     `json:"name,omitempty"`
+}
+
+// ToolCall beschreibt einen vom Modell angeforderten Funktionsaufruf.
+type ToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ToolCallFunction `json:"function"`
+}
+
+// ToolCallFunction enthält Name und (JSON-)Argumente eines Tool-Aufrufs.
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// Tool definiert ein dem Modell angebotenes Werkzeug (Function-Calling).
+type Tool struct {
+	Type     string       `json:"type"`
+	Function ToolFunction `json:"function"`
+}
+
+// ToolFunction beschreibt eine aufrufbare Funktion samt JSON-Schema.
+type ToolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
 }
 
 // Client spricht mit dem Azure-OpenAI-kompatiblen Model-Router.
@@ -61,6 +92,8 @@ type chatRequest struct {
 	Stream        bool           `json:"stream"`
 	StreamOptions *streamOptions `json:"stream_options,omitempty"`
 	MaxTokens     int            `json:"max_tokens,omitempty"`
+	Tools         []Tool         `json:"tools,omitempty"`
+	ToolChoice    string         `json:"tool_choice,omitempty"`
 }
 
 // streamChunk ist ein einzelnes SSE-Delta der Chat-Completions-Antwort.
@@ -68,7 +101,16 @@ type streamChunk struct {
 	Model   string `json:"model"`
 	Choices []struct {
 		Delta struct {
-			Content string `json:"content"`
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				Index    int    `json:"index"`
+				ID       string `json:"id"`
+				Type     string `json:"type"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
@@ -81,11 +123,33 @@ type ChatResult struct {
 	Model string // tatsächlich verwendetes Modell (vom Router gemeldet)
 }
 
+// TurnResult ist das Ergebnis eines einzelnen Stream-Durchgangs inkl. der ggf.
+// vom Modell angeforderten Tool-Aufrufe.
+type TurnResult struct {
+	Content      string
+	ToolCalls    []ToolCall
+	FinishReason string
+	Usage        Usage
+	Model        string
+}
+
 // ChatStream sendet die Nachrichten und ruft onDelta für jedes Text-Token auf.
-// Liefert nach Abschluss Token-Nutzung und das tatsächlich verwendete Modell
-// (sofern der Endpoint diese meldet).
+// Liefert nach Abschluss Token-Nutzung und das tatsächlich verwendete Modell.
 func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta func(string) error) (ChatResult, error) {
-	var result ChatResult
+	turn, err := c.streamTurn(ctx, messages, nil, onDelta)
+	return ChatResult{Usage: turn.Usage, Model: turn.Model}, err
+}
+
+// ChatStreamWithTools verhält sich wie ChatStream, bietet dem Modell aber die
+// übergebenen Tools an und liefert die ggf. angeforderten Tool-Aufrufe zurück.
+func (c *Client) ChatStreamWithTools(ctx context.Context, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
+	return c.streamTurn(ctx, messages, tools, onDelta)
+}
+
+// streamTurn führt einen Streaming-Durchgang aus, streamt Text über onDelta und
+// sammelt optionale Tool-Aufrufe (deren Argumente über mehrere Chunks kommen).
+func (c *Client) streamTurn(ctx context.Context, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
+	var result TurnResult
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || cfg.APIVersion == "" {
 		return result, fmt.Errorf("konfiguration unvollständig: endpoint, chat-deployment und api-version erforderlich")
@@ -97,13 +161,18 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta fun
 	url := fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
 		strings.TrimRight(cfg.Endpoint, "/"), cfg.ChatDeployment, cfg.APIVersion)
 
-	body, err := json.Marshal(chatRequest{
+	reqBody := chatRequest{
 		Model:         cfg.ChatModel,
 		Messages:      messages,
 		Temperature:   cfg.Temperature,
 		Stream:        true,
 		StreamOptions: &streamOptions{IncludeUsage: true},
-	})
+	}
+	if len(tools) > 0 {
+		reqBody.Tools = tools
+		reqBody.ToolChoice = "auto"
+	}
+	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return result, err
 	}
@@ -125,6 +194,11 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta fun
 	if resp.StatusCode != http.StatusOK {
 		return result, readError(resp)
 	}
+
+	// Tool-Aufrufe werden je Index aufgebaut (Argumente kommen fragmentiert).
+	toolAcc := map[int]*ToolCall{}
+	var toolOrder []int
+	var content strings.Builder
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -151,15 +225,42 @@ func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta fun
 			result.Usage = *chunk.Usage
 		}
 		for _, ch := range chunk.Choices {
+			if ch.FinishReason != nil && *ch.FinishReason != "" {
+				result.FinishReason = *ch.FinishReason
+			}
 			if ch.Delta.Content != "" {
+				content.WriteString(ch.Delta.Content)
 				if err := onDelta(ch.Delta.Content); err != nil {
 					return result, err
 				}
+			}
+			for _, tc := range ch.Delta.ToolCalls {
+				acc, ok := toolAcc[tc.Index]
+				if !ok {
+					acc = &ToolCall{Type: "function"}
+					toolAcc[tc.Index] = acc
+					toolOrder = append(toolOrder, tc.Index)
+				}
+				if tc.ID != "" {
+					acc.ID = tc.ID
+				}
+				if tc.Type != "" {
+					acc.Type = tc.Type
+				}
+				if tc.Function.Name != "" {
+					acc.Function.Name = tc.Function.Name
+				}
+				acc.Function.Arguments += tc.Function.Arguments
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return result, err
+	}
+
+	result.Content = content.String()
+	for _, idx := range toolOrder {
+		result.ToolCalls = append(result.ToolCalls, *toolAcc[idx])
 	}
 	c.metrics.recordChat(result.Usage)
 	return result, nil

@@ -89,10 +89,14 @@
 	sse-connect="/chat/{{.ChatID}}/generate{{if .Web}}?web=1{{end}}"
 	sse-close="done">
 	<div class="msg-role">Assistent<span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span>{{if .Web}} <span class="web-tag">🌐 Web</span>{{end}}</div>
+	<div class="msg-tools" sse-swap="tool" hx-swap="beforeend"></div>
 	<div class="bubble" sse-swap="token" hx-swap="innerHTML"><span class="cursor">▍</span></div>
 	<div class="msg-usage" sse-swap="usage" hx-swap="innerHTML"></div>
 </div>
 {{end}}
+
+{{/* tool-status: kleine Statuszeile für eine laufende Websuche */}}
+{{define "tool-status"}}<div class="tool-status">🔎 Websuche: {{.}}</div>{{end}}
 
 {{/* model-tag: zeigt das tatsächlich verwendete Modell neben der Rolle */}}
 {{define "model-tag"}} <span class="model-badge" title="Für diese Antwort verwendetes Modell">{{.}}</span>{{end}}

@@ -23,6 +23,7 @@ type Config struct {
 	SearchProvider      string   `json:"search_provider"`       // "", "tavily", "brave", "searxng"
 	SearchEndpoint      string   `json:"search_endpoint"`       // Basis-URL für SearXNG
 	SearchMaxResults    int      `json:"search_max_results"`    // Anzahl Treffer (Default 5)
+	SearchAuto          bool     `json:"search_auto"`           // Modell darf Websuche selbst per Tool-Calling auslösen
 	SystemPrompt        string   `json:"system_prompt"`
 	Temperature         float64  `json:"temperature"`
 }
@@ -59,6 +60,7 @@ func Defaults() Config {
 		SearchProvider:      "",
 		SearchEndpoint:      "",
 		SearchMaxResults:    5,
+		SearchAuto:          false,
 		SystemPrompt:        "Du bist ein hilfreicher Assistent. Antworte präzise und nutze den bereitgestellten Kontext, wenn er relevant ist.",
 		Temperature:         0.7,
 	}

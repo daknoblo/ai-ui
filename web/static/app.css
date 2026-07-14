@@ -410,6 +410,17 @@ html, body {
 }
 .doc-chip-del:hover { color: var(--danger); }
 .web-tag { color: var(--accent); font-size: 11px; }
+.msg-tools:empty { display: none; }
+.msg-tools { margin-bottom: 6px; display: flex; flex-direction: column; gap: 4px; }
+.tool-status {
+	font-size: 12px;
+	color: var(--text-dim);
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 5px 10px;
+	align-self: flex-start;
+}
 .msg-model:empty { display: none; }
 .model-badge {
 	display: inline-block;

@@ -2,9 +2,12 @@
 package server
 
 import (
+	"context"
 	"html/template"
 	"io/fs"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -32,6 +35,8 @@ type Server struct {
 // New erzeugt einen Server und parst die Templates.
 func New(cfg *config.Store, store *storage.Store) *Server {
 	client := llm.New(cfg)
+	// Token-Verbrauch dauerhaft in der Datenbank aufzeichnen.
+	client.SetUsageRecorder(usageRecorder{store: store})
 
 	tmpl := template.Must(template.New("").
 		Funcs(template.FuncMap{
@@ -52,6 +57,19 @@ func New(cfg *config.Store, store *storage.Store) *Server {
 	}
 }
 
+// usageRecorder speichert den Token-Verbrauch dauerhaft im Datenpfad.
+type usageRecorder struct {
+	store *storage.Store
+}
+
+func (u usageRecorder) RecordUsage(kind, model string, usage llm.Usage) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := u.store.RecordUsage(ctx, kind, model, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens); err != nil {
+		slog.Warn("token-nutzung speichern", "err", err)
+	}
+}
+
 // Routes registriert alle HTTP-Routen.
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
@@ -66,6 +84,7 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/chat/{id}", s.handleChat)
 	r.Post("/chats", s.handleCreateChat)
 	r.Delete("/chats/{id}", s.handleDeleteChat)
+	r.Get("/stats", s.handleStats)
 
 	r.Post("/chat/{id}/send", s.handleSend)
 	r.Get("/chat/{id}/generate", s.handleGenerate)

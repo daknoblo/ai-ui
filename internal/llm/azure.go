@@ -53,9 +53,15 @@ type ToolFunction struct {
 
 // Client spricht mit dem Azure-OpenAI-kompatiblen Model-Router.
 type Client struct {
-	store   *config.Store
-	http    *http.Client
-	metrics *Metrics
+	store    *config.Store
+	http     *http.Client
+	metrics  *Metrics
+	recorder UsageRecorder
+}
+
+// UsageRecorder erhält jeden Token-Verbrauch zur dauerhaften Speicherung.
+type UsageRecorder interface {
+	RecordUsage(kind, model string, u Usage)
 }
 
 // New erzeugt einen neuen LLM-Client.
@@ -65,6 +71,11 @@ func New(store *config.Store) *Client {
 		http:    &http.Client{Timeout: 5 * time.Minute},
 		metrics: &Metrics{},
 	}
+}
+
+// SetUsageRecorder hinterlegt einen Empfänger für die dauerhafte Nutzungsstatistik.
+func (c *Client) SetUsageRecorder(r UsageRecorder) {
+	c.recorder = r
 }
 
 // Metrics liefert einen Snapshot des kumulativen Token-Verbrauchs.
@@ -263,6 +274,9 @@ func (c *Client) streamTurn(ctx context.Context, messages []Message, tools []Too
 		result.ToolCalls = append(result.ToolCalls, *toolAcc[idx])
 	}
 	c.metrics.recordChat(result.Usage)
+	if c.recorder != nil && result.Usage.TotalTokens > 0 {
+		c.recorder.RecordUsage("chat", result.Model, result.Usage)
+	}
 	return result, nil
 }
 
@@ -462,6 +476,9 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 	}
 
 	c.metrics.recordEmbedding(out.Usage.TotalTokens)
+	if c.recorder != nil && out.Usage.TotalTokens > 0 {
+		c.recorder.RecordUsage("embedding", cfg.EmbeddingDeployment, out.Usage)
+	}
 
 	result := make([][]float32, len(out.Data))
 	for _, d := range out.Data {

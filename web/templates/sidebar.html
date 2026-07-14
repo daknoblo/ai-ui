@@ -13,6 +13,7 @@
 			hx-get="/config"
 			hx-target="#modal-root"
 			hx-swap="innerHTML">⚙ Einstellungen</button>
+		<a href="/stats" class="stats-link">📊 Statistik</a>
 		<div id="conn-status"
 			hx-get="/status"
 			hx-trigger="load, every 30s"
@@ -26,6 +27,11 @@
 
 {{define "chatnav"}}
 <nav id="chat-list" class="chat-list">
+	{{template "chatnav-items" .}}
+</nav>
+{{end}}
+
+{{define "chatnav-items"}}
 	{{range .Chats}}
 	<div class="chat-item {{if and $.CurrentChat (eq .ID $.CurrentChat.ID)}}active{{end}}">
 		<a href="/chat/{{.ID}}" class="chat-link" title="{{.Title}}">{{.Title}}</a>
@@ -39,7 +45,6 @@
 	{{else}}
 	<p class="empty-hint">Noch keine Chats.</p>
 	{{end}}
-</nav>
 {{end}}
 
 {{define "doclist"}}

@@ -94,6 +94,16 @@ CREATE TABLE IF NOT EXISTS chunks (
 	embedding   BLOB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(document_id);
+CREATE TABLE IF NOT EXISTS usage_daily (
+	day               TEXT NOT NULL,
+	kind              TEXT NOT NULL,
+	model             TEXT NOT NULL,
+	requests          INTEGER NOT NULL,
+	prompt_tokens     INTEGER NOT NULL,
+	completion_tokens INTEGER NOT NULL,
+	total_tokens      INTEGER NOT NULL,
+	PRIMARY KEY (day, kind, model)
+);
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return err
@@ -380,6 +390,126 @@ func (s *Store) CountDocuments(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM documents`).Scan(&n)
 	return n, err
+}
+
+// ---- Token-Nutzung (persistente Statistik) ----
+
+// RecordUsage verbucht den Token-Verbrauch einer Anfrage tagesweise aggregiert.
+// kind ist z.B. "chat" oder "embedding"; model kann leer sein.
+func (s *Store) RecordUsage(ctx context.Context, kind, model string, prompt, completion, total int) error {
+	day := time.Now().UTC().Format("2006-01-02")
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO usage_daily (day, kind, model, requests, prompt_tokens, completion_tokens, total_tokens)
+		 VALUES (?, ?, ?, 1, ?, ?, ?)
+		 ON CONFLICT(day, kind, model) DO UPDATE SET
+		   requests          = requests + 1,
+		   prompt_tokens     = prompt_tokens + excluded.prompt_tokens,
+		   completion_tokens = completion_tokens + excluded.completion_tokens,
+		   total_tokens      = total_tokens + excluded.total_tokens`,
+		day, kind, model, prompt, completion, total)
+	return err
+}
+
+// UsageSummary ist die Gesamtübersicht des Token-Verbrauchs.
+type UsageSummary struct {
+	ChatRequests     int64
+	ChatPromptTokens int64
+	ChatComplTokens  int64
+	ChatTotalTokens  int64
+	EmbedRequests    int64
+	EmbedTotalTokens int64
+	TotalTokens      int64
+}
+
+// UsageDay ist der Verbrauch eines einzelnen Tages.
+type UsageDay struct {
+	Day             string
+	ChatTokens      int64
+	EmbeddingTokens int64
+	TotalTokens     int64
+	Requests        int64
+}
+
+// UsageModel ist der Verbrauch je Modell.
+type UsageModel struct {
+	Model       string
+	Requests    int64
+	TotalTokens int64
+}
+
+// UsageSummaryTotals liefert die aggregierte Gesamtübersicht.
+func (s *Store) UsageSummaryTotals(ctx context.Context) (UsageSummary, error) {
+	var u UsageSummary
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT kind, SUM(requests), SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens)
+		 FROM usage_daily GROUP BY kind`)
+	if err != nil {
+		return u, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var kind string
+		var req, pt, ct, tt int64
+		if err := rows.Scan(&kind, &req, &pt, &ct, &tt); err != nil {
+			return u, err
+		}
+		switch kind {
+		case "chat":
+			u.ChatRequests, u.ChatPromptTokens, u.ChatComplTokens, u.ChatTotalTokens = req, pt, ct, tt
+		case "embedding":
+			u.EmbedRequests, u.EmbedTotalTokens = req, tt
+		}
+		u.TotalTokens += tt
+	}
+	return u, rows.Err()
+}
+
+// UsageByDay liefert den Verbrauch der letzten n Tage, neueste zuerst.
+func (s *Store) UsageByDay(ctx context.Context, limit int) ([]UsageDay, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT day,
+		        SUM(CASE WHEN kind='chat' THEN total_tokens ELSE 0 END),
+		        SUM(CASE WHEN kind='embedding' THEN total_tokens ELSE 0 END),
+		        SUM(total_tokens),
+		        SUM(requests)
+		 FROM usage_daily GROUP BY day ORDER BY day DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UsageDay
+	for rows.Next() {
+		var d UsageDay
+		if err := rows.Scan(&d.Day, &d.ChatTokens, &d.EmbeddingTokens, &d.TotalTokens, &d.Requests); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// UsageByModel liefert den Verbrauch je Modell, größter zuerst.
+func (s *Store) UsageByModel(ctx context.Context) ([]UsageModel, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT model, SUM(requests), SUM(total_tokens)
+		 FROM usage_daily WHERE kind='chat'
+		 GROUP BY model ORDER BY SUM(total_tokens) DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UsageModel
+	for rows.Next() {
+		var m UsageModel
+		if err := rows.Scan(&m.Model, &m.Requests, &m.TotalTokens); err != nil {
+			return nil, err
+		}
+		if m.Model == "" {
+			m.Model = "(Auto/Router)"
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 // ---- Helfer ----

@@ -149,6 +149,38 @@ func (s *Server) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/")
 }
 
+// handleStats zeigt die persistente Token-Nutzungsstatistik.
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	summary, err := s.store.UsageSummaryTotals(ctx)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	days, err := s.store.UsageByDay(ctx, 30)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	models, err := s.store.UsageByModel(ctx)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	data := struct {
+		Title   string
+		Summary storage.UsageSummary
+		Days    []storage.UsageDay
+		Models  []storage.UsageModel
+	}{
+		Title:   "Statistik",
+		Summary: summary,
+		Days:    days,
+		Models:  models,
+	}
+	s.render(w, "stats", data)
+}
+
 // handleSend speichert die Nutzernachricht und gibt die Stream-Hülle zurück.
 func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -313,7 +345,96 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 			groupThousands(int64(result.Usage.PromptTokens)),
 			groupThousands(int64(result.Usage.CompletionTokens))))
 	}
+
+	// Nach der ersten Antwort einen prägnanten Chat-Titel erzeugen.
+	if final != "" {
+		s.maybeGenerateTitle(context.Background(), sse, id)
+	}
 	_ = sse.send("done", "")
+}
+
+// maybeGenerateTitle erzeugt nach dem ersten Austausch einen kurzen, prägnanten
+// Chat-Titel aus dem Inhalt und aktualisiert Header und Seitenleiste per SSE.
+func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID int64) {
+	msgs, err := s.store.ListMessages(ctx, chatID)
+	if err != nil || len(msgs) != 2 { // nur beim ersten Austausch (1 Frage + 1 Antwort)
+		return
+	}
+	if !s.cfg.IsConfigured() {
+		return
+	}
+
+	var userMsg, assistantMsg string
+	for _, m := range msgs {
+		switch m.Role {
+		case "user":
+			userMsg = m.Content
+		case "assistant":
+			assistantMsg = m.Content
+		}
+	}
+	if userMsg == "" {
+		return
+	}
+
+	prompt := fmt.Sprintf(
+		"Erstelle einen sehr kurzen, prägnanten Titel (höchstens 6 Wörter, keine Anführungszeichen, kein abschließendes Satzzeichen) für diese Unterhaltung.\n\nFrage: %s\n\nAntwort: %s",
+		truncateRunes(userMsg, 800), truncateRunes(assistantMsg, 800))
+
+	titleMessages := []llm.Message{
+		{Role: "system", Content: "Du erstellst extrem kurze, prägnante Titel für Chat-Unterhaltungen."},
+		{Role: "user", Content: prompt},
+	}
+
+	var sb strings.Builder
+	if _, err := s.llm.ChatStream(ctx, titleMessages, func(delta string) error {
+		sb.WriteString(delta)
+		return nil
+	}); err != nil {
+		slog.Warn("titel erzeugen", "err", err)
+		return
+	}
+
+	title := cleanTitle(sb.String())
+	if title == "" {
+		return
+	}
+	if err := s.store.UpdateChatTitle(ctx, chatID, title); err != nil {
+		slog.Warn("titel speichern", "err", err)
+		return
+	}
+
+	// Header und Seitenleiste live aktualisieren.
+	chats, _ := s.store.ListChats(ctx)
+	chat, _ := s.store.GetChat(ctx, chatID)
+	data := struct {
+		Title       string
+		Chats       []storage.Chat
+		CurrentChat *storage.Chat
+	}{Title: title, Chats: chats, CurrentChat: &chat}
+	_ = sse.send("title", s.renderString("title-update", data))
+}
+
+// cleanTitle bereinigt einen vom Modell erzeugten Titel.
+func cleanTitle(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, "\"'„“”`")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.TrimSpace(s)
+	runes := []rune(s)
+	if len(runes) > 60 {
+		s = strings.TrimSpace(string(runes[:60]))
+	}
+	return s
+}
+
+// truncateRunes kürzt einen Text auf höchstens n Runen.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
 }
 
 // buildLLMMessages baut die Nachrichtenliste inkl. RAG- und optionalem Web-Kontext

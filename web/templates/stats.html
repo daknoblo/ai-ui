@@ -1,0 +1,81 @@
+{{define "stats"}}<!DOCTYPE html>
+<html lang="de">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{{.Title}} · AI UI</title>
+	<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+	<div class="stats-page">
+		<div class="stats-head">
+			<a href="/" class="btn btn-ghost btn-small">← Zurück</a>
+			<h1>Token-Statistik</h1>
+		</div>
+
+		<div class="stats-cards">
+			<div class="stat-card">
+				<div class="stat-value">{{thousands .Summary.TotalTokens}}</div>
+				<div class="stat-label">Tokens gesamt</div>
+			</div>
+			<div class="stat-card">
+				<div class="stat-value">{{thousands .Summary.ChatTotalTokens}}</div>
+				<div class="stat-label">Chat-Tokens<br><span class="stat-sub">{{thousands .Summary.ChatPromptTokens}} Eingabe / {{thousands .Summary.ChatComplTokens}} Antwort</span></div>
+			</div>
+			<div class="stat-card">
+				<div class="stat-value">{{thousands .Summary.EmbedTotalTokens}}</div>
+				<div class="stat-label">Embedding-Tokens</div>
+			</div>
+			<div class="stat-card">
+				<div class="stat-value">{{thousands .Summary.ChatRequests}}</div>
+				<div class="stat-label">Chat-Anfragen</div>
+			</div>
+		</div>
+
+		<h2>Verlauf (letzte 30 Tage)</h2>
+		{{if .Days}}
+		<table class="stats-table">
+			<thead>
+				<tr><th>Tag</th><th class="num">Chat</th><th class="num">Embedding</th><th class="num">Gesamt</th><th class="num">Anfragen</th></tr>
+			</thead>
+			<tbody>
+				{{range .Days}}
+				<tr>
+					<td>{{.Day}}</td>
+					<td class="num">{{thousands .ChatTokens}}</td>
+					<td class="num">{{thousands .EmbeddingTokens}}</td>
+					<td class="num">{{thousands .TotalTokens}}</td>
+					<td class="num">{{thousands .Requests}}</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+		{{else}}
+		<p class="empty-hint">Noch keine Nutzung erfasst.</p>
+		{{end}}
+
+		<h2>Nach Modell</h2>
+		{{if .Models}}
+		<table class="stats-table">
+			<thead>
+				<tr><th>Modell</th><th class="num">Anfragen</th><th class="num">Tokens</th></tr>
+			</thead>
+			<tbody>
+				{{range .Models}}
+				<tr>
+					<td>{{.Model}}</td>
+					<td class="num">{{thousands .Requests}}</td>
+					<td class="num">{{thousands .TotalTokens}}</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+		{{else}}
+		<p class="empty-hint">Noch keine Chat-Anfragen erfasst.</p>
+		{{end}}
+
+		<p class="stats-note">Die Statistik wird dauerhaft im Datenpfad gespeichert und überlebt Neustarts. Kostenschätzungen (z.&nbsp;B. AIC) erfordern eine Preishinterlegung – sag Bescheid, falls gewünscht.</p>
+	</div>
+</body>
+</html>
+{{end}}

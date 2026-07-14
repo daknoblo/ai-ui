@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -222,6 +223,71 @@ func responseMentionsMaxTokens(resp *http.Response) bool {
 	_, _ = buf.ReadFrom(resp.Body)
 	msg := strings.ToLower(buf.String())
 	return strings.Contains(msg, "max_tokens") || strings.Contains(msg, "output limit")
+}
+
+// modelsResponse ist die Antwort der Models-Liste (Azure OpenAI Daten-Ebene).
+type modelsResponse struct {
+	Data []struct {
+		ID   string `json:"id"`
+		Type string `json:"type"`
+	} `json:"data"`
+}
+
+// ListModels fragt die am Endpoint verfügbaren Modelle ab. Nützlich, um die
+// Auswahl im Header automatisch aus dem zu befüllen, was der Router anbietet.
+func (c *Client) ListModels(ctx context.Context) ([]string, error) {
+	cfg := c.store.Get()
+	if cfg.Endpoint == "" || cfg.APIVersion == "" {
+		return nil, fmt.Errorf("endpoint und api-version erforderlich")
+	}
+	if !c.store.HasAPIKey() {
+		return nil, fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
+	}
+
+	url := fmt.Sprintf("%s/openai/models?api-version=%s",
+		strings.TrimRight(cfg.Endpoint, "/"), cfg.APIVersion)
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("api-key", c.store.APIKey())
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, readError(resp)
+	}
+
+	var out modelsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+
+	// Eindeutige Modell-IDs sammeln.
+	seen := make(map[string]struct{}, len(out.Data))
+	var models []string
+	for _, m := range out.Data {
+		id := strings.TrimSpace(m.ID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		models = append(models, id)
+	}
+	sort.Strings(models)
+	return models, nil
 }
 
 // VerifyEmbedding prüft mit einer minimalen Anfrage, ob der Embedding-Endpoint

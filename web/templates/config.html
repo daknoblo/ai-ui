@@ -22,6 +22,15 @@
 				Verfügbare Modelle <span class="hint">(eines pro Zeile oder per Komma; oben rechts wählbar)</span>
 				<textarea name="chat_models" rows="3" placeholder="gpt-4o&#10;gpt-4o-mini&#10;o3">{{range $i, $m := .Config.ChatModels}}{{if $i}}&#10;{{end}}{{$m}}{{end}}</textarea>
 			</label>
+			<button type="button" class="btn btn-ghost btn-small"
+				hx-post="/models/refresh"
+				hx-target="#modal-root"
+				hx-swap="innerHTML"
+				hx-disabled-elt="this"
+				title="Fragt die vom Endpoint angebotenen Modelle ab und übernimmt sie (Endpoint & API-Version müssen gespeichert sein)">
+				⟳ Modelle vom Endpoint abrufen
+			</button>
+			{{if .Notice}}<div class="config-{{if .NoticeErr}}notice-err{{else}}saved{{end}}">{{.Notice}}</div>{{end}}
 			<label>
 				API-Version
 				<input type="text" name="api_version" value="{{.Config.APIVersion}}"

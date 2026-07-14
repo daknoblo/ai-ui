@@ -78,17 +78,13 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 	return pd, nil
 }
 
-// handleIndex leitet auf den jüngsten Chat um oder erstellt einen neuen.
+// handleIndex öffnet immer einen frischen neuen Chat und räumt dabei verwaiste
+// leere Chats auf.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	chats, err := s.store.ListChats(ctx)
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	if len(chats) > 0 {
-		http.Redirect(w, r, "/chat/"+strconv.FormatInt(chats[0].ID, 10), http.StatusSeeOther)
-		return
+	// Verwaiste leere Chats entfernen, bevor ein neuer angelegt wird.
+	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
+		slog.Warn("leere chats aufräumen", "err", err)
 	}
 	id, err := s.store.CreateChat(ctx, defaultTitle)
 	if err != nil {
@@ -111,6 +107,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	// Beim Öffnen eines Chats verwaiste leere Chats entfernen (außer diesem).
+	if _, err := s.store.DeleteEmptyChats(ctx, id); err != nil {
+		slog.Warn("leere chats aufräumen", "err", err)
+	}
 	pd, err := s.buildPageData(ctx, &chat)
 	if err != nil {
 		httpError(w, err)
@@ -121,7 +121,12 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateChat legt einen neuen Chat an und leitet per HTMX dorthin um.
 func (s *Server) handleCreateChat(w http.ResponseWriter, r *http.Request) {
-	id, err := s.store.CreateChat(r.Context(), defaultTitle)
+	ctx := r.Context()
+	// Verwaiste leere Chats entfernen, bevor ein neuer angelegt wird.
+	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
+		slog.Warn("leere chats aufräumen", "err", err)
+	}
+	id, err := s.store.CreateChat(ctx, defaultTitle)
 	if err != nil {
 		httpError(w, err)
 		return
@@ -477,6 +482,37 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// refreshModels fragt die verfügbaren Modelle vom Endpoint ab und speichert sie
+// in der Konfiguration. Liefert die Anzahl gefundener Modelle.
+func (s *Server) refreshModels(ctx context.Context) (int, error) {
+	models, err := s.llm.ListModels(ctx)
+	if err != nil {
+		return 0, err
+	}
+	cfg := s.cfg.Get()
+	cfg.ChatModels = models
+	// Erzwungenes Modell verwerfen, falls es nicht mehr angeboten wird.
+	if cfg.ChatModel != "" && !containsString(models, cfg.ChatModel) {
+		cfg.ChatModel = ""
+	}
+	if err := s.cfg.Save(cfg); err != nil {
+		return 0, err
+	}
+	return len(models), nil
+}
+
+// handleRefreshModels fragt die Modelle vom Endpoint ab (Button im Konfig-Dialog)
+// und rendert den Konfig-Dialog mit dem Ergebnis neu.
+func (s *Server) handleRefreshModels(w http.ResponseWriter, r *http.Request) {
+	n, err := s.refreshModels(r.Context())
+	if err != nil {
+		slog.Warn("modelle abrufen", "err", err)
+		s.renderConfigNotice(w, "Modelle konnten nicht abgerufen werden: "+err.Error(), true)
+		return
+	}
+	s.renderConfigNotice(w, fmt.Sprintf("%d Modelle vom Endpoint übernommen.", n), false)
+}
+
 // parseModels zerlegt eine durch Zeilen oder Kommas getrennte Liste in
 // bereinigte, eindeutige Modellnamen.
 func parseModels(raw string) []string {
@@ -659,6 +695,15 @@ func (s *Server) renderString(name string, data any) string {
 }
 
 func (s *Server) renderConfig(w http.ResponseWriter, saved bool) {
+	s.renderConfigData(w, saved, "", false)
+}
+
+// renderConfigNotice rendert den Konfig-Dialog mit einer Statusmeldung.
+func (s *Server) renderConfigNotice(w http.ResponseWriter, notice string, isErr bool) {
+	s.renderConfigData(w, false, notice, isErr)
+}
+
+func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice string, noticeErr bool) {
 	data := struct {
 		Config             config.Config
 		HasKey             bool
@@ -669,6 +714,8 @@ func (s *Server) renderConfig(w http.ResponseWriter, saved bool) {
 		Saved              bool
 		Verified           bool
 		UploadsAllowed     bool
+		Notice             string
+		NoticeErr          bool
 	}{
 		Config:             s.cfg.Get(),
 		HasKey:             s.cfg.HasAPIKey(),
@@ -679,6 +726,8 @@ func (s *Server) renderConfig(w http.ResponseWriter, saved bool) {
 		Saved:              saved,
 		Verified:           s.ready.verified(),
 		UploadsAllowed:     s.ready.uploadsAllowed(),
+		Notice:             notice,
+		NoticeErr:          noticeErr,
 	}
 	s.render(w, "config", data)
 }

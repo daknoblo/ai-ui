@@ -162,6 +162,16 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 				}
 			}
 		}
+
+		// Modelle automatisch vom Endpoint abrufen, sofern der Chat-Endpoint
+		// erreichbar ist und noch keine Liste gepflegt wurde.
+		if cur.ChatOK && len(s.cfg.Get().ChatModels) == 0 {
+			if n, err := s.refreshModels(ctx); err != nil {
+				slog.Warn("modelle automatisch abrufen", "anlass", reason, "err", err)
+			} else if n > 0 {
+				slog.Info("modelle vom endpoint übernommen", "anzahl", n)
+			}
+		}
 	}
 
 	// Sofort beim Start prüfen.

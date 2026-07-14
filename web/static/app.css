@@ -478,6 +478,7 @@ html, body {
 .config-secret.warn { color: var(--warn); }
 .config-secret code { background: #0d0d10; padding: 1px 5px; border-radius: 4px; }
 .config-saved { color: var(--accent); font-size: 13px; }
+.config-notice-err { color: var(--warn); font-size: 13px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 /* ---------- Drag & Drop ---------- */

@@ -218,6 +218,22 @@ func (s *Store) DeleteChat(ctx context.Context, id int64) error {
 	return s.Vacuum(ctx)
 }
 
+// DeleteEmptyChats entfernt Chats, die weder Nachrichten noch Dokumente enthalten
+// (verwaiste "Neuer Chat"-Einträge). exceptID bleibt erhalten (0 = keiner).
+// Liefert die Anzahl entfernter Chats.
+func (s *Store) DeleteEmptyChats(ctx context.Context, exceptID int64) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM chats
+		 WHERE id != ?
+		   AND id NOT IN (SELECT DISTINCT chat_id FROM messages)
+		   AND id NOT IN (SELECT chat_id FROM documents WHERE chat_id IS NOT NULL)`,
+		exceptID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // ---- Messages ----
 
 // AddMessage speichert eine Nachricht und liefert deren ID.

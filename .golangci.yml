@@ -1,0 +1,16 @@
+version: "2"
+
+run:
+  # Ziel-Go-Version für die Analyse fest vorgeben, entkoppelt vom `go`-Directive
+  # in go.mod. Verhindert den Guard "Go language version used to build
+  # golangci-lint is lower than the targeted Go version" bei neuen Go-Releases.
+  go: "1.25"
+
+linters:
+  # Standard-Set: errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+
+issues:
+  # Alle Findings melden (Defaults deckeln gleichartige Meldungen bei 3).
+  max-issues-per-linter: 0
+  max-same-issues: 0

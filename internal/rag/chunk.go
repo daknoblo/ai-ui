@@ -39,9 +39,7 @@ func ChunkText(text string, maxRunes, overlap int) []string {
 		// Sehr lange Absätze hart unterteilen.
 		if pRunes > maxRunes {
 			flush()
-			for _, piece := range splitLong(p, maxRunes, overlap) {
-				chunks = append(chunks, piece)
-			}
+			chunks = append(chunks, splitLong(p, maxRunes, overlap)...)
 			continue
 		}
 

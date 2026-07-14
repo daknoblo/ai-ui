@@ -25,7 +25,7 @@ func parseDOCX(data []byte) (string, error) {
 				return "", err
 			}
 			docXML, err = io.ReadAll(rc)
-			rc.Close()
+			_ = rc.Close()
 			if err != nil {
 				return "", err
 			}

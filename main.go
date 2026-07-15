@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/daknoblo/ai-ui/internal/config"
 	"github.com/daknoblo/ai-ui/internal/server"
@@ -17,6 +18,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "-healthcheck" || os.Args[1] == "healthcheck") {
+		os.Exit(healthcheck())
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
@@ -99,6 +104,20 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func healthcheck() int {
+	port := getenv("PORT", "8080")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + port + "/healthz")
+	if err != nil {
+		return 1
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
 }
 
 // parseDurationEnv liest eine Dauer aus der Umgebung (z.B. "30s", "2m").

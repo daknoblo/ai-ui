@@ -16,6 +16,8 @@ services:
       - SEARCH_API_KEY=${SEARCH_API_KEY:-}
       - PORT=8080
       - DATA_DIR=/data
+      # IANA-Zeitzone; das Binary bringt tzdata für Distroless selbst mit.
+      - TZ=${TZ:-Europe/Berlin}
       # Intervall der periodischen Verbindungsprüfung (z.B. 30s, 2m; 0/off = aus).
       - HEALTHCHECK_INTERVAL=${HEALTHCHECK_INTERVAL:-60s}
     volumes:

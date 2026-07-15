@@ -80,6 +80,11 @@ func (s *Server) Routes() http.Handler {
 	staticFS, _ := fs.Sub(web.StaticFS, "static")
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
+	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
 	r.Get("/", s.handleIndex)
 	r.Get("/chat/{id}", s.handleChat)
 	r.Post("/chats", s.handleCreateChat)

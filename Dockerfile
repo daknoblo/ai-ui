@@ -48,4 +48,7 @@ ENV PORT=8080 \
 
 EXPOSE 8080
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+	CMD ["/app/ai-ui", "-healthcheck"]
+
 ENTRYPOINT ["/app/ai-ui"]

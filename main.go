@@ -34,7 +34,7 @@ func main() {
 func run() error {
 	// Konfiguration aus Umgebung lesen.
 	port := getenv("PORT", "8080")
-	dataDir := getenv("DATA_DIR", "/data")
+	dataDir := getenv("DATA_DIR", "/appdata")
 	apiKey := os.Getenv("AZURE_API_KEY")                    // Secret ausschließlich aus ENV.
 	embeddingAPIKey := os.Getenv("AZURE_EMBEDDING_API_KEY") // optional; eigener Key für Embeddings.
 	searchAPIKey := os.Getenv("SEARCH_API_KEY")             // optional; Key für die Websuche.

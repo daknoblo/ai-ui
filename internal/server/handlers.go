@@ -763,7 +763,7 @@ func (s *Server) handleRefreshModels(w http.ResponseWriter, r *http.Request) {
 		s.renderConfigNotice(w, "Modelle konnten nicht abgerufen werden: "+err.Error(), true)
 		return
 	}
-	s.renderConfigNotice(w, fmt.Sprintf("%d Modelle vom Endpoint übernommen.", n), false)
+	s.renderConfigNotice(w, fmt.Sprintf("%d bereitgestellte Modelle übernommen.", n), false)
 }
 
 // parseModels zerlegt eine durch Zeilen oder Kommas getrennte Liste in

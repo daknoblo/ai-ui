@@ -27,8 +27,8 @@
 				hx-target="#modal-root"
 				hx-swap="innerHTML"
 				hx-disabled-elt="this"
-				title="Fragt die vom Endpoint angebotenen Modelle ab und übernimmt sie (Endpoint & API-Version müssen gespeichert sein)">
-				⟳ Modelle vom Endpoint abrufen
+				title="Übernimmt die in der Ressource bereitgestellten Deployments (nur Chat-Modelle) statt des kompletten Modellkatalogs (Endpoint & API-Version müssen gespeichert sein)">
+				⟳ Bereitgestellte Modelle abrufen
 			</button>
 			{{if .Notice}}<div class="config-{{if .NoticeErr}}notice-err{{else}}saved{{end}}">{{.Notice}}</div>{{end}}
 			<label>

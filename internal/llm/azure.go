@@ -340,16 +340,25 @@ func responseMentionsMaxTokens(resp *http.Response) bool {
 	return strings.Contains(msg, "max_tokens") || strings.Contains(msg, "output limit")
 }
 
-// modelsResponse ist die Antwort der Models-Liste (Azure OpenAI Daten-Ebene).
-type modelsResponse struct {
+// deploymentsResponse ist die Antwort der Deployment-Liste (Data-Plane).
+// Geliefert werden nur die in der Ressource tatsächlich bereitgestellten
+// Deployments – im Gegensatz zu /openai/models, das den kompletten
+// Modellkatalog der Ressource (inkl. aller nicht bereitgestellten Modelle)
+// zurückgibt.
+type deploymentsResponse struct {
 	Data []struct {
-		ID   string `json:"id"`
-		Type string `json:"type"`
+		ID     string `json:"id"`     // Name des Deployments
+		Model  string `json:"model"`  // zugrunde liegendes Basismodell
+		Status string `json:"status"` // z.B. "succeeded"
 	} `json:"data"`
 }
 
-// ListModels fragt die am Endpoint verfügbaren Modelle ab. Nützlich, um die
-// Auswahl im Header automatisch aus dem zu befüllen, was der Router anbietet.
+// ListModels fragt die in der Ressource bereitgestellten Deployments ab und
+// liefert die zugehörigen Chat-Modellnamen. Anders als der komplette
+// Modellkatalog (/openai/models) enthält dies nur die tatsächlich verfügbaren
+// Modelle. Die Namen eignen sich als Werte für die Modellauswahl im Header
+// (Body-Feld "model"), mit denen sich ein bestimmtes Modell statt der
+// automatischen Router-Auswahl erzwingen lässt.
 func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.APIVersion == "" {
@@ -359,7 +368,7 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
 	}
 
-	url := fmt.Sprintf("%s/openai/models?api-version=%s",
+	url := fmt.Sprintf("%s/openai/deployments?api-version=%s",
 		strings.TrimRight(cfg.Endpoint, "/"), cfg.APIVersion)
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -382,27 +391,54 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 		return nil, readError(resp)
 	}
 
-	var out modelsResponse
+	var out deploymentsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
 
-	// Eindeutige Modell-IDs sammeln.
+	// Chat-taugliche Modellnamen der erfolgreich bereitgestellten Deployments
+	// sammeln. Embedding-, Bild- und Audio-Deployments gehören nicht in die
+	// Chat-Auswahl; mehrfach genutzte Basismodelle werden dedupliziert.
 	seen := make(map[string]struct{}, len(out.Data))
 	var models []string
-	for _, m := range out.Data {
-		id := strings.TrimSpace(m.ID)
-		if id == "" {
+	for _, d := range out.Data {
+		if d.Status != "" && !strings.EqualFold(d.Status, "succeeded") {
 			continue
 		}
-		if _, ok := seen[id]; ok {
+		// Bevorzugt das zugrunde liegende Modell; nur wenn keines gemeldet
+		// wird, dient der Deployment-Name als Rückfallwert.
+		name := strings.TrimSpace(d.Model)
+		if name == "" {
+			name = strings.TrimSpace(d.ID)
+		}
+		if name == "" || !isChatModelName(name) {
 			continue
 		}
-		seen[id] = struct{}{}
-		models = append(models, id)
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		models = append(models, name)
 	}
 	sort.Strings(models)
 	return models, nil
+}
+
+// isChatModelName filtert offensichtlich nicht chat-taugliche Modelle (z.B.
+// Embeddings, Bildgeneratoren, Audio-/Transkriptionsmodelle) anhand des Namens
+// heraus, damit die Modellauswahl nur sinnvolle Chat-Modelle enthält.
+func isChatModelName(name string) bool {
+	lower := strings.ToLower(name)
+	excluded := []string{
+		"embedding", "embed", "dall", "whisper", "tts",
+		"moderation", "sora", "transcribe", "text-similarity",
+	}
+	for _, kw := range excluded {
+		if strings.Contains(lower, kw) {
+			return false
+		}
+	}
+	return true
 }
 
 // VerifyEmbedding prüft mit einer minimalen Anfrage, ob der Embedding-Endpoint

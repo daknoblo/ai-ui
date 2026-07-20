@@ -42,7 +42,7 @@ Dokumenten-Kontext (RAG), angebunden an einen Azure-Foundry-Model-Router
 | `AZURE_API_KEY` | –        | **Secret.** API-Key des Model-Routers (Chat). |
 | `AZURE_EMBEDDING_API_KEY` | – | **Secret, optional.** Eigener Key, falls Embeddings auf einer separaten Azure-Ressource liegen. Leer ⇒ `AZURE_API_KEY` wird genutzt. |
 | `SEARCH_API_KEY` | – | **Secret, optional.** API-Key für die Web-Suche (Tavily oder Brave). Für SearXNG nicht erforderlich. |
-| `DATA_DIR`      | `/data`  | Persistenter Datenpfad (DB + `appdata/`).     |
+| `DATA_DIR`      | `/appdata`  | Persistenter Datenpfad (DB + `appdata/`).     |
 | `PORT`          | `8080`   | HTTP-Port.                                    |
 | `HEALTHCHECK_INTERVAL` | `60s` | Intervall der periodischen Verbindungsprüfung (Go-Dauer, z.B. `30s`, `2m`). `0` oder `off` deaktiviert den periodischen Check (die Prüfung beim Start läuft weiterhin). |
 
@@ -92,7 +92,7 @@ DATA_DIR=./data PORT=8080 go run .
 docker build -t ai-ui .
 docker run --rm -p 8080:8080 \
   -e AZURE_API_KEY=dein-key \
-  -v ai-ui-data:/data \
+  -v ai-ui-data:/appdata \
   ai-ui
 ```
 

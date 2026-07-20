@@ -15,14 +15,14 @@ services:
       # Optional: API-Key für die Web-Suche (Tavily/Brave). Für SearXNG nicht nötig.
       - SEARCH_API_KEY=${SEARCH_API_KEY:-}
       - PORT=8080
-      - DATA_DIR=/data
+      - DATA_DIR=/appdata
       # IANA-Zeitzone; das Binary bringt tzdata für Distroless selbst mit.
       - TZ=${TZ:-Europe/Berlin}
       # Intervall der periodischen Verbindungsprüfung (z.B. 30s, 2m; 0/off = aus).
       - HEALTHCHECK_INTERVAL=${HEALTHCHECK_INTERVAL:-60s}
     volumes:
       # Persistenter Datenpfad: Chats, Dokumente, Embeddings und Konfiguration.
-      - ai-ui-data:/data
+      - ai-ui-data:/appdata
     networks:
       - traefik
     labels:

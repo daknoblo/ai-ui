@@ -138,36 +138,30 @@ volumes:
   ai-ui-data:
 ```
 
-Hintergrund: Bei einem **Bind-Mount** (`- ./daten:/appdata`) legt der
-Docker-Daemon ein fehlendes Host-Verzeichnis als **root** an; der non-root-User
-im Container kann dort nicht schreiben. Bei einem Named Volume seedet Docker die
-Rechte aus dem Image – deshalb tritt der Fehler dort nie auf.
+Hintergrund: Bei einem **Bind-Mount** behält das Host-Verzeichnis seine
+Eigentümerschaft; ein fehlendes legt der Docker-Daemon als **root** an, sodass der
+non-root-User im Container nicht schreiben kann. Named Volumes umgehen das, weil
+Docker die Rechte aus dem Image seedet.
 
-**Bind-Mount (z.B. direkter Host-Zugriff auf die Daten):** die Rechte per
-einmaligem Init-Container setzen – ganz ohne manuelles `chown` auf dem Host. Genau
-diesen Aufbau (für zwei Instanzen) zeigt die
-[docker-compose.example.yml](docker-compose.example.yml):
+**Bind-Mount (direkter Host-Zugriff auf die Daten):** empfohlen ist, den Container
+als **deine Host-UID** laufen zu lassen, die das Verzeichnis besitzt – per
+`user:`-Direktive. Das ist der idiomatische Docker-Weg für Bind-Mounts: non-root,
+ohne `chown`, ohne Init-Container. Die App ist an keine feste UID gebunden und
+schreibt mit der UID, unter der sie läuft.
 
 ```yaml
 services:
-  ai-ui-init:                       # läuft als root, setzt einmalig die Rechte
-    image: busybox:1.37
-    command: chown -R 65532:65532 /appdata
-    user: "0:0"
-    volumes:
-      - ./daten:/appdata
   ai-ui:
     image: ghcr.io/daknoblo/ai-ui:latest
-    depends_on:
-      ai-ui-init:
-        condition: service_completed_successfully
+    user: "1000:1000"      # deine Host-UID:GID  ->  id -u / id -g
     volumes:
-      - ./daten:/appdata
+      - ./data:/appdata
 ```
 
-Ownership eines Named Volumes prüfen: `docker run --rm -v <name>:/d busybox ls -lna /d`
-(sollte `65532` zeigen). Ein noch aus einem älteren, root-owned Image stammendes
-Volume einmalig neu anlegen (`docker volume rm <name>`, dann neu starten).
+Voraussetzung: `./data` gehört auf dem Host deiner UID. Legst du das Verzeichnis
+selbst an (`mkdir data`), ist das automatisch der Fall; nur wenn der Daemon es als
+root neu anlegt, einmal vorher selbst anlegen. Alternativ das Verzeichnis einmalig
+`chown -R 65532:65532 ./data` geben und ohne `user:` fahren.
 
 ## Deployment
 

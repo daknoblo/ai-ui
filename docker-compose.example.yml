@@ -39,6 +39,16 @@ services:
     volumes:
       # Persistenter Datenpfad: Chats, Dokumente, Embeddings und Konfiguration.
       - ai-ui-data:/appdata
+    # ---- Alternative: Bind-Mount statt Named Volume ----
+    # Für direkten Host-Zugriff auf die Daten den Container als deine Host-UID
+    # laufen lassen, die das Verzeichnis besitzt (id -u / id -g) – non-root, ohne
+    # chown, ohne Init-Container. Verzeichnis vorher selbst anlegen (mkdir data),
+    # damit es dir gehört. Dazu die user-Zeile einkommentieren und oben unter
+    # volumes das Named Volume durch den Bind-Mount ersetzen:
+    #   user: "1000:1000"        # deine Host-UID:GID
+    #   volumes:
+    #     - ./data:/appdata
+    # (Das Named Volume ai-ui-data unten kann dann entfallen.)
     # ---- Alternative zu ports: Traefik ----
     # labels:
     #   - "traefik.enable=true"

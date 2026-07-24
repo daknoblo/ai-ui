@@ -83,3 +83,77 @@ func TestListModelsUsesDeployments(t *testing.T) {
 		t.Errorf("unerwartete Modelle: got %v, want %v", models, want)
 	}
 }
+
+// TestChatCompletionsURL prüft die Schema-Erkennung (klassisch vs. v1) für die
+// Chat-Completions-URL.
+func TestChatCompletionsURL(t *testing.T) {
+	cases := []struct {
+		name       string
+		endpoint   string
+		deployment string
+		apiVersion string
+		want       string
+	}{
+		{
+			name:       "v1",
+			endpoint:   "https://x.services.ai.azure.com/openai/v1",
+			deployment: "model-router",
+			apiVersion: "2025-01-01-preview",
+			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions",
+		},
+		{
+			name:       "v1 mit Slash",
+			endpoint:   "https://x.services.ai.azure.com/openai/v1/",
+			deployment: "model-router",
+			apiVersion: "preview",
+			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions",
+		},
+		{
+			name:       "klassisch",
+			endpoint:   "https://x.openai.azure.com",
+			deployment: "gpt-4o",
+			apiVersion: "2024-08-01-preview",
+			want:       "https://x.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-08-01-preview",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := chatCompletionsURL(tc.endpoint, tc.deployment, tc.apiVersion); got != tc.want {
+				t.Errorf("chatCompletionsURL = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEmbeddingsAndModelsURL prüft die Embeddings- und Modell-URLs je Schema.
+func TestEmbeddingsAndModelsURL(t *testing.T) {
+	if got := embeddingsURL("https://x.services.ai.azure.com/openai/v1", "text-embedding-3-large", "v"); got != "https://x.services.ai.azure.com/openai/v1/embeddings" {
+		t.Errorf("embeddingsURL v1 falsch: %q", got)
+	}
+	if got := embeddingsURL("https://x.cognitiveservices.azure.com", "text-embedding-3-large", "2024-02-01"); got != "https://x.cognitiveservices.azure.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-02-01" {
+		t.Errorf("embeddingsURL klassisch falsch: %q", got)
+	}
+	if got := modelsURL("https://x.services.ai.azure.com/openai/v1", "v"); got != "https://x.services.ai.azure.com/openai/v1/models" {
+		t.Errorf("modelsURL v1 falsch: %q", got)
+	}
+	if got := modelsURL("https://x.openai.azure.com", "2024-08-01-preview"); got != "https://x.openai.azure.com/openai/deployments?api-version=2024-08-01-preview" {
+		t.Errorf("modelsURL klassisch falsch: %q", got)
+	}
+}
+
+// TestChatModelField prüft, dass beim v1-Schema das Deployment als model dient,
+// ein erzwungenes Modell aber Vorrang hat und klassisch leer bleibt (Router).
+func TestChatModelField(t *testing.T) {
+	v1 := config.Config{Endpoint: "https://x.services.ai.azure.com/openai/v1", ChatDeployment: "model-router"}
+	if got := chatModelField(v1); got != "model-router" {
+		t.Errorf("v1 ohne Force: got %q, want model-router", got)
+	}
+	v1.ChatModel = "gpt-4o"
+	if got := chatModelField(v1); got != "gpt-4o" {
+		t.Errorf("v1 mit Force: got %q, want gpt-4o", got)
+	}
+	classic := config.Config{Endpoint: "https://x.openai.azure.com", ChatDeployment: "model-router"}
+	if got := chatModelField(classic); got != "" {
+		t.Errorf("klassisch ohne Force: got %q, want leer", got)
+	}
+}

@@ -52,6 +52,14 @@ AI-Endpoint und die Embeddings können getrennte Endpoints, Deployments und
 API-Versionen verwenden; die Embedding-Felder fallen bei Leereingabe auf die
 Werte des AI-Endpoints zurück.
 
+Zwei Endpoint-Schemata werden automatisch erkannt: das klassische
+Azure-OpenAI-Format (`https://<ressource>.openai.azure.com`, Deployment im Pfad,
+`api-version` erforderlich) und das neue OpenAI-kompatible **v1-Format** von Azure
+AI Foundry, erkennbar am Pfad `/openai/v1`
+(`https://<ressource>.services.ai.azure.com/openai/v1`). Beim v1-Format wird das
+Deployment als `model` im Request übergeben und `api-version` ist optional. Chat-
+und Embedding-Endpoint dürfen unterschiedliche Schemata verwenden.
+
 ### Endpoint per Umgebungsvariable festlegen (optional)
 
 Die Endpoint-Einstellungen lassen sich alternativ zum UI-Dialog vollständig über

@@ -144,6 +144,57 @@ type TurnResult struct {
 	Model        string
 }
 
+// isV1Endpoint erkennt das neue OpenAI-kompatible v1-Schema von Azure AI Foundry
+// daran, dass der Endpoint-Pfad "/openai/v1" enthält (z.B.
+// https://ressource.services.ai.azure.com/openai/v1). Bei diesem Schema werden
+// die OpenAI-Standardpfade angehängt und das Deployment im "model"-Feld des
+// Request-Bodys übergeben – nicht im URL-Pfad. Andernfalls gilt das klassische
+// Azure-OpenAI-Schema (/openai/deployments/{deployment}/...?api-version=...).
+func isV1Endpoint(endpoint string) bool {
+	return strings.Contains(strings.TrimRight(endpoint, "/"), "/openai/v1")
+}
+
+// chatCompletionsURL baut die Chat-Completions-URL passend zum Endpoint-Schema.
+func chatCompletionsURL(endpoint, deployment, apiVersion string) string {
+	base := strings.TrimRight(endpoint, "/")
+	if isV1Endpoint(base) {
+		return base + "/chat/completions"
+	}
+	return fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s", base, deployment, apiVersion)
+}
+
+// embeddingsURL baut die Embeddings-URL passend zum Endpoint-Schema.
+func embeddingsURL(endpoint, deployment, apiVersion string) string {
+	base := strings.TrimRight(endpoint, "/")
+	if isV1Endpoint(base) {
+		return base + "/embeddings"
+	}
+	return fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=%s", base, deployment, apiVersion)
+}
+
+// modelsURL baut die URL zum Abfragen der verfügbaren Modelle/Deployments.
+func modelsURL(endpoint, apiVersion string) string {
+	base := strings.TrimRight(endpoint, "/")
+	if isV1Endpoint(base) {
+		return base + "/models"
+	}
+	return fmt.Sprintf("%s/openai/deployments?api-version=%s", base, apiVersion)
+}
+
+// chatModelField liefert den Wert für das "model"-Feld im Request-Body. Beim
+// v1-Schema muss dort die Deployment-Kennung stehen (Pflichtfeld); ein erzwungenes
+// Modell (ChatModel) hat Vorrang. Beim klassischen Schema bedeutet ein leerer Wert
+// "Router entscheidet".
+func chatModelField(cfg config.Config) string {
+	if cfg.ChatModel != "" {
+		return cfg.ChatModel
+	}
+	if isV1Endpoint(cfg.Endpoint) {
+		return cfg.ChatDeployment
+	}
+	return ""
+}
+
 // ChatStream sendet die Nachrichten und ruft onDelta für jedes Text-Token auf.
 // Liefert nach Abschluss Token-Nutzung und das tatsächlich verwendete Modell.
 func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta func(string) error) (ChatResult, error) {
@@ -169,11 +220,10 @@ func (c *Client) streamTurn(ctx context.Context, messages []Message, tools []Too
 		return result, fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
 	}
 
-	url := fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
-		strings.TrimRight(cfg.Endpoint, "/"), cfg.ChatDeployment, cfg.APIVersion)
+	url := chatCompletionsURL(cfg.Endpoint, cfg.ChatDeployment, cfg.APIVersion)
 
 	reqBody := chatRequest{
-		Model:         cfg.ChatModel,
+		Model:         chatModelField(cfg),
 		Messages:      messages,
 		Temperature:   cfg.Temperature,
 		Stream:        true,
@@ -291,11 +341,10 @@ func (c *Client) VerifyChat(ctx context.Context) error {
 		return fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
 	}
 
-	url := fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s",
-		strings.TrimRight(cfg.Endpoint, "/"), cfg.ChatDeployment, cfg.APIVersion)
+	url := chatCompletionsURL(cfg.Endpoint, cfg.ChatDeployment, cfg.APIVersion)
 
 	body, err := json.Marshal(chatRequest{
-		Model:     cfg.ChatModel,
+		Model:     chatModelField(cfg),
 		Messages:  []Message{{Role: "user", Content: "ping"}},
 		Stream:    false,
 		MaxTokens: 16,
@@ -368,8 +417,7 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
 	}
 
-	url := fmt.Sprintf("%s/openai/deployments?api-version=%s",
-		strings.TrimRight(cfg.Endpoint, "/"), cfg.APIVersion)
+	url := modelsURL(cfg.Endpoint, cfg.APIVersion)
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -481,8 +529,7 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 		return nil, fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY bzw. AZURE_EMBEDDING_API_KEY)")
 	}
 
-	url := fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=%s",
-		strings.TrimRight(cfg.EmbeddingHost(), "/"), cfg.EmbeddingDeployment, cfg.EmbeddingVersion())
+	url := embeddingsURL(cfg.EmbeddingHost(), cfg.EmbeddingDeployment, cfg.EmbeddingVersion())
 
 	body, err := json.Marshal(embeddingRequest{Input: inputs})
 	if err != nil {

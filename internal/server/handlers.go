@@ -85,7 +85,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	// Verwaiste leere Chats entfernen, bevor ein neuer angelegt wird.
 	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
-		slog.Warn("leere chats aufräumen", "err", err)
+		slog.Warn("clean up empty chats", "err", err)
 	}
 	id, err := s.store.CreateChat(ctx, defaultTitle)
 	if err != nil {
@@ -110,7 +110,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	// Beim Öffnen eines Chats verwaiste leere Chats entfernen (außer diesem).
 	if _, err := s.store.DeleteEmptyChats(ctx, id); err != nil {
-		slog.Warn("leere chats aufräumen", "err", err)
+		slog.Warn("clean up empty chats", "err", err)
 	}
 	pd, err := s.buildPageData(ctx, &chat)
 	if err != nil {
@@ -125,7 +125,7 @@ func (s *Server) handleCreateChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	// Verwaiste leere Chats entfernen, bevor ein neuer angelegt wird.
 	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
-		slog.Warn("leere chats aufräumen", "err", err)
+		slog.Warn("clean up empty chats", "err", err)
 	}
 	id, err := s.store.CreateChat(ctx, defaultTitle)
 	if err != nil {
@@ -308,7 +308,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		result, streamErr = s.streamWithSearch(ctx, sse, messages, onDelta)
 		// Fallback ohne Tools, falls der Router kein Tool-Calling unterstützt.
 		if streamErr != nil && acc.Len() == 0 {
-			slog.Warn("tool-calling fehlgeschlagen, fallback ohne tools", "err", streamErr)
+			slog.Warn("tool-calling failed, falling back without tools", "err", streamErr)
 			result, streamErr = s.llm.ChatStream(ctx, messages, onDelta)
 		}
 	} else {
@@ -329,7 +329,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	final := acc.String()
 	if final != "" {
 		if _, err := s.store.AddMessage(context.Background(), id, "assistant", final); err != nil {
-			slog.Error("assistant-nachricht speichern", "err", err)
+			slog.Error("save assistant message", "err", err)
 		}
 	}
 
@@ -391,7 +391,7 @@ func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID 
 		sb.WriteString(delta)
 		return nil
 	}); err != nil {
-		slog.Warn("titel erzeugen", "err", err)
+		slog.Warn("generate title", "err", err)
 		return
 	}
 
@@ -400,7 +400,7 @@ func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID 
 		return
 	}
 	if err := s.store.UpdateChatTitle(ctx, chatID, title); err != nil {
-		slog.Warn("titel speichern", "err", err)
+		slog.Warn("save title", "err", err)
 		return
 	}
 
@@ -446,7 +446,7 @@ func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.
 	if cfg.EmbeddingDeployment != "" && query != "" {
 		results, err := s.retriever.Retrieve(ctx, chatID, query, retrievalTopK)
 		if err != nil {
-			slog.Warn("retrieval fehlgeschlagen", "err", err)
+			slog.Warn("retrieval failed", "err", err)
 		} else if len(results) > 0 {
 			var sb strings.Builder
 			sb.WriteString("\n\nNutze den folgenden Kontext aus hochgeladenen Dokumenten, sofern er für die Frage relevant ist. Wenn er nicht passt, ignoriere ihn.\n\n")
@@ -461,7 +461,7 @@ func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.
 	if web && query != "" {
 		results, err := s.search.Search(ctx, query)
 		if err != nil {
-			slog.Warn("websuche fehlgeschlagen", "err", err)
+			slog.Warn("web search failed", "err", err)
 		} else if len(results) > 0 {
 			var sb strings.Builder
 			sb.WriteString("\n\nNutze die folgenden aktuellen Web-Ergebnisse, sofern sie für die Frage relevant sind. Zitiere die Quellen mit ihrer URL.\n\n")
@@ -580,7 +580,7 @@ func (s *Server) executeToolCall(ctx context.Context, sse *sseWriter, tc llm.Too
 
 	results, err := s.search.Search(ctx, query)
 	if err != nil {
-		slog.Warn("websuche (tool) fehlgeschlagen", "query", query, "err", err)
+		slog.Warn("web search (tool) failed", "query", query, "err", err)
 		return "Websuche fehlgeschlagen: " + err.Error()
 	}
 	if len(results) == 0 {
@@ -746,7 +746,7 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 	}
 	model := strings.TrimSpace(r.FormValue("model"))
 	if err := s.cfg.SetChatModel(model); err != nil {
-		slog.Warn("modellauswahl abgelehnt", "model", model, "err", err)
+		slog.Warn("model selection rejected", "model", model, "err", err)
 		http.Error(w, "ungültiges modell", http.StatusBadRequest)
 		return
 	}
@@ -782,7 +782,7 @@ func (s *Server) handleRefreshModels(w http.ResponseWriter, r *http.Request) {
 	}
 	n, err := s.refreshModels(r.Context())
 	if err != nil {
-		slog.Warn("modelle abrufen", "err", err)
+		slog.Warn("fetch models", "err", err)
 		s.renderConfigNotice(w, "Modelle konnten nicht abgerufen werden: "+err.Error(), true)
 		return
 	}
@@ -860,7 +860,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		data, err := readMultipartFile(header)
 		if err != nil {
-			slog.Error("upload lesen", "file", header.Filename, "err", err)
+			slog.Error("read upload", "file", header.Filename, "err", err)
 			failures = append(failures, fmt.Sprintf("„%s“ (Lesefehler)", header.Filename))
 			continue
 		}

@@ -66,7 +66,7 @@ func (u usageRecorder) RecordUsage(kind, model string, usage llm.Usage) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := u.store.RecordUsage(ctx, kind, model, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens); err != nil {
-		slog.Warn("token-nutzung speichern", "err", err)
+		slog.Warn("record token usage", "err", err)
 	}
 }
 
@@ -76,9 +76,15 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
 
-	// Statische Assets aus dem eingebetteten Dateisystem.
+	// Statische Assets aus dem eingebetteten Dateisystem. Cache-Control: no-cache
+	// erzwingt eine Revalidierung, damit nach einem Update (neues Image) sofort
+	// das aktuelle CSS/JS geladen wird und keine veraltete Version im Browser hängt.
 	staticFS, _ := fs.Sub(web.StaticFS, "static")
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	fileServer := http.StripPrefix("/static/", http.FileServer(http.FS(staticFS)))
+	r.Handle("/static/*", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		fileServer.ServeHTTP(w, req)
+	}))
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

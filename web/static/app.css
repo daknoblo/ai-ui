@@ -465,6 +465,7 @@ html, body {
 	max-height: 88vh;
 	overflow-y: auto;
 	padding: 22px 24px;
+	container-type: inline-size;
 }
 @media (max-width: 900px) { .modal { width: 94vw; } }
 .modal-head { display: flex; justify-content: space-between; align-items: center; }
@@ -478,12 +479,16 @@ html, body {
    Selektor). Auf schmalen Viewports auf eine Spalte reduziert. */
 .config-form {
 	display: grid;
-	grid-template-columns: 1fr 1fr;
+	grid-template-columns: 1fr;
 	gap: 14px 20px;
 	align-items: start;
 	margin-top: 18px;
 }
-@media (max-width: 720px) { .config-form { grid-template-columns: 1fr; } }
+/* Zwei Spalten, sobald das Modal breit genug ist – robust gegenüber Zoom und
+   Fensterbreite (Container-Query statt Viewport-Media-Query). */
+@container (min-width: 520px) {
+	.config-form { grid-template-columns: 1fr 1fr; }
+}
 .config-form label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--text-dim); }
 .config-form .hint { color: var(--text-dim); opacity: .7; font-weight: 400; }
 .config-section-head {

@@ -144,7 +144,7 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 	check := func(reason string) {
 		// Ohne Mindestkonfiguration macht eine Endpoint-Prüfung keinen Sinn.
 		if !s.cfg.IsConfigured() {
-			slog.Info("verbindungsprüfung übersprungen (nicht konfiguriert)", "anlass", reason)
+			slog.Info("connection check skipped (not configured)", "reason", reason)
 			return
 		}
 		prev := s.ready.snapshot()
@@ -154,11 +154,11 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 		// Zustandsänderungen protokollieren, damit Ausfälle sichtbar werden.
 		switch {
 		case cur.AllOK && (!prev.Checked || !prev.AllOK):
-			slog.Info("verbindung bereit", "anlass", reason)
+			slog.Info("connection ready", "reason", reason)
 		case !cur.AllOK:
 			for _, r := range results {
 				if !r.OK {
-					slog.Warn("verbindungsprüfung fehlgeschlagen", "anlass", reason, "check", r.Name, "detail", r.Detail)
+					slog.Warn("connection check failed", "reason", reason, "check", r.Name, "detail", r.Detail)
 				}
 			}
 		}
@@ -167,9 +167,9 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 		// erreichbar ist und noch keine Liste gepflegt wurde.
 		if cur.ChatOK && len(s.cfg.Get().ChatModels) == 0 {
 			if n, err := s.refreshModels(ctx); err != nil {
-				slog.Warn("modelle automatisch abrufen", "anlass", reason, "err", err)
+				slog.Warn("auto-fetch models", "reason", reason, "err", err)
 			} else if n > 0 {
-				slog.Info("modelle vom endpoint übernommen", "anzahl", n)
+				slog.Info("models loaded from endpoint", "count", n)
 			}
 		}
 	}
@@ -190,7 +190,7 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			check("periodisch")
+			check("periodic")
 		}
 	}
 }

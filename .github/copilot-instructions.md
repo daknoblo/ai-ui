@@ -16,6 +16,7 @@ halten.
   nicht auf eine ältere Version senken.
 - **Module-Pfad:** `github.com/daknoblo/ai-ui`.
 - **Kommentare und Dokumentation auf Deutsch**, Code-Bezeichner auf Englisch.
+  Log-Meldungen (`slog`) und ihre Feld-Keys werden auf Englisch gehalten.
 - **Ein einzelnes, statisches Binary** als Auslieferungsartefakt; immer
   `CGO_ENABLED=0` bauen.
 - Für SQLite die reine-Go-Implementierung `modernc.org/sqlite` verwenden.

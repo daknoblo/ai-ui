@@ -95,7 +95,7 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("server gestartet", "addr", httpServer.Addr, "data_dir", dataDir)
+		slog.Info("server started", "addr", httpServer.Addr, "data_dir", dataDir)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -105,7 +105,7 @@ func run() error {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		slog.Info("shutdown eingeleitet")
+		slog.Info("shutdown initiated")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		return httpServer.Shutdown(shutdownCtx)
@@ -146,7 +146,7 @@ func parseDurationEnv(key string, fallback time.Duration) time.Duration {
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil || d < 0 {
-		slog.Warn("ungültiges intervall, nutze default", "key", key, "wert", v)
+		slog.Warn("invalid interval, using default", "key", key, "value", v)
 		return fallback
 	}
 	return d

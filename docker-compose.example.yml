@@ -1,21 +1,49 @@
-# Beispiel-Deployment hinter Traefik.
-# Kopiere diese Datei nach docker-compose.yml und passe Domain/Netzwerk an.
+# Vollständiger Stack für zwei Instanzen (daniel + theresa) mit BIND-MOUNTS.
+# Kopiere diese Datei nach docker-compose.yml bzw. füge sie in Dockge ein.
+#
+# Warum die Init-Container? Der App-Container läuft als non-root (UID/GID 65532).
+# Bei einem Bind-Mount legt der Docker-Daemon ein fehlendes Host-Verzeichnis als
+# root an; der non-root-User dürfte dort nicht schreiben und der Start bräche mit
+# "mkdir /appdata/appdata: permission denied" ab. Jeder "*-init"-Dienst läuft
+# einmalig als root, setzt die Rechte des Bind-Mounts auf 65532 und beendet sich.
+# Erst danach startet die zugehörige App (depends_on: service_completed_successfully).
+# So braucht es KEIN manuelles chown auf dem Host.
+#
+# Erreichbarkeit: veröffentlichte Ports (daniel = 8080, theresa = 8081). Wer
+# Traefik nutzt, kommentiert stattdessen die labels/networks-Blöcke ein und die
+# ports-Blöcke aus.
 
 services:
-  ai-ui:
+  # ================= Instanz daniel =================
+  ai-ui-daniel-init:
+    image: busybox:1.37
+    # Rechte des Bind-Mounts einmalig dem non-root-User (65532) geben.
+    command: chown -R 65532:65532 /appdata
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - ./daniel:/appdata
+
+  ai-ui-daniel:
     image: ghcr.io/daknoblo/ai-ui:latest
-    container_name: ai-ui
+    container_name: ai-ui-daniel
     restart: unless-stopped
+    depends_on:
+      ai-ui-daniel-init:
+        condition: service_completed_successfully
     environment:
       # Secret ausschließlich über Umgebungsvariable (nie in der Konfig-Datei).
-      - AZURE_API_KEY=${AZURE_API_KEY}
-      # Optional: eigener Key, falls Embeddings auf einer separaten Azure-Ressource
-      # liegen. Bleibt er leer, wird AZURE_API_KEY auch für Embeddings genutzt.
-      - AZURE_EMBEDDING_API_KEY=${AZURE_EMBEDDING_API_KEY:-}
+      - AZURE_API_KEY=${AZURE_API_KEY_DANIEL}
+      # Optional: eigener Key, falls Embeddings auf separater Azure-Ressource liegen.
+      - AZURE_EMBEDDING_API_KEY=${AZURE_EMBEDDING_API_KEY_DANIEL:-}
       # Optional: API-Key für die Web-Suche (Tavily/Brave). Für SearXNG nicht nötig.
-      - SEARCH_API_KEY=${SEARCH_API_KEY:-}
+      - SEARCH_API_KEY=${SEARCH_API_KEY_DANIEL:-}
       - PORT=8080
       - DATA_DIR=/appdata
+      # IANA-Zeitzone; das Binary bringt tzdata für Distroless selbst mit.
+      - TZ=${TZ:-Europe/Berlin}
+      # Intervall der periodischen Verbindungsprüfung (z.B. 30s, 2m; 0/off = aus).
+      - HEALTHCHECK_INTERVAL=${HEALTHCHECK_INTERVAL:-60s}
       # Optional: Endpoint-Einstellungen fest per Umgebungsvariable vorgeben.
       # Gesetzte Werte haben Vorrang vor config.json und sind im UI deaktiviert.
       # - AZURE_ENDPOINT=${AZURE_ENDPOINT:-}
@@ -25,33 +53,63 @@ services:
       # - AZURE_EMBEDDING_ENDPOINT=${AZURE_EMBEDDING_ENDPOINT:-}
       # - AZURE_EMBEDDING_DEPLOYMENT=${AZURE_EMBEDDING_DEPLOYMENT:-}
       # - AZURE_EMBEDDING_API_VERSION=${AZURE_EMBEDDING_API_VERSION:-}
-      # IANA-Zeitzone; das Binary bringt tzdata für Distroless selbst mit.
-      - TZ=${TZ:-Europe/Berlin}
-      # Intervall der periodischen Verbindungsprüfung (z.B. 30s, 2m; 0/off = aus).
-      - HEALTHCHECK_INTERVAL=${HEALTHCHECK_INTERVAL:-60s}
+    ports:
+      - "8080:8080"
     volumes:
-      # Persistenter Datenpfad: Chats, Dokumente, Embeddings und Konfiguration.
-      # Named Volume (empfohlen): Der Container läuft als non-root (UID/GID 65532);
-      # ein frisches Named Volume übernimmt diese Rechte automatisch aus dem Image
-      # und läuft so out-of-the-box – auch in Dockge/Portainer als normaler User.
-      # KEIN Bind-Mount (z.B. ./daten:/appdata) verwenden, ohne die Rechte zu
-      # setzen: der Daemon legt Host-Verzeichnisse als root an -> Start scheitert
-      # mit "mkdir /appdata/appdata: permission denied". Bind-Mount-Variante mit
-      # Init-Container (ohne manuelles chown) siehe README.
-      - ai-ui-data:/appdata
-    networks:
-      - traefik
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.ai-ui.rule=Host(`chat.example.com`)"
-      - "traefik.http.routers.ai-ui.entrypoints=websecure"
-      - "traefik.http.routers.ai-ui.tls=true"
-      - "traefik.http.routers.ai-ui.tls.certresolver=letsencrypt"
-      - "traefik.http.services.ai-ui.loadbalancer.server.port=8080"
+      # Persistenter Datenpfad (Bind-Mount): Chats, Dokumente, Embeddings, Konfig.
+      - ./daniel:/appdata
+    # ---- Alternative zu ports: Traefik ----
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.ai-ui-daniel.rule=Host(`daniel.chat.example.com`)"
+    #   - "traefik.http.routers.ai-ui-daniel.entrypoints=websecure"
+    #   - "traefik.http.routers.ai-ui-daniel.tls=true"
+    #   - "traefik.http.routers.ai-ui-daniel.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.ai-ui-daniel.loadbalancer.server.port=8080"
+    # networks:
+    #   - traefik
 
-volumes:
-  ai-ui-data:
+  # ================= Instanz theresa =================
+  ai-ui-theresa-init:
+    image: busybox:1.37
+    command: chown -R 65532:65532 /appdata
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - ./theresa:/appdata
 
-networks:
-  traefik:
-    external: true
+  ai-ui-theresa:
+    image: ghcr.io/daknoblo/ai-ui:latest
+    container_name: ai-ui-theresa
+    restart: unless-stopped
+    depends_on:
+      ai-ui-theresa-init:
+        condition: service_completed_successfully
+    environment:
+      - AZURE_API_KEY=${AZURE_API_KEY_THERESA}
+      - AZURE_EMBEDDING_API_KEY=${AZURE_EMBEDDING_API_KEY_THERESA:-}
+      - SEARCH_API_KEY=${SEARCH_API_KEY_THERESA:-}
+      - PORT=8080
+      - DATA_DIR=/appdata
+      - TZ=${TZ:-Europe/Berlin}
+      - HEALTHCHECK_INTERVAL=${HEALTHCHECK_INTERVAL:-60s}
+      # Optional (analog zu daniel): AZURE_ENDPOINT, AZURE_CHAT_DEPLOYMENT usw.
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./theresa:/appdata
+    # ---- Alternative zu ports: Traefik ----
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.ai-ui-theresa.rule=Host(`theresa.chat.example.com`)"
+    #   - "traefik.http.routers.ai-ui-theresa.entrypoints=websecure"
+    #   - "traefik.http.routers.ai-ui-theresa.tls=true"
+    #   - "traefik.http.routers.ai-ui-theresa.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.ai-ui-theresa.loadbalancer.server.port=8080"
+    # networks:
+    #   - traefik
+
+# ---- Nur nötig, wenn oben die Traefik-networks eingekommentiert werden ----
+# networks:
+#   traefik:
+#     external: true

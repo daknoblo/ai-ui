@@ -119,49 +119,24 @@ docker run --rm -p 8080:8080 \
 
 ### Datenpfad-Berechtigungen (non-root)
 
-Der Container läuft bewusst als non-root-User mit **UID/GID `65532`**. Der
-Datenpfad `/appdata` muss für diesen User beschreibbar sein, sonst bricht der
-Start mit `mkdir /appdata/appdata: permission denied` ab.
-
-**Einfachste Variante: Named Volume** (funktioniert ohne jede manuelle
-Rechtevergabe). Ein frisch angelegtes Named Volume übernimmt die Eigentümerschaft
-automatisch aus dem Image (`65532`) und läuft out-of-the-box – auch in
-Dockge/Portainer als normaler User:
+Der Container läuft als non-root-User (**UID/GID `65532`**) und speichert alle
+Daten (Chats, Dokumente, Embeddings, Konfiguration) unter `/appdata`. Als
+persistenter Speicher dient ein von Docker verwaltetes **Named Volume**:
 
 ```yaml
 services:
   ai-ui:
     image: ghcr.io/daknoblo/ai-ui:latest
     volumes:
-      - ai-ui-data:/appdata   # Named Volume, kein Bind-Mount
+      - ai-ui-data:/appdata
 volumes:
   ai-ui-data:
 ```
 
-Hintergrund: Bei einem **Bind-Mount** behält das Host-Verzeichnis seine
-Eigentümerschaft; ein fehlendes legt der Docker-Daemon als **root** an, sodass der
-non-root-User im Container nicht schreiben kann. Named Volumes umgehen das, weil
-Docker die Rechte aus dem Image seedet.
-
-**Bind-Mount (direkter Host-Zugriff auf die Daten):** empfohlen ist, den Container
-als **deine Host-UID** laufen zu lassen, die das Verzeichnis besitzt – per
-`user:`-Direktive. Das ist der idiomatische Docker-Weg für Bind-Mounts: non-root,
-ohne `chown`, ohne Init-Container. Die App ist an keine feste UID gebunden und
-schreibt mit der UID, unter der sie läuft.
-
-```yaml
-services:
-  ai-ui:
-    image: ghcr.io/daknoblo/ai-ui:latest
-    user: "1000:1000"      # deine Host-UID:GID  ->  id -u / id -g
-    volumes:
-      - ./data:/appdata
-```
-
-Voraussetzung: `./data` gehört auf dem Host deiner UID. Legst du das Verzeichnis
-selbst an (`mkdir data`), ist das automatisch der Fall; nur wenn der Daemon es als
-root neu anlegt, einmal vorher selbst anlegen. Alternativ das Verzeichnis einmalig
-`chown -R 65532:65532 ./data` geben und ohne `user:` fahren.
+Ein frisch angelegtes Named Volume übernimmt die Eigentümerschaft automatisch aus
+dem Image (`65532`) und läuft damit out-of-the-box – auch in Dockge/Portainer als
+normaler User, ohne jede manuelle Rechtevergabe. Docker verwaltet das Volume; es
+sind keine Eingriffe auf dem Host nötig.
 
 ## Deployment
 

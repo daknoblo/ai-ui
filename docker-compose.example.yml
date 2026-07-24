@@ -2,10 +2,9 @@
 # füge sie in Dockge ein. Das Projekt ist auf genau einen Container ausgelegt;
 # wie viele Instanzen du davon startest, ist dir überlassen.
 #
-# Datenpfad: Der Container läuft als non-root (UID/GID 65532). Ein frisches Named
-# Volume übernimmt diese Rechte automatisch aus dem Image und läuft so
-# out-of-the-box – auch in Dockge/Portainer als normaler User. (Bind-Mount als
-# Alternative samt Rechte-Handling siehe README.)
+# Datenpfad: Der Container läuft als non-root (UID/GID 65532) und nutzt ein von
+# Docker verwaltetes Named Volume. Das übernimmt die Rechte automatisch aus dem
+# Image und läuft so out-of-the-box – auch in Dockge/Portainer als normaler User.
 
 services:
   ai-ui:
@@ -37,18 +36,11 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Persistenter Datenpfad: Chats, Dokumente, Embeddings und Konfiguration.
+      # Persistenter Datenpfad (von Docker verwaltetes Named Volume): Chats,
+      # Dokumente, Embeddings und Konfiguration. Der Container läuft non-root
+      # (UID/GID 65532); das Named Volume übernimmt diese Rechte automatisch aus
+      # dem Image – kein manuelles Setzen nötig.
       - ai-ui-data:/appdata
-    # ---- Alternative: Bind-Mount statt Named Volume ----
-    # Für direkten Host-Zugriff auf die Daten den Container als deine Host-UID
-    # laufen lassen, die das Verzeichnis besitzt (id -u / id -g) – non-root, ohne
-    # chown, ohne Init-Container. Verzeichnis vorher selbst anlegen (mkdir data),
-    # damit es dir gehört. Dazu die user-Zeile einkommentieren und oben unter
-    # volumes das Named Volume durch den Bind-Mount ersetzen:
-    #   user: "1000:1000"        # deine Host-UID:GID
-    #   volumes:
-    #     - ./data:/appdata
-    # (Das Named Volume ai-ui-data unten kann dann entfallen.)
     # ---- Alternative zu ports: Traefik ----
     # labels:
     #   - "traefik.enable=true"

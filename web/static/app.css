@@ -460,19 +460,30 @@ html, body {
 	background: var(--bg-elev);
 	border: 1px solid var(--border);
 	border-radius: 14px;
-	width: 480px;
-	max-width: 92vw;
+	width: 60vw;
+	max-width: 1000px;
 	max-height: 88vh;
 	overflow-y: auto;
-	padding: 20px;
+	padding: 22px 24px;
 }
+@media (max-width: 900px) { .modal { width: 94vw; } }
 .modal-head { display: flex; justify-content: space-between; align-items: center; }
 .modal-head h2 { margin: 0; font-size: 18px; }
 .modal-close {
 	background: none; border: none; color: var(--text-dim);
 	font-size: 24px; cursor: pointer; line-height: 1;
 }
-.config-form { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+/* Zwei-Spalten-Raster; Abschnittsköpfe, Textareas, Secrets, Buttons und der
+   Verbindungsbereich spannen über beide Spalten (Klasse .config-full bzw. per
+   Selektor). Auf schmalen Viewports auf eine Spalte reduziert. */
+.config-form {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 14px 20px;
+	align-items: start;
+	margin-top: 18px;
+}
+@media (max-width: 720px) { .config-form { grid-template-columns: 1fr; } }
 .config-form label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--text-dim); }
 .config-form .hint { color: var(--text-dim); opacity: .7; font-weight: 400; }
 .config-section-head {
@@ -481,25 +492,44 @@ html, body {
 	letter-spacing: .05em;
 	color: var(--accent);
 	border-top: 1px solid var(--border);
-	padding-top: 12px;
-	margin-top: 4px;
+	padding-top: 14px;
+	margin-top: 6px;
 }
 .config-section-head:first-child { border-top: none; padding-top: 0; margin-top: 0; }
-.config-form input, .config-form textarea {
+.config-form input, .config-form select, .config-form textarea {
 	background: var(--bg);
 	color: var(--text);
 	border: 1px solid var(--border);
 	border-radius: 8px;
 	padding: 9px 11px;
 	font: inherit;
+	width: 100%;
+	box-sizing: border-box;
 }
-.config-form input:focus, .config-form textarea:focus { outline: none; border-color: var(--accent); }
+.config-form input:focus, .config-form select:focus, .config-form textarea:focus { outline: none; border-color: var(--accent); }
 .config-secret { font-size: 12px; padding: 8px 10px; border-radius: 8px; background: var(--bg); }
 .config-secret.ok { color: var(--accent); }
 .config-secret.warn { color: var(--warn); }
 .config-secret code { background: #0d0d10; padding: 1px 5px; border-radius: 4px; }
 .config-saved { color: var(--accent); font-size: 13px; }
 .config-notice-err { color: var(--warn); font-size: 13px; }
+/* Elemente, die über beide Rasterspalten laufen. */
+.config-form > .config-full,
+.config-section-head,
+.config-secret,
+.config-saved,
+.config-notice-err,
+.config-form > .config-check,
+.config-form > .verify-banner,
+.config-form > p,
+#verify-indicator,
+#verify-results,
+.modal-actions {
+	grid-column: 1 / -1;
+}
+.config-form > button { grid-column: 1 / -1; justify-self: start; }
+.config-check { flex-direction: row; align-items: flex-start; gap: 8px; }
+.config-check input[type="checkbox"] { width: auto; padding: 0; margin-top: 2px; flex: none; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 /* ---------- Drag & Drop ---------- */

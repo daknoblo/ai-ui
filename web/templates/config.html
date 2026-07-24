@@ -15,11 +15,16 @@
 					placeholder="https://mein-router.openai.azure.com" required{{if .Locks.Endpoint}} disabled{{end}}>
 			</label>
 			<label>
+				API-Version {{if .Locks.APIVersion}}<span class="hint">(per <code>AZURE_API_VERSION</code> gesetzt)</span>{{end}}
+				<input type="text" name="api_version" value="{{.Config.APIVersion}}"
+					placeholder="2024-08-01-preview" required{{if .Locks.APIVersion}} disabled{{end}}>
+			</label>
+			<label>
 				Deployment-Name (Chat-Modell) {{if .Locks.ChatDeployment}}<span class="hint">(per <code>AZURE_DEPLOYMENT</code> gesetzt)</span>{{end}}
 				<input type="text" name="chat_deployment" value="{{.Config.ChatDeployment}}"
 					placeholder="gpt-4o" required{{if .Locks.ChatDeployment}} disabled{{end}}>
 			</label>
-			<label>
+			<label class="config-full">
 				Verfügbare Modelle <span class="hint">{{if .Locks.ChatModels}}(per <code>AZURE_MODELS</code> gesetzt){{else}}(eines pro Zeile oder per Komma; oben rechts wählbar){{end}}</span>
 				<textarea name="chat_models" rows="3" placeholder="gpt-4o&#10;gpt-4o-mini&#10;o3"{{if .Locks.ChatModels}} disabled{{end}}>{{range $i, $m := .Config.ChatModels}}{{if $i}}&#10;{{end}}{{$m}}{{end}}</textarea>
 			</label>
@@ -33,11 +38,6 @@
 				⟳ Bereitgestellte Modelle abrufen
 			</button>
 			{{if .Notice}}<div class="config-{{if .NoticeErr}}notice-err{{else}}saved{{end}}">{{.Notice}}</div>{{end}}
-			<label>
-				API-Version {{if .Locks.APIVersion}}<span class="hint">(per <code>AZURE_API_VERSION</code> gesetzt)</span>{{end}}
-				<input type="text" name="api_version" value="{{.Config.APIVersion}}"
-					placeholder="2024-08-01-preview" required{{if .Locks.APIVersion}} disabled{{end}}>
-			</label>
 
 			<div class="config-section-head">Embeddings (Dokument-Kontext)</div>
 			<label>
@@ -46,14 +46,14 @@
 					placeholder="https://ddf6-msfoundry.cognitiveservices.azure.com"{{if .Locks.EmbeddingEndpoint}} disabled{{end}}>
 			</label>
 			<label>
-				Embedding-Deployment-Name {{if .Locks.EmbeddingDeployment}}<span class="hint">(per <code>AZURE_EMBEDDING_DEPLOYMENT</code> gesetzt)</span>{{end}}
-				<input type="text" name="embedding_deployment" value="{{.Config.EmbeddingDeployment}}"
-					placeholder="text-embedding-3-large"{{if .Locks.EmbeddingDeployment}} disabled{{end}}>
-			</label>
-			<label>
 				Embedding-API-Version <span class="hint">{{if .Locks.EmbeddingAPIVersion}}(per <code>AZURE_EMBEDDING_API_VERSION</code> gesetzt){{else}}(optional, sonst wie Chat){{end}}</span>
 				<input type="text" name="embedding_api_version" value="{{.Config.EmbeddingAPIVersion}}"
 					placeholder="2023-05-15"{{if .Locks.EmbeddingAPIVersion}} disabled{{end}}>
+			</label>
+			<label>
+				Embedding-Deployment-Name {{if .Locks.EmbeddingDeployment}}<span class="hint">(per <code>AZURE_EMBEDDING_DEPLOYMENT</code> gesetzt)</span>{{end}}
+				<input type="text" name="embedding_deployment" value="{{.Config.EmbeddingDeployment}}"
+					placeholder="text-embedding-3-large"{{if .Locks.EmbeddingDeployment}} disabled{{end}}>
 			</label>
 
 			<div class="config-section-head">Web-Suche (optional)</div>
@@ -67,14 +67,14 @@
 				</select>
 			</label>
 			<label>
-				SearXNG-Endpoint <span class="hint">(nur für SearXNG)</span>
-				<input type="url" name="search_endpoint" value="{{.Config.SearchEndpoint}}"
-					placeholder="https://searxng.example.com">
-			</label>
-			<label>
 				Anzahl Treffer
 				<input type="number" name="search_max_results" value="{{.Config.SearchMaxResults}}"
 					min="1" max="10" step="1">
+			</label>
+			<label>
+				SearXNG-Endpoint <span class="hint">(nur für SearXNG)</span>
+				<input type="url" name="search_endpoint" value="{{.Config.SearchEndpoint}}"
+					placeholder="https://searxng.example.com">
 			</label>
 			<label class="config-check">
 				<input type="checkbox" name="search_auto" {{if .Config.SearchAuto}}checked{{end}}>
@@ -87,7 +87,7 @@
 			</div>
 
 			<div class="config-section-head">Verhalten</div>
-			<label>
+			<label class="config-full">
 				System-Prompt
 				<textarea name="system_prompt" rows="3">{{.Config.SystemPrompt}}</textarea>
 			</label>

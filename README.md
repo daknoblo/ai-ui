@@ -119,23 +119,54 @@ docker run --rm -p 8080:8080 \
 
 ### Datenpfad-Berechtigungen (non-root)
 
-Der Container läuft als non-root-User mit **UID/GID `65532`**. Der Datenpfad
-`/appdata` muss für diesen User beschreibbar sein, sonst bricht der Start mit
-`mkdir /appdata/appdata: permission denied` ab.
+Der Container läuft bewusst als non-root-User mit **UID/GID `65532`**. Der
+Datenpfad `/appdata` muss für diesen User beschreibbar sein, sonst bricht der
+Start mit `mkdir /appdata/appdata: permission denied` ab.
 
-- **Named Volume (empfohlen):** Ein frisch angelegtes Volume übernimmt die
-  Rechte aus dem Image (`65532`) automatisch – nichts weiter zu tun. Ein noch
-  aus einem älteren (root-owned) Image stammendes Volume muss neu erstellt
-  werden: `docker volume rm <name>` und neu starten.
-- **Bind-Mount (Host-Verzeichnis):** Das Host-Verzeichnis behält seine
-  Eigentümerschaft und muss vorab dem User `65532` gehören:
+**Empfohlen: Named Volume** (funktioniert ohne jede manuelle Rechtevergabe). Ein
+frisch angelegtes Named Volume übernimmt die Eigentümerschaft automatisch aus dem
+Image (`65532`). Genau das nutzt die [docker-compose.example.yml](docker-compose.example.yml)
+und läuft damit out-of-the-box – auch in Dockge/Portainer als normaler User:
 
-  ```sh
-  mkdir -p /pfad/zu/daten
-  sudo chown -R 65532:65532 /pfad/zu/daten
-  ```
+```yaml
+services:
+  ai-ui:
+    image: ghcr.io/daknoblo/ai-ui:latest
+    volumes:
+      - ai-ui-data:/appdata   # Named Volume, kein Bind-Mount
+volumes:
+  ai-ui-data:
+```
 
-Eigentümerschaft prüfen (Named Volume): `docker run --rm -v <name>:/d alpine ls -ln /d`.
+Hintergrund: Bei einem **Bind-Mount** (`- ./daten:/appdata`) legt der
+Docker-Daemon ein fehlendes Host-Verzeichnis als **root** an; der non-root-User
+im Container kann dort nicht schreiben. Bei einem Named Volume seedet Docker die
+Rechte aus dem Image – deshalb tritt der Fehler dort nie auf.
+
+**Falls ein Bind-Mount nötig ist** (z.B. direkter Host-Zugriff auf die Daten),
+die Rechte per einmaligem Init-Container setzen – ganz ohne manuelles `chown` auf
+dem Host:
+
+```yaml
+services:
+  ai-ui-init:                       # läuft als root, setzt einmalig die Rechte
+    image: busybox
+    command: chown -R 65532:65532 /appdata
+    user: "0:0"
+    volumes:
+      - ./daten:/appdata
+  ai-ui:
+    image: ghcr.io/daknoblo/ai-ui:latest
+    depends_on:
+      ai-ui-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./daten:/appdata
+```
+
+Ownership eines Named Volumes prüfen: `docker run --rm -v <name>:/d busybox ls -lna /d`
+(sollte `65532` zeigen). Ein noch aus einem älteren, root-owned Image stammendes
+Volume einmalig neu anlegen (`docker volume rm <name>`, dann neu starten).
 
 ## Deployment hinter Traefik
 

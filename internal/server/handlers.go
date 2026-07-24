@@ -607,13 +607,31 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := s.cfg.Get()
-	cfg.Endpoint = strings.TrimSpace(r.FormValue("endpoint"))
-	cfg.ChatDeployment = strings.TrimSpace(r.FormValue("chat_deployment"))
-	cfg.ChatModels = parseModels(r.FormValue("chat_models"))
-	cfg.APIVersion = strings.TrimSpace(r.FormValue("api_version"))
-	cfg.EmbeddingEndpoint = strings.TrimSpace(r.FormValue("embedding_endpoint"))
-	cfg.EmbeddingDeployment = strings.TrimSpace(r.FormValue("embedding_deployment"))
-	cfg.EmbeddingAPIVersion = strings.TrimSpace(r.FormValue("embedding_api_version"))
+	locks := s.cfg.Locks()
+	// Per Umgebungsvariable gesperrte Endpoint-Felder werden im Formular
+	// deaktiviert (und daher nicht übertragen); sie dürfen nicht überschrieben
+	// werden. Save() schützt sie zusätzlich, hier vermeiden wir das Leeren.
+	if !locks.Endpoint {
+		cfg.Endpoint = strings.TrimSpace(r.FormValue("endpoint"))
+	}
+	if !locks.ChatDeployment {
+		cfg.ChatDeployment = strings.TrimSpace(r.FormValue("chat_deployment"))
+	}
+	if !locks.ChatModels {
+		cfg.ChatModels = parseModels(r.FormValue("chat_models"))
+	}
+	if !locks.APIVersion {
+		cfg.APIVersion = strings.TrimSpace(r.FormValue("api_version"))
+	}
+	if !locks.EmbeddingEndpoint {
+		cfg.EmbeddingEndpoint = strings.TrimSpace(r.FormValue("embedding_endpoint"))
+	}
+	if !locks.EmbeddingDeployment {
+		cfg.EmbeddingDeployment = strings.TrimSpace(r.FormValue("embedding_deployment"))
+	}
+	if !locks.EmbeddingAPIVersion {
+		cfg.EmbeddingAPIVersion = strings.TrimSpace(r.FormValue("embedding_api_version"))
+	}
 	cfg.SearchProvider = strings.ToLower(strings.TrimSpace(r.FormValue("search_provider")))
 	cfg.SearchEndpoint = strings.TrimSpace(r.FormValue("search_endpoint"))
 	if n, err := strconv.Atoi(strings.TrimSpace(r.FormValue("search_max_results"))); err == nil && n > 0 {
@@ -757,6 +775,11 @@ func (s *Server) refreshModels(ctx context.Context) (int, error) {
 // handleRefreshModels fragt die Modelle vom Endpoint ab (Button im Konfig-Dialog)
 // und rendert den Konfig-Dialog mit dem Ergebnis neu.
 func (s *Server) handleRefreshModels(w http.ResponseWriter, r *http.Request) {
+	// Ist die Modell-Liste per Umgebungsvariable festgelegt, ist sie gesperrt.
+	if s.cfg.Locks().ChatModels {
+		s.renderConfigNotice(w, "Modelle sind über die Umgebungsvariable AZURE_CHAT_MODELS festgelegt und können hier nicht abgerufen werden.", true)
+		return
+	}
 	n, err := s.refreshModels(r.Context())
 	if err != nil {
 		slog.Warn("modelle abrufen", "err", err)
@@ -769,23 +792,7 @@ func (s *Server) handleRefreshModels(w http.ResponseWriter, r *http.Request) {
 // parseModels zerlegt eine durch Zeilen oder Kommas getrennte Liste in
 // bereinigte, eindeutige Modellnamen.
 func parseModels(raw string) []string {
-	fields := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == ',' || r == '\n' || r == '\r'
-	})
-	seen := make(map[string]struct{}, len(fields))
-	var out []string
-	for _, f := range fields {
-		f = strings.TrimSpace(f)
-		if f == "" {
-			continue
-		}
-		if _, ok := seen[f]; ok {
-			continue
-		}
-		seen[f] = struct{}{}
-		out = append(out, f)
-	}
-	return out
+	return config.ParseModelList(raw)
 }
 
 // containsString prüft, ob s in list enthalten ist.
@@ -959,6 +966,7 @@ func (s *Server) renderConfigNotice(w http.ResponseWriter, notice string, isErr 
 func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice string, noticeErr bool) {
 	data := struct {
 		Config             config.Config
+		Locks              config.Locks
 		HasKey             bool
 		HasEmbeddingKey    bool
 		HasOwnEmbeddingKey bool
@@ -971,6 +979,7 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 		NoticeErr          bool
 	}{
 		Config:             s.cfg.Get(),
+		Locks:              s.cfg.Locks(),
 		HasKey:             s.cfg.HasAPIKey(),
 		HasEmbeddingKey:    s.cfg.HasEmbeddingAPIKey(),
 		HasOwnEmbeddingKey: s.cfg.HasOwnEmbeddingAPIKey(),

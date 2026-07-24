@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -46,6 +47,99 @@ func (c Config) EmbeddingHost() string {
 	return c.Endpoint
 }
 
+// Overrides bündelt die per Umgebungsvariable festgelegten Endpoint-Werte. Jedes
+// nicht-leere Feld hat Vorrang vor der gespeicherten Konfiguration und wird in
+// der UI nur schreibgeschützt angezeigt (das Eingabefeld ist deaktiviert).
+type Overrides struct {
+	Endpoint            string   // AZURE_ENDPOINT
+	ChatDeployment      string   // AZURE_CHAT_DEPLOYMENT
+	ChatModels          []string // AZURE_CHAT_MODELS (Komma- oder Zeilen-getrennt)
+	APIVersion          string   // AZURE_API_VERSION
+	EmbeddingEndpoint   string   // AZURE_EMBEDDING_ENDPOINT
+	EmbeddingDeployment string   // AZURE_EMBEDDING_DEPLOYMENT
+	EmbeddingAPIVersion string   // AZURE_EMBEDDING_API_VERSION
+}
+
+// apply legt die gesetzten Overrides über die übergebene Konfiguration und
+// liefert die effektive Konfiguration zurück.
+func (o Overrides) apply(c Config) Config {
+	if o.Endpoint != "" {
+		c.Endpoint = o.Endpoint
+	}
+	if o.ChatDeployment != "" {
+		c.ChatDeployment = o.ChatDeployment
+	}
+	if len(o.ChatModels) > 0 {
+		c.ChatModels = o.ChatModels
+	}
+	if o.APIVersion != "" {
+		c.APIVersion = o.APIVersion
+	}
+	if o.EmbeddingEndpoint != "" {
+		c.EmbeddingEndpoint = o.EmbeddingEndpoint
+	}
+	if o.EmbeddingDeployment != "" {
+		c.EmbeddingDeployment = o.EmbeddingDeployment
+	}
+	if o.EmbeddingAPIVersion != "" {
+		c.EmbeddingAPIVersion = o.EmbeddingAPIVersion
+	}
+	return c
+}
+
+// locks leitet aus den gesetzten Overrides ab, welche Felder gesperrt sind.
+func (o Overrides) locks() Locks {
+	return Locks{
+		Endpoint:            o.Endpoint != "",
+		ChatDeployment:      o.ChatDeployment != "",
+		ChatModels:          len(o.ChatModels) > 0,
+		APIVersion:          o.APIVersion != "",
+		EmbeddingEndpoint:   o.EmbeddingEndpoint != "",
+		EmbeddingDeployment: o.EmbeddingDeployment != "",
+		EmbeddingAPIVersion: o.EmbeddingAPIVersion != "",
+	}
+}
+
+// Locks gibt an, welche Endpoint-Felder per Umgebungsvariable festgelegt (und
+// damit in der UI gesperrt) sind. Die Felder entsprechen den Overrides.
+type Locks struct {
+	Endpoint            bool
+	ChatDeployment      bool
+	ChatModels          bool
+	APIVersion          bool
+	EmbeddingEndpoint   bool
+	EmbeddingDeployment bool
+	EmbeddingAPIVersion bool
+}
+
+// Any gibt an, ob mindestens ein Endpoint-Feld per Umgebungsvariable gesperrt ist.
+func (l Locks) Any() bool {
+	return l.Endpoint || l.ChatDeployment || l.ChatModels || l.APIVersion ||
+		l.EmbeddingEndpoint || l.EmbeddingDeployment || l.EmbeddingAPIVersion
+}
+
+// ParseModelList zerlegt eine durch Zeilen oder Kommas getrennte Liste in
+// bereinigte, eindeutige Modellnamen (z.B. für AZURE_CHAT_MODELS).
+func ParseModelList(raw string) []string {
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r'
+	})
+	seen := make(map[string]struct{}, len(fields))
+	var out []string
+	for _, f := range fields {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		if _, ok := seen[f]; ok {
+			continue
+		}
+		seen[f] = struct{}{}
+		out = append(out, f)
+	}
+	return out
+}
+
 // Defaults liefert sinnvolle Startwerte.
 func Defaults() Config {
 	return Config{
@@ -72,20 +166,26 @@ type Store struct {
 	apiKey          string
 	embeddingAPIKey string
 	searchAPIKey    string
+	overrides       Overrides // per Umgebungsvariable festgelegte Endpoint-Werte
+	locks           Locks     // abgeleitet aus overrides; welche Felder gesperrt sind
 
 	mu  sync.RWMutex
-	cur Config
+	cur Config // gespeicherte Rohkonfiguration (ohne angewandte Overrides)
 }
 
 // NewStore erzeugt einen Konfigurationsspeicher für den angegebenen Pfad.
 // Die API-Keys stammen aus der Umgebung und werden niemals persistiert.
-// Ist embeddingAPIKey leer, wird für Embeddings apiKey verwendet.
-func NewStore(path, apiKey, embeddingAPIKey, searchAPIKey string) *Store {
+// Ist embeddingAPIKey leer, wird für Embeddings apiKey verwendet. Gesetzte
+// overrides überschreiben die gespeicherten Endpoint-Werte und sperren die
+// zugehörigen Felder in der UI.
+func NewStore(path, apiKey, embeddingAPIKey, searchAPIKey string, overrides Overrides) *Store {
 	return &Store{
 		path:            path,
 		apiKey:          apiKey,
 		embeddingAPIKey: embeddingAPIKey,
 		searchAPIKey:    searchAPIKey,
+		overrides:       overrides,
+		locks:           overrides.locks(),
 		cur:             Defaults(),
 	}
 }
@@ -116,22 +216,59 @@ func (s *Store) Load() (Config, error) {
 	return s.cur, nil
 }
 
-// Get liefert eine Kopie der aktuellen Konfiguration.
+// Get liefert die effektive Konfiguration: die gespeicherten Werte mit den
+// per Umgebungsvariable gesetzten Overrides überlagert.
 func (s *Store) Get() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.cur
+	return s.overrides.apply(s.cur)
 }
 
-// Save schreibt die Konfiguration atomar auf die Festplatte.
+// Locks liefert die Information, welche Endpoint-Felder per Umgebungsvariable
+// festgelegt und damit in der UI gesperrt sind.
+func (s *Store) Locks() Locks {
+	return s.locks
+}
+
+// Save schreibt die Konfiguration atomar auf die Festplatte. Per Umgebungsvariable
+// gesperrte Felder behalten dabei ihren gespeicherten Rohwert und können nicht
+// über die UI verändert werden.
 func (s *Store) Save(cfg Config) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.keepLockedLocked(&cfg)
 	if err := s.writeLocked(cfg); err != nil {
 		return err
 	}
 	s.cur = cfg
 	return nil
+}
+
+// keepLockedLocked stellt sicher, dass gesperrte (per ENV gesetzte) Felder ihren
+// bereits gespeicherten Rohwert behalten und nicht durch UI-Eingaben oder den
+// Override-Wert überschrieben werden. Aufrufer müssen s.mu halten.
+func (s *Store) keepLockedLocked(cfg *Config) {
+	if s.locks.Endpoint {
+		cfg.Endpoint = s.cur.Endpoint
+	}
+	if s.locks.ChatDeployment {
+		cfg.ChatDeployment = s.cur.ChatDeployment
+	}
+	if s.locks.ChatModels {
+		cfg.ChatModels = s.cur.ChatModels
+	}
+	if s.locks.APIVersion {
+		cfg.APIVersion = s.cur.APIVersion
+	}
+	if s.locks.EmbeddingEndpoint {
+		cfg.EmbeddingEndpoint = s.cur.EmbeddingEndpoint
+	}
+	if s.locks.EmbeddingDeployment {
+		cfg.EmbeddingDeployment = s.cur.EmbeddingDeployment
+	}
+	if s.locks.EmbeddingAPIVersion {
+		cfg.EmbeddingAPIVersion = s.cur.EmbeddingAPIVersion
+	}
 }
 
 // SetChatModel ändert nur das aktiv erzwungene Modell und speichert die Konfig.
@@ -142,8 +279,10 @@ func (s *Store) SetChatModel(model string) error {
 	defer s.mu.Unlock()
 
 	if model != "" {
+		// Gegen die effektive Modell-Liste prüfen (inkl. ENV-Override).
+		eff := s.overrides.apply(s.cur)
 		allowed := false
-		for _, m := range s.cur.ChatModels {
+		for _, m := range eff.ChatModels {
 			if m == model {
 				allowed = true
 				break

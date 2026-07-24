@@ -51,6 +51,27 @@ Die übrigen Einstellungen werden im UI-Dialog gesetzt und unter
 können getrennte Endpoints, Deployments und API-Versionen verwenden; die
 Embedding-Felder fallen bei Leereingabe auf die Chat-Werte zurück.
 
+### Endpoint per Umgebungsvariable festlegen (optional)
+
+Die Endpoint-Einstellungen lassen sich alternativ zum UI-Dialog vollständig über
+Umgebungsvariablen vorgeben. Ist eine dieser Variablen gesetzt, hat ihr Wert
+Vorrang vor `config.json` und das zugehörige Feld im Einstellungsdialog wird nur
+angezeigt, aber deaktiviert (nicht über die UI änderbar):
+
+| Variable        | Einstellung                                   |
+| --------------- | --------------------------------------------- |
+| `AZURE_ENDPOINT` | Azure Endpoint-URL (Chat).                   |
+| `AZURE_CHAT_DEPLOYMENT` | Deployment-Name des Chat-Modells.     |
+| `AZURE_CHAT_MODELS` | Auswählbare Modelle (Komma- oder Zeilen-getrennt). |
+| `AZURE_API_VERSION` | API-Version (Chat).                       |
+| `AZURE_EMBEDDING_ENDPOINT` | Embedding-Endpoint-URL (sonst wie Chat). |
+| `AZURE_EMBEDDING_DEPLOYMENT` | Deployment-Name des Embedding-Modells. |
+| `AZURE_EMBEDDING_API_VERSION` | Embedding-API-Version (sonst wie Chat). |
+
+Nicht gesetzte Variablen bleiben im UI frei editierbar. Leere Werte gelten als
+„nicht gesetzt“ und aktivieren keine Sperre.
+
+
 ### Bereitschaft & Verbindungsprüfung
 
 Nach dem ersten Konfigurieren im UI auf **Speichern** und dann **Verbindung

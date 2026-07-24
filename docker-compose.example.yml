@@ -1,24 +1,17 @@
-# Beispiel-Stack: zwei ai-ui-Container in EINEM Dockge-Stack, mit Bind-Mounts.
-# Kopiere die Datei nach docker-compose.yml oder füge sie in Dockge ein und trage
-# die Werte (Keys, Zeitzone) per .env oder direkt je Container in Dockge ein.
+# Beispiel: EIN ai-ui-Container. Kopiere die Datei nach docker-compose.yml oder
+# füge sie in Dockge ein. Das Projekt ist auf genau einen Container ausgelegt;
+# wie viele Instanzen du davon startest, ist dir überlassen.
 #
-# Warum die *-init-Dienste? Der App-Container läuft non-root (UID/GID 65532). Bei
-# einem Bind-Mount legt der Docker-Daemon das Host-Verzeichnis als root an; der
-# non-root-User dürfte dort nicht schreiben (Start bräche mit
-# "mkdir /appdata/appdata: permission denied" ab). Jeder *-init-Dienst setzt die
-# Rechte einmalig als root und beendet sich; erst danach startet die zugehörige
-# App (depends_on: service_completed_successfully). Kein manuelles chown nötig.
-#
-# Erreichbarkeit: veröffentlichte Ports (ai-ui-1 = 8080, ai-ui-2 = 8081). Für
-# Traefik die labels/networks-Blöcke ein- und die ports-Blöcke auskommentieren.
+# Datenpfad: Der Container läuft als non-root (UID/GID 65532). Ein frisches Named
+# Volume übernimmt diese Rechte automatisch aus dem Image und läuft so
+# out-of-the-box – auch in Dockge/Portainer als normaler User. (Bind-Mount als
+# Alternative samt Rechte-Handling siehe README.)
 
 services:
-  ai-ui-1:
+  ai-ui:
     image: ghcr.io/daknoblo/ai-ui:latest
+    container_name: ai-ui
     restart: unless-stopped
-    depends_on:
-      ai-ui-1-init:
-        condition: service_completed_successfully
     environment:
       # Secret ausschließlich über Umgebungsvariable (nie in der Konfig-Datei).
       - AZURE_API_KEY=${AZURE_API_KEY}
@@ -44,65 +37,21 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Persistenter Datenpfad (Bind-Mount): Chats, Dokumente, Embeddings, Konfig.
-      - ./ai-ui-1:/appdata
+      # Persistenter Datenpfad: Chats, Dokumente, Embeddings und Konfiguration.
+      - ai-ui-data:/appdata
     # ---- Alternative zu ports: Traefik ----
     # labels:
     #   - "traefik.enable=true"
-    #   - "traefik.http.routers.ai-ui-1.rule=Host(`chat1.example.com`)"
-    #   - "traefik.http.routers.ai-ui-1.entrypoints=websecure"
-    #   - "traefik.http.routers.ai-ui-1.tls=true"
-    #   - "traefik.http.routers.ai-ui-1.tls.certresolver=letsencrypt"
-    #   - "traefik.http.services.ai-ui-1.loadbalancer.server.port=8080"
+    #   - "traefik.http.routers.ai-ui.rule=Host(`chat.example.com`)"
+    #   - "traefik.http.routers.ai-ui.entrypoints=websecure"
+    #   - "traefik.http.routers.ai-ui.tls=true"
+    #   - "traefik.http.routers.ai-ui.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.ai-ui.loadbalancer.server.port=8080"
     # networks:
     #   - traefik
 
-  # Init: setzt einmalig die Rechte des Bind-Mounts (läuft als root, dann Exit).
-  ai-ui-1-init:
-    image: busybox:1.37
-    command: chown -R 65532:65532 /appdata
-    user: "0:0"
-    restart: "no"
-    volumes:
-      - ./ai-ui-1:/appdata
-
-  ai-ui-2:
-    image: ghcr.io/daknoblo/ai-ui:latest
-    restart: unless-stopped
-    depends_on:
-      ai-ui-2-init:
-        condition: service_completed_successfully
-    environment:
-      - AZURE_API_KEY=${AZURE_API_KEY}
-      - AZURE_EMBEDDING_API_KEY=${AZURE_EMBEDDING_API_KEY:-}
-      - SEARCH_API_KEY=${SEARCH_API_KEY:-}
-      - PORT=8080
-      - DATA_DIR=/appdata
-      - TZ=${TZ:-Europe/Berlin}
-      - HEALTHCHECK_INTERVAL=${HEALTHCHECK_INTERVAL:-60s}
-      # Optional: Endpoint-Vorgaben wie bei ai-ui-1 (AZURE_ENDPOINT usw.).
-    ports:
-      - "8081:8080"
-    volumes:
-      - ./ai-ui-2:/appdata
-    # ---- Alternative zu ports: Traefik ----
-    # labels:
-    #   - "traefik.enable=true"
-    #   - "traefik.http.routers.ai-ui-2.rule=Host(`chat2.example.com`)"
-    #   - "traefik.http.routers.ai-ui-2.entrypoints=websecure"
-    #   - "traefik.http.routers.ai-ui-2.tls=true"
-    #   - "traefik.http.routers.ai-ui-2.tls.certresolver=letsencrypt"
-    #   - "traefik.http.services.ai-ui-2.loadbalancer.server.port=8080"
-    # networks:
-    #   - traefik
-
-  ai-ui-2-init:
-    image: busybox:1.37
-    command: chown -R 65532:65532 /appdata
-    user: "0:0"
-    restart: "no"
-    volumes:
-      - ./ai-ui-2:/appdata
+volumes:
+  ai-ui-data:
 
 # ---- Nur nötig, wenn oben die Traefik-networks eingekommentiert werden ----
 # networks:

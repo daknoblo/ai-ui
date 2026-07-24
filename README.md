@@ -123,10 +123,10 @@ Der Container läuft bewusst als non-root-User mit **UID/GID `65532`**. Der
 Datenpfad `/appdata` muss für diesen User beschreibbar sein, sonst bricht der
 Start mit `mkdir /appdata/appdata: permission denied` ab.
 
-**Empfohlen: Named Volume** (funktioniert ohne jede manuelle Rechtevergabe). Ein
-frisch angelegtes Named Volume übernimmt die Eigentümerschaft automatisch aus dem
-Image (`65532`). Genau das nutzt die [docker-compose.example.yml](docker-compose.example.yml)
-und läuft damit out-of-the-box – auch in Dockge/Portainer als normaler User:
+**Einfachste Variante: Named Volume** (funktioniert ohne jede manuelle
+Rechtevergabe). Ein frisch angelegtes Named Volume übernimmt die Eigentümerschaft
+automatisch aus dem Image (`65532`) und läuft out-of-the-box – auch in
+Dockge/Portainer als normaler User:
 
 ```yaml
 services:
@@ -143,14 +143,15 @@ Docker-Daemon ein fehlendes Host-Verzeichnis als **root** an; der non-root-User
 im Container kann dort nicht schreiben. Bei einem Named Volume seedet Docker die
 Rechte aus dem Image – deshalb tritt der Fehler dort nie auf.
 
-**Falls ein Bind-Mount nötig ist** (z.B. direkter Host-Zugriff auf die Daten),
-die Rechte per einmaligem Init-Container setzen – ganz ohne manuelles `chown` auf
-dem Host:
+**Bind-Mount (z.B. direkter Host-Zugriff auf die Daten):** die Rechte per
+einmaligem Init-Container setzen – ganz ohne manuelles `chown` auf dem Host. Genau
+diesen Aufbau (für zwei Instanzen) zeigt die
+[docker-compose.example.yml](docker-compose.example.yml):
 
 ```yaml
 services:
   ai-ui-init:                       # läuft als root, setzt einmalig die Rechte
-    image: busybox
+    image: busybox:1.37
     command: chown -R 65532:65532 /appdata
     user: "0:0"
     volumes:
@@ -168,8 +169,11 @@ Ownership eines Named Volumes prüfen: `docker run --rm -v <name>:/d busybox ls 
 (sollte `65532` zeigen). Ein noch aus einem älteren, root-owned Image stammendes
 Volume einmalig neu anlegen (`docker volume rm <name>`, dann neu starten).
 
-## Deployment hinter Traefik
+## Deployment
 
-Siehe [docker-compose.example.yml](docker-compose.example.yml). Das Image wird
-per GitHub Actions nach `ghcr.io/daknoblo/ai-ui` gebaut und veröffentlicht
-(Push auf `main` sowie `v*`-Tags).
+Die [docker-compose.example.yml](docker-compose.example.yml) enthält einen
+vollständigen Stack für zwei Instanzen (daniel + theresa) mit Bind-Mounts,
+Init-Containern für die Rechte und veröffentlichten Ports (`8080`/`8081`);
+Traefik-Labels sind optional auskommentiert enthalten. Das Image wird per GitHub
+Actions nach `ghcr.io/daknoblo/ai-ui` gebaut und veröffentlicht (Push auf `main`
+sowie `v*`-Tags).

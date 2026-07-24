@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 	_ "time/tzdata"
@@ -40,6 +41,18 @@ func run() error {
 	searchAPIKey := os.Getenv("SEARCH_API_KEY")             // optional; Key für die Websuche.
 	healthCheckInterval := parseDurationEnv("HEALTHCHECK_INTERVAL", 60*time.Second)
 
+	// Optionale Endpoint-Overrides aus der Umgebung. Gesetzte Werte haben Vorrang
+	// vor der gespeicherten Konfiguration und sperren das jeweilige UI-Feld.
+	overrides := config.Overrides{
+		Endpoint:            strings.TrimSpace(os.Getenv("AZURE_ENDPOINT")),
+		ChatDeployment:      strings.TrimSpace(os.Getenv("AZURE_CHAT_DEPLOYMENT")),
+		ChatModels:          config.ParseModelList(os.Getenv("AZURE_CHAT_MODELS")),
+		APIVersion:          strings.TrimSpace(os.Getenv("AZURE_API_VERSION")),
+		EmbeddingEndpoint:   strings.TrimSpace(os.Getenv("AZURE_EMBEDDING_ENDPOINT")),
+		EmbeddingDeployment: strings.TrimSpace(os.Getenv("AZURE_EMBEDDING_DEPLOYMENT")),
+		EmbeddingAPIVersion: strings.TrimSpace(os.Getenv("AZURE_EMBEDDING_API_VERSION")),
+	}
+
 	// Datenverzeichnisse anlegen.
 	appDataDir := filepath.Join(dataDir, "appdata")
 	if err := os.MkdirAll(appDataDir, 0o755); err != nil {
@@ -47,7 +60,7 @@ func run() error {
 	}
 
 	// Konfiguration laden (oder Default erzeugen).
-	cfgStore := config.NewStore(filepath.Join(appDataDir, "config.json"), apiKey, embeddingAPIKey, searchAPIKey)
+	cfgStore := config.NewStore(filepath.Join(appDataDir, "config.json"), apiKey, embeddingAPIKey, searchAPIKey, overrides)
 	if _, err := cfgStore.Load(); err != nil {
 		return err
 	}

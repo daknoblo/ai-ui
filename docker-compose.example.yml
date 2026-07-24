@@ -16,6 +16,15 @@ services:
       - SEARCH_API_KEY=${SEARCH_API_KEY:-}
       - PORT=8080
       - DATA_DIR=/appdata
+      # Optional: Endpoint-Einstellungen fest per Umgebungsvariable vorgeben.
+      # Gesetzte Werte haben Vorrang vor config.json und sind im UI deaktiviert.
+      # - AZURE_ENDPOINT=${AZURE_ENDPOINT:-}
+      # - AZURE_CHAT_DEPLOYMENT=${AZURE_CHAT_DEPLOYMENT:-}
+      # - AZURE_CHAT_MODELS=${AZURE_CHAT_MODELS:-}
+      # - AZURE_API_VERSION=${AZURE_API_VERSION:-}
+      # - AZURE_EMBEDDING_ENDPOINT=${AZURE_EMBEDDING_ENDPOINT:-}
+      # - AZURE_EMBEDDING_DEPLOYMENT=${AZURE_EMBEDDING_DEPLOYMENT:-}
+      # - AZURE_EMBEDDING_API_VERSION=${AZURE_EMBEDDING_API_VERSION:-}
       # IANA-Zeitzone; das Binary bringt tzdata für Distroless selbst mit.
       - TZ=${TZ:-Europe/Berlin}
       # Intervall der periodischen Verbindungsprüfung (z.B. 30s, 2m; 0/off = aus).

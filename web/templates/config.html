@@ -8,50 +8,52 @@
 
 		<form hx-post="/config" hx-target="#modal-root" hx-swap="innerHTML" class="config-form">
 			<div class="config-section-head">Chat (Model-Router)</div>
+			{{if .Locks.Any}}<div class="config-secret ok">Einige Endpoint-Felder sind über Umgebungsvariablen festgelegt und daher hier deaktiviert. Ihre Werte werden angezeigt, können aber nur über die Umgebung geändert werden.</div>{{end}}
 			<label>
-				Azure Endpoint-URL
+				Azure Endpoint-URL {{if .Locks.Endpoint}}<span class="hint">(per <code>AZURE_ENDPOINT</code> gesetzt)</span>{{end}}
 				<input type="url" name="endpoint" value="{{.Config.Endpoint}}"
-					placeholder="https://mein-router.openai.azure.com" required>
+					placeholder="https://mein-router.openai.azure.com" required{{if .Locks.Endpoint}} disabled{{end}}>
 			</label>
 			<label>
-				Deployment-Name (Chat-Modell)
+				Deployment-Name (Chat-Modell) {{if .Locks.ChatDeployment}}<span class="hint">(per <code>AZURE_CHAT_DEPLOYMENT</code> gesetzt)</span>{{end}}
 				<input type="text" name="chat_deployment" value="{{.Config.ChatDeployment}}"
-					placeholder="gpt-4o" required>
+					placeholder="gpt-4o" required{{if .Locks.ChatDeployment}} disabled{{end}}>
 			</label>
 			<label>
-				Verfügbare Modelle <span class="hint">(eines pro Zeile oder per Komma; oben rechts wählbar)</span>
-				<textarea name="chat_models" rows="3" placeholder="gpt-4o&#10;gpt-4o-mini&#10;o3">{{range $i, $m := .Config.ChatModels}}{{if $i}}&#10;{{end}}{{$m}}{{end}}</textarea>
+				Verfügbare Modelle <span class="hint">{{if .Locks.ChatModels}}(per <code>AZURE_CHAT_MODELS</code> gesetzt){{else}}(eines pro Zeile oder per Komma; oben rechts wählbar){{end}}</span>
+				<textarea name="chat_models" rows="3" placeholder="gpt-4o&#10;gpt-4o-mini&#10;o3"{{if .Locks.ChatModels}} disabled{{end}}>{{range $i, $m := .Config.ChatModels}}{{if $i}}&#10;{{end}}{{$m}}{{end}}</textarea>
 			</label>
 			<button type="button" class="btn btn-ghost btn-small"
 				hx-post="/models/refresh"
 				hx-target="#modal-root"
 				hx-swap="innerHTML"
 				hx-disabled-elt="this"
+				{{if .Locks.ChatModels}}disabled{{end}}
 				title="Übernimmt die in der Ressource bereitgestellten Deployments (nur Chat-Modelle) statt des kompletten Modellkatalogs (Endpoint & API-Version müssen gespeichert sein)">
 				⟳ Bereitgestellte Modelle abrufen
 			</button>
 			{{if .Notice}}<div class="config-{{if .NoticeErr}}notice-err{{else}}saved{{end}}">{{.Notice}}</div>{{end}}
 			<label>
-				API-Version
+				API-Version {{if .Locks.APIVersion}}<span class="hint">(per <code>AZURE_API_VERSION</code> gesetzt)</span>{{end}}
 				<input type="text" name="api_version" value="{{.Config.APIVersion}}"
-					placeholder="2024-08-01-preview" required>
+					placeholder="2024-08-01-preview" required{{if .Locks.APIVersion}} disabled{{end}}>
 			</label>
 
 			<div class="config-section-head">Embeddings (Dokument-Kontext)</div>
 			<label>
-				Embedding-Endpoint-URL <span class="hint">(optional, sonst wie Chat)</span>
+				Embedding-Endpoint-URL <span class="hint">{{if .Locks.EmbeddingEndpoint}}(per <code>AZURE_EMBEDDING_ENDPOINT</code> gesetzt){{else}}(optional, sonst wie Chat){{end}}</span>
 				<input type="url" name="embedding_endpoint" value="{{.Config.EmbeddingEndpoint}}"
-					placeholder="https://ddf6-msfoundry.cognitiveservices.azure.com">
+					placeholder="https://ddf6-msfoundry.cognitiveservices.azure.com"{{if .Locks.EmbeddingEndpoint}} disabled{{end}}>
 			</label>
 			<label>
-				Embedding-Deployment-Name
+				Embedding-Deployment-Name {{if .Locks.EmbeddingDeployment}}<span class="hint">(per <code>AZURE_EMBEDDING_DEPLOYMENT</code> gesetzt)</span>{{end}}
 				<input type="text" name="embedding_deployment" value="{{.Config.EmbeddingDeployment}}"
-					placeholder="text-embedding-3-large">
+					placeholder="text-embedding-3-large"{{if .Locks.EmbeddingDeployment}} disabled{{end}}>
 			</label>
 			<label>
-				Embedding-API-Version <span class="hint">(optional, sonst wie Chat)</span>
+				Embedding-API-Version <span class="hint">{{if .Locks.EmbeddingAPIVersion}}(per <code>AZURE_EMBEDDING_API_VERSION</code> gesetzt){{else}}(optional, sonst wie Chat){{end}}</span>
 				<input type="text" name="embedding_api_version" value="{{.Config.EmbeddingAPIVersion}}"
-					placeholder="2023-05-15">
+					placeholder="2023-05-15"{{if .Locks.EmbeddingAPIVersion}} disabled{{end}}>
 			</label>
 
 			<div class="config-section-head">Web-Suche (optional)</div>

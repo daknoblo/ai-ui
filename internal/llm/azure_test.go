@@ -59,7 +59,7 @@ func TestListModelsUsesDeployments(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	store := config.NewStore(filepath.Join(t.TempDir(), "config.json"), "test-key", "", "")
+	store := config.NewStore(filepath.Join(t.TempDir(), "config.json"), "test-key", "", "", config.Overrides{})
 	cfg := config.Defaults()
 	cfg.Endpoint = srv.URL
 	cfg.APIVersion = "2024-08-01-preview"

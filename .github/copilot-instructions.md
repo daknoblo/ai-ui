@@ -87,7 +87,8 @@ ai-ui nutzt keinen projektspezifischen Env-Präfix. Wichtige Variablen:
 
 ## 6. GitHub Actions & Abhängigkeiten
 
-- Workflows sind auf `main` und `develop` ausgerichtet.
+- Workflows sind ausschließlich auf `main` ausgerichtet (kein `develop`-Branch).
+  Jeder Push auf `main` baut und veröffentlicht direkt ein Image.
 - Genau diese Workflows gehören unter `.github/workflows/`:
   - `ci.yml`: gofmt-Check, `go vet ./...`, `golangci-lint` v2.12.2 über
     `golangci/golangci-lint-action@v9`, `govulncheck`, `go test -race ./...`,

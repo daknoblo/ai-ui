@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -51,7 +51,6 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=stable,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -81,7 +80,7 @@ jobs:
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
 
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

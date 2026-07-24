@@ -171,9 +171,10 @@ Volume einmalig neu anlegen (`docker volume rm <name>`, dann neu starten).
 
 ## Deployment
 
-Die [docker-compose.example.yml](docker-compose.example.yml) enthält einen
-Stack mit zwei generischen Instanzen (`ai-ui-1` + `ai-ui-2`) in einem Dockge-Stack:
-Bind-Mounts, je ein Init-Container für die Rechte und veröffentlichte Ports
-(`8080`/`8081`); Traefik-Labels sind optional auskommentiert enthalten. Das Image
-wird per GitHub Actions nach `ghcr.io/daknoblo/ai-ui` gebaut und veröffentlicht
-(Push auf `main` sowie `v*`-Tags).
+Die [docker-compose.example.yml](docker-compose.example.yml) enthält **einen**
+`ai-ui`-Container mit Named Volume und veröffentlichtem Port `8080`;
+Traefik-Labels sind optional auskommentiert enthalten. Das Projekt ist auf genau
+einen Container ausgelegt – wie viele Instanzen davon betrieben werden, bleibt dem
+Nutzer überlassen (z.B. mehrere Services in einem Stack). Das Image wird per
+GitHub Actions nach `ghcr.io/daknoblo/ai-ui` gebaut und veröffentlicht (Push auf
+`main` sowie `v*`-Tags).

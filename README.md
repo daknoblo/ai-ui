@@ -39,7 +39,7 @@ Dokumenten-Kontext (RAG), angebunden an einen Azure-Foundry-Model-Router
 
 | Variable        | Default  | Beschreibung                                  |
 | --------------- | -------- | --------------------------------------------- |
-| `AZURE_API_KEY` | –        | **Secret.** API-Key des Model-Routers (Chat). |
+| `AZURE_API_KEY` | –        | **Secret.** API-Key des AI-Endpoints (Chat). |
 | `AZURE_EMBEDDING_API_KEY` | – | **Secret, optional.** Eigener Key, falls Embeddings auf einer separaten Azure-Ressource liegen. Leer ⇒ `AZURE_API_KEY` wird genutzt. |
 | `SEARCH_API_KEY` | – | **Secret, optional.** API-Key für die Web-Suche (Tavily oder Brave). Für SearXNG nicht erforderlich. |
 | `DATA_DIR`      | `/appdata`  | Persistenter Datenpfad (DB + `appdata/`).     |
@@ -47,9 +47,10 @@ Dokumenten-Kontext (RAG), angebunden an einen Azure-Foundry-Model-Router
 | `HEALTHCHECK_INTERVAL` | `60s` | Intervall der periodischen Verbindungsprüfung (Go-Dauer, z.B. `30s`, `2m`). `0` oder `off` deaktiviert den periodischen Check (die Prüfung beim Start läuft weiterhin). |
 
 Die übrigen Einstellungen werden im UI-Dialog gesetzt und unter
-`<DATA_DIR>/appdata/config.json` gespeichert (ohne Secret). Chat und Embeddings
-können getrennte Endpoints, Deployments und API-Versionen verwenden; die
-Embedding-Felder fallen bei Leereingabe auf die Chat-Werte zurück.
+`<DATA_DIR>/appdata/config.json` gespeichert (ohne Secret). Der generelle
+AI-Endpoint und die Embeddings können getrennte Endpoints, Deployments und
+API-Versionen verwenden; die Embedding-Felder fallen bei Leereingabe auf die
+Werte des AI-Endpoints zurück.
 
 ### Endpoint per Umgebungsvariable festlegen (optional)
 
@@ -58,15 +59,28 @@ Umgebungsvariablen vorgeben. Ist eine dieser Variablen gesetzt, hat ihr Wert
 Vorrang vor `config.json` und das zugehörige Feld im Einstellungsdialog wird nur
 angezeigt, aber deaktiviert (nicht über die UI änderbar):
 
+Das Namensschema ist einheitlich: der **generelle AI-Endpoint** nutzt die
+Basis-Namen `AZURE_*`, die **Embeddings** durchgängig `AZURE_EMBEDDING_*`.
+
+Genereller AI-Endpoint:
+
 | Variable        | Einstellung                                   |
 | --------------- | --------------------------------------------- |
-| `AZURE_ENDPOINT` | Azure Endpoint-URL (Chat).                   |
-| `AZURE_CHAT_DEPLOYMENT` | Deployment-Name des Chat-Modells.     |
-| `AZURE_CHAT_MODELS` | Auswählbare Modelle (Komma- oder Zeilen-getrennt). |
-| `AZURE_API_VERSION` | API-Version (Chat).                       |
-| `AZURE_EMBEDDING_ENDPOINT` | Embedding-Endpoint-URL (sonst wie Chat). |
+| `AZURE_ENDPOINT` | Endpoint-URL des AI-Endpoints.               |
+| `AZURE_DEPLOYMENT` | Deployment-Name des Chat-Modells.          |
+| `AZURE_MODELS` | Auswählbare Modelle (Komma- oder Zeilen-getrennt). |
+| `AZURE_API_VERSION` | API-Version des AI-Endpoints.             |
+
+Embeddings (fallen bei Leereingabe auf den AI-Endpoint zurück):
+
+| Variable        | Einstellung                                   |
+| --------------- | --------------------------------------------- |
+| `AZURE_EMBEDDING_ENDPOINT` | Embedding-Endpoint-URL.               |
 | `AZURE_EMBEDDING_DEPLOYMENT` | Deployment-Name des Embedding-Modells. |
-| `AZURE_EMBEDDING_API_VERSION` | Embedding-API-Version (sonst wie Chat). |
+| `AZURE_EMBEDDING_API_VERSION` | Embedding-API-Version.              |
+
+Die zugehörigen Secrets sind `AZURE_API_KEY` bzw. `AZURE_EMBEDDING_API_KEY`
+(siehe Tabelle oben).
 
 Nicht gesetzte Variablen bleiben im UI frei editierbar. Leere Werte gelten als
 „nicht gesetzt“ und aktivieren keine Sperre.

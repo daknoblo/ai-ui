@@ -52,8 +52,8 @@ func (c Config) EmbeddingHost() string {
 // der UI nur schreibgeschützt angezeigt (das Eingabefeld ist deaktiviert).
 type Overrides struct {
 	Endpoint            string   // AZURE_ENDPOINT
-	ChatDeployment      string   // AZURE_CHAT_DEPLOYMENT
-	ChatModels          []string // AZURE_CHAT_MODELS (Komma- oder Zeilen-getrennt)
+	ChatDeployment      string   // AZURE_DEPLOYMENT
+	ChatModels          []string // AZURE_MODELS (Komma- oder Zeilen-getrennt)
 	APIVersion          string   // AZURE_API_VERSION
 	EmbeddingEndpoint   string   // AZURE_EMBEDDING_ENDPOINT
 	EmbeddingDeployment string   // AZURE_EMBEDDING_DEPLOYMENT
@@ -119,7 +119,7 @@ func (l Locks) Any() bool {
 }
 
 // ParseModelList zerlegt eine durch Zeilen oder Kommas getrennte Liste in
-// bereinigte, eindeutige Modellnamen (z.B. für AZURE_CHAT_MODELS).
+// bereinigte, eindeutige Modellnamen (z.B. für AZURE_MODELS).
 func ParseModelList(raw string) []string {
 	fields := strings.FieldsFunc(raw, func(r rune) bool {
 		return r == ',' || r == '\n' || r == '\r'

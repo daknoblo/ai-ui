@@ -15,12 +15,12 @@
 					placeholder="https://mein-router.openai.azure.com" required{{if .Locks.Endpoint}} disabled{{end}}>
 			</label>
 			<label>
-				Deployment-Name (Chat-Modell) {{if .Locks.ChatDeployment}}<span class="hint">(per <code>AZURE_CHAT_DEPLOYMENT</code> gesetzt)</span>{{end}}
+				Deployment-Name (Chat-Modell) {{if .Locks.ChatDeployment}}<span class="hint">(per <code>AZURE_DEPLOYMENT</code> gesetzt)</span>{{end}}
 				<input type="text" name="chat_deployment" value="{{.Config.ChatDeployment}}"
 					placeholder="gpt-4o" required{{if .Locks.ChatDeployment}} disabled{{end}}>
 			</label>
 			<label>
-				Verfügbare Modelle <span class="hint">{{if .Locks.ChatModels}}(per <code>AZURE_CHAT_MODELS</code> gesetzt){{else}}(eines pro Zeile oder per Komma; oben rechts wählbar){{end}}</span>
+				Verfügbare Modelle <span class="hint">{{if .Locks.ChatModels}}(per <code>AZURE_MODELS</code> gesetzt){{else}}(eines pro Zeile oder per Komma; oben rechts wählbar){{end}}</span>
 				<textarea name="chat_models" rows="3" placeholder="gpt-4o&#10;gpt-4o-mini&#10;o3"{{if .Locks.ChatModels}} disabled{{end}}>{{range $i, $m := .Config.ChatModels}}{{if $i}}&#10;{{end}}{{$m}}{{end}}</textarea>
 			</label>
 			<button type="button" class="btn btn-ghost btn-small"

@@ -777,7 +777,7 @@ func (s *Server) refreshModels(ctx context.Context) (int, error) {
 func (s *Server) handleRefreshModels(w http.ResponseWriter, r *http.Request) {
 	// Ist die Modell-Liste per Umgebungsvariable festgelegt, ist sie gesperrt.
 	if s.cfg.Locks().ChatModels {
-		s.renderConfigNotice(w, "Modelle sind über die Umgebungsvariable AZURE_CHAT_MODELS festgelegt und können hier nicht abgerufen werden.", true)
+		s.renderConfigNotice(w, "Modelle sind über die Umgebungsvariable AZURE_MODELS festgelegt und können hier nicht abgerufen werden.", true)
 		return
 	}
 	n, err := s.refreshModels(r.Context())

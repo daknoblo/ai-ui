@@ -45,8 +45,8 @@ func run() error {
 	// vor der gespeicherten Konfiguration und sperren das jeweilige UI-Feld.
 	overrides := config.Overrides{
 		Endpoint:            strings.TrimSpace(os.Getenv("AZURE_ENDPOINT")),
-		ChatDeployment:      strings.TrimSpace(os.Getenv("AZURE_CHAT_DEPLOYMENT")),
-		ChatModels:          config.ParseModelList(os.Getenv("AZURE_CHAT_MODELS")),
+		ChatDeployment:      strings.TrimSpace(os.Getenv("AZURE_DEPLOYMENT")),
+		ChatModels:          config.ParseModelList(os.Getenv("AZURE_MODELS")),
 		APIVersion:          strings.TrimSpace(os.Getenv("AZURE_API_VERSION")),
 		EmbeddingEndpoint:   strings.TrimSpace(os.Getenv("AZURE_EMBEDDING_ENDPOINT")),
 		EmbeddingDeployment: strings.TrimSpace(os.Getenv("AZURE_EMBEDDING_DEPLOYMENT")),

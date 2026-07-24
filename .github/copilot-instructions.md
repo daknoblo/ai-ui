@@ -54,10 +54,15 @@ ai-ui/
 ai-ui nutzt keinen projektspezifischen Env-Präfix. Wichtige Variablen:
 
 - `PORT` (Default `8080`) — HTTP-Port und Ziel des lokalen Healthchecks.
-- `DATA_DIR` (Default `/data`) — persistenter Datenpfad für SQLite und Appdaten.
-- `AZURE_API_KEY` — Secret für Chat-/Embedding-Zugriffe, nur aus ENV.
+- `DATA_DIR` (Default `/appdata`) — persistenter Datenpfad für SQLite und Appdaten.
+- `AZURE_API_KEY` — Secret für den AI-Endpoint (Chat), nur aus ENV.
 - `AZURE_EMBEDDING_API_KEY` — optional eigener Embedding-Key.
 - `SEARCH_API_KEY` — optionaler Key für Websuche-Anbieter.
+- Optionale Endpoint-Overrides (sperren das jeweilige UI-Feld). Namensschema:
+  genereller AI-Endpoint = `AZURE_*` (`AZURE_ENDPOINT`, `AZURE_DEPLOYMENT`,
+  `AZURE_MODELS`, `AZURE_API_VERSION`), Embeddings = `AZURE_EMBEDDING_*`
+  (`AZURE_EMBEDDING_ENDPOINT`, `AZURE_EMBEDDING_DEPLOYMENT`,
+  `AZURE_EMBEDDING_API_VERSION`).
 - `HEALTHCHECK_INTERVAL` — periodische Verbindungsprüfung (`60s`, `0`/`off`).
 - `TZ` — Zeitzone (IANA-Name); das Binary importiert `time/tzdata` für
   distroless-Container.

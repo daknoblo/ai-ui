@@ -31,6 +31,11 @@ services:
       - HEALTHCHECK_INTERVAL=${HEALTHCHECK_INTERVAL:-60s}
     volumes:
       # Persistenter Datenpfad: Chats, Dokumente, Embeddings und Konfiguration.
+      # Der Container läuft als non-root (UID/GID 65532). Ein Named Volume
+      # übernimmt die Rechte automatisch aus dem Image. Bei einem Bind-Mount
+      # (z.B. ./daten:/appdata) muss das Host-Verzeichnis dem User 65532 gehören,
+      # sonst schlägt der Start mit "mkdir /appdata/appdata: permission denied"
+      # fehl: `sudo chown -R 65532:65532 ./daten`.
       - ai-ui-data:/appdata
     networks:
       - traefik

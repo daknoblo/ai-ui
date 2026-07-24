@@ -117,6 +117,26 @@ docker run --rm -p 8080:8080 \
   ai-ui
 ```
 
+### Datenpfad-Berechtigungen (non-root)
+
+Der Container läuft als non-root-User mit **UID/GID `65532`**. Der Datenpfad
+`/appdata` muss für diesen User beschreibbar sein, sonst bricht der Start mit
+`mkdir /appdata/appdata: permission denied` ab.
+
+- **Named Volume (empfohlen):** Ein frisch angelegtes Volume übernimmt die
+  Rechte aus dem Image (`65532`) automatisch – nichts weiter zu tun. Ein noch
+  aus einem älteren (root-owned) Image stammendes Volume muss neu erstellt
+  werden: `docker volume rm <name>` und neu starten.
+- **Bind-Mount (Host-Verzeichnis):** Das Host-Verzeichnis behält seine
+  Eigentümerschaft und muss vorab dem User `65532` gehören:
+
+  ```sh
+  mkdir -p /pfad/zu/daten
+  sudo chown -R 65532:65532 /pfad/zu/daten
+  ```
+
+Eigentümerschaft prüfen (Named Volume): `docker run --rm -v <name>:/d alpine ls -ln /d`.
+
 ## Deployment hinter Traefik
 
 Siehe [docker-compose.example.yml](docker-compose.example.yml). Das Image wird

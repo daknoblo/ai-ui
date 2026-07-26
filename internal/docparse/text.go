@@ -2,10 +2,10 @@ package docparse
 
 import "strings"
 
-// parseText normalisiert reinen Text/Markdown.
+// parseText normalizes plain text/Markdown input.
 func parseText(data []byte) string {
 	s := string(data)
-	// Vereinheitliche Zeilenenden.
+	// Normalize line endings.
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
 	return strings.TrimSpace(s)

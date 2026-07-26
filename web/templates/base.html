@@ -1,5 +1,5 @@
 {{define "base"}}<!DOCTYPE html>
-<html lang="de">
+<html lang="{{lang}}">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
@@ -18,7 +18,17 @@
 	</div>
 	{{block "modal" .}}{{end}}
 	<script>
-		// Nach jedem HTMX-Swap im Nachrichtenbereich nach unten scrollen.
+		// Strings used by upload.js. They are rendered here so the browser side
+		// follows the language configured in the settings.
+		window.AIUI_I18N = {
+			uploadStart: "{{t `js.upload_start`}}",
+			processing: "{{t `js.processing`}}",
+			processingShort: "{{t `js.processing_n`}}",
+			summary: "{{t `js.summary`}}",
+			failed: "{{t `js.failed`}}"
+		};
+
+		// Scroll to the bottom after every HTMX swap in the message area.
 		function scrollMessages() {
 			var m = document.getElementById('messages');
 			if (m) { m.scrollTop = m.scrollHeight; }
@@ -27,9 +37,9 @@
 		document.body.addEventListener('htmx:sseMessage', scrollMessages);
 		window.addEventListener('load', scrollMessages);
 
-		// Web-Suche-Umschalter: Zustand pro Browser merken (localStorage), damit er
-		// über Chatwechsel hinweg erhalten bleibt. Der Wert wird beim Senden als
-		// Formularfeld "web" übermittelt.
+		// Web search toggle: the state is kept per browser (localStorage) so it
+		// survives switching chats. The value is submitted as the form field
+		// "web" when a message is sent.
 		function webEnabled() {
 			return localStorage.getItem('ai-ui-web') === '1';
 		}
@@ -45,7 +55,7 @@
 			localStorage.setItem('ai-ui-web', webEnabled() ? '0' : '1');
 			applyWebState(btn);
 		}
-		// Nach dem Absenden (Formular-Reset) den Hidden-Flag-Wert wiederherstellen.
+		// Restore the hidden flag value after the form was reset on submit.
 		function syncWebToggle() {
 			applyWebState(document.getElementById('web-toggle'));
 		}

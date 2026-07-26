@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,24 +9,52 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/daknoblo/ai-ui/internal/config"
+	"github.com/daknoblo/ai-ui/internal/i18n"
 	"github.com/daknoblo/ai-ui/internal/llm"
 	"github.com/daknoblo/ai-ui/internal/storage"
+	"github.com/daknoblo/ai-ui/internal/websearch"
 )
 
 const (
-	maxUploadBytes      = 25 << 20  // 25 MiB pro Datei
-	maxTotalUploadBytes = 150 << 20 // 150 MiB pro Anfrage (Mehrfach-Upload)
-	retrievalTopK       = 8
-	defaultTitle        = "Neuer Chat"
+	maxUploadBytes      = 25 << 20 // 25 MiB per file
+	maxTotalUploadBytes = 150 << 20
+	// multipartMemoryBytes is how much of a multipart form is buffered in RAM;
+	// anything above it spills to a temporary file. Keeping this well below the
+	// per-file limit bounds memory usage when several files arrive at once.
+	multipartMemoryBytes = 8 << 20 // 8 MiB
+	retrievalTopK        = 8
 )
 
-// pageData bündelt alle Daten für das Rendern einer Vollseite.
+// untitled is the title stored for a chat that has not been named yet. It is
+// intentionally empty so the displayed placeholder can follow the UI language.
+const untitled = ""
+
+// legacyDefaultTitles are the placeholder titles written by older versions,
+// which stored a translated string instead of an empty title.
+var legacyDefaultTitles = []string{"Neuer Chat", "New chat"}
+
+// isUntitled reports whether a chat still carries the placeholder title.
+func isUntitled(title string) bool {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return true
+	}
+	for _, t := range legacyDefaultTitles {
+		if title == t {
+			return true
+		}
+	}
+	return false
+}
+
+// pageData bundles all data needed to render a full page.
 type pageData struct {
 	Title         string
 	Chats         []storage.Chat
@@ -43,7 +72,8 @@ type pageData struct {
 	StatusBadge   statusBadge
 }
 
-// buildPageData lädt Chats, Dokumente und ggf. den aktuellen Chat samt Nachrichten.
+// buildPageData loads chats, documents and – if given – the current chat with
+// its messages.
 func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (pageData, error) {
 	chats, err := s.store.ListChats(ctx)
 	if err != nil {
@@ -73,29 +103,37 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		}
 		pd.Messages = msgs
 		pd.Documents = docs
-		pd.Title = current.Title
+		pd.Title = s.chatTitle(current.Title)
 		pd.ChatID = current.ID
 	}
 	return pd, nil
 }
 
-// handleIndex öffnet immer einen frischen neuen Chat und räumt dabei verwaiste
-// leere Chats auf.
+// chatTitle returns the displayable title of a chat, substituting the localized
+// placeholder for chats that have not been named yet.
+func (s *Server) chatTitle(title string) string {
+	if isUntitled(title) {
+		return s.t("chat.default_title")
+	}
+	return title
+}
+
+// handleIndex always opens a fresh chat and cleans up orphaned empty ones.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	// Verwaiste leere Chats entfernen, bevor ein neuer angelegt wird.
+	// Remove orphaned empty chats before creating a new one.
 	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
 		slog.Warn("clean up empty chats", "err", err)
 	}
-	id, err := s.store.CreateChat(ctx, defaultTitle)
+	id, err := s.store.CreateChat(ctx, untitled)
 	if err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
 	http.Redirect(w, r, "/chat/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
-// handleChat rendert die Vollseite eines Chats.
+// handleChat renders the full page of a chat.
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, err := parseID(r)
@@ -108,34 +146,34 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	// Beim Öffnen eines Chats verwaiste leere Chats entfernen (außer diesem).
+	// Remove orphaned empty chats when opening a chat (except this one).
 	if _, err := s.store.DeleteEmptyChats(ctx, id); err != nil {
 		slog.Warn("clean up empty chats", "err", err)
 	}
 	pd, err := s.buildPageData(ctx, &chat)
 	if err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
 	s.render(w, "base", pd)
 }
 
-// handleCreateChat legt einen neuen Chat an und leitet per HTMX dorthin um.
+// handleCreateChat creates a new chat and redirects there via HTMX.
 func (s *Server) handleCreateChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	// Verwaiste leere Chats entfernen, bevor ein neuer angelegt wird.
+	// Remove orphaned empty chats before creating a new one.
 	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
 		slog.Warn("clean up empty chats", "err", err)
 	}
-	id, err := s.store.CreateChat(ctx, defaultTitle)
+	id, err := s.store.CreateChat(ctx, untitled)
 	if err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
 	redirect(w, r, "/chat/"+strconv.FormatInt(id, 10))
 }
 
-// handleDeleteChat entfernt einen Chat.
+// handleDeleteChat removes a chat.
 func (s *Server) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r)
 	if err != nil {
@@ -143,29 +181,35 @@ func (s *Server) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.DeleteChat(r.Context(), id); err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
 	redirect(w, r, "/")
 }
 
-// handleStats zeigt die persistente Token-Nutzungsstatistik.
+// handleStats shows the persistent token usage statistics.
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	summary, err := s.store.UsageSummaryTotals(ctx)
 	if err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
 	days, err := s.store.UsageByDay(ctx, 30)
 	if err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
 	models, err := s.store.UsageByModel(ctx)
 	if err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
+	}
+	// Requests answered by the router carry no model name.
+	for i := range models {
+		if models[i].Model == "" {
+			models[i].Model = s.t("stats.auto_router")
+		}
 	}
 	data := struct {
 		Title   string
@@ -173,7 +217,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		Days    []storage.UsageDay
 		Models  []storage.UsageModel
 	}{
-		Title:   "Statistik",
+		Title:   s.t("stats.title"),
 		Summary: summary,
 		Days:    days,
 		Models:  models,
@@ -181,17 +225,17 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "stats", data)
 }
 
-// handleSend speichert die Nutzernachricht und gibt die Stream-Hülle zurück.
+// handleSend stores the user message and returns the streaming shell.
 func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Chat-ID auflösen ("new" erzeugt bei Bedarf einen Chat).
+	// Resolve the chat ID ("new" creates a chat on demand).
 	idParam := chi.URLParam(r, "id")
 	var chatID int64
 	if idParam == "new" {
-		newID, err := s.store.CreateChat(ctx, defaultTitle)
+		newID, err := s.store.CreateChat(ctx, untitled)
 		if err != nil {
-			httpError(w, err)
+			s.httpError(w, err)
 			return
 		}
 		chatID = newID
@@ -216,17 +260,17 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Web-Suche nur berücksichtigen, wenn angefordert UND konfiguriert.
+	// Only honor web search when it was requested AND is configured.
 	web := r.FormValue("web") == "1" && s.search.Enabled()
 
 	if _, err := s.store.AddMessage(ctx, chatID, "user", message); err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
 
-	// Titel aus erster Nachricht ableiten.
+	// Derive a provisional title from the first message.
 	titleChanged := false
-	if chat.Title == defaultTitle {
+	if isUntitled(chat.Title) {
 		newTitle := makeTitle(message)
 		if err := s.store.UpdateChatTitle(ctx, chatID, newTitle); err == nil {
 			chat.Title = newTitle
@@ -236,7 +280,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.TouchChat(ctx, chatID)
 	}
 
-	// Nutzer-Bubble + Stream-Hülle anhängen.
+	// Append the user bubble plus the streaming shell.
 	s.render(w, "message", storage.Message{Role: "user", Content: message})
 	s.render(w, "assistant-stream", struct {
 		ChatID int64
@@ -247,7 +291,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleGenerate streamt die Assistent-Antwort als SSE.
+// handleGenerate streams the assistant answer as SSE.
 func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, err := parseID(r)
@@ -258,27 +302,29 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	sse, ok := newSSEWriter(w)
 	if !ok {
-		http.Error(w, "streaming nicht unterstützt", http.StatusInternalServerError)
+		http.Error(w, s.t("stream.not_supported"), http.StatusInternalServerError)
 		return
 	}
 
+	// The SSE stream is best effort: once the client disconnects, writes fail
+	// and there is nothing useful left to report, so the errors are ignored.
 	fail := func(msg string) {
 		_ = sse.send("token", renderMarkdownString("⚠ "+msg))
 		_ = sse.send("done", "")
 	}
 
 	if !s.cfg.IsConfigured() {
-		fail("Nicht konfiguriert. Bitte Azure-Endpoint, Deployment, API-Version und AZURE_API_KEY setzen.")
+		fail(s.t("stream.not_configured"))
 		return
 	}
 
 	history, err := s.store.ListMessages(ctx, id)
 	if err != nil || len(history) == 0 {
-		fail("Keine Nachricht zum Beantworten gefunden.")
+		fail(s.t("stream.no_message"))
 		return
 	}
 
-	// Letzte Nutzernachricht als Suchanfrage.
+	// Use the last user message as the search query.
 	query := ""
 	for i := len(history) - 1; i >= 0; i-- {
 		if history[i].Role == "user" {
@@ -287,7 +333,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Web-Suche: erzwungen per Toggle (?web=1) oder automatisch per Tool-Calling.
+	// Web search: forced via the toggle (?web=1) or automatic via tool calling.
 	cfg := s.cfg.Get()
 	forceWeb := r.URL.Query().Get("web") == "1" && s.search.Enabled()
 	autoWeb := cfg.SearchAuto && s.search.Enabled() && !forceWeb
@@ -306,7 +352,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	)
 	if autoWeb {
 		result, streamErr = s.streamWithSearch(ctx, sse, messages, onDelta)
-		// Fallback ohne Tools, falls der Router kein Tool-Calling unterstützt.
+		// Fall back without tools if the router does not support tool calling.
 		if streamErr != nil && acc.Len() == 0 {
 			slog.Warn("tool-calling failed, falling back without tools", "err", streamErr)
 			result, streamErr = s.llm.ChatStream(ctx, messages, onDelta)
@@ -318,46 +364,48 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	if streamErr != nil {
 		slog.Error("chat-stream", "err", streamErr)
 		if acc.Len() == 0 {
-			fail("Fehler bei der Anfrage: " + streamErr.Error())
+			fail(s.t("stream.request_failed", streamErr.Error()))
 			return
 		}
-		// Teilantwort vorhanden: kennzeichnen und fortfahren.
-		acc.WriteString("\n\n_(Verbindung unterbrochen)_")
+		// A partial answer exists: mark it and carry on.
+		acc.WriteString("\n\n" + s.t("stream.interrupted"))
 		_ = sse.send("token", renderMarkdownString(acc.String()))
 	}
 
 	final := acc.String()
 	if final != "" {
+		// Deliberately not r.Context(): the answer must be persisted even when
+		// the browser has already navigated away.
 		if _, err := s.store.AddMessage(context.Background(), id, "assistant", final); err != nil {
 			slog.Error("save assistant message", "err", err)
 		}
 	}
 
-	// Tatsächlich verwendetes Modell anzeigen (vom Router gemeldet).
+	// Show the model that was actually used (as reported by the router).
 	if result.Model != "" {
 		_ = sse.send("model", s.renderString("model-tag", result.Model))
 	}
 
-	// Token-Nutzung dieser Antwort als Fußzeile der Nachricht ausgeben.
+	// Emit the token usage of this answer as the message footer.
 	if result.Usage.TotalTokens > 0 {
-		_ = sse.send("usage", fmt.Sprintf("%s Tokens · %s Eingabe / %s Antwort",
-			groupThousands(int64(result.Usage.TotalTokens)),
-			groupThousands(int64(result.Usage.PromptTokens)),
-			groupThousands(int64(result.Usage.CompletionTokens))))
+		_ = sse.send("usage", s.t("usage.footer",
+			s.thousands(int64(result.Usage.TotalTokens)),
+			s.thousands(int64(result.Usage.PromptTokens)),
+			s.thousands(int64(result.Usage.CompletionTokens))))
 	}
 
-	// Nach der ersten Antwort einen prägnanten Chat-Titel erzeugen.
+	// Generate a concise chat title after the first answer.
 	if final != "" {
 		s.maybeGenerateTitle(context.Background(), sse, id)
 	}
 	_ = sse.send("done", "")
 }
 
-// maybeGenerateTitle erzeugt nach dem ersten Austausch einen kurzen, prägnanten
-// Chat-Titel aus dem Inhalt und aktualisiert Header und Seitenleiste per SSE.
+// maybeGenerateTitle creates a short, meaningful chat title from the content
+// after the first exchange and updates header and sidebar via SSE.
 func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID int64) {
 	msgs, err := s.store.ListMessages(ctx, chatID)
-	if err != nil || len(msgs) != 2 { // nur beim ersten Austausch (1 Frage + 1 Antwort)
+	if err != nil || len(msgs) != 2 { // only on the first exchange (1 question + 1 answer)
 		return
 	}
 	if !s.cfg.IsConfigured() {
@@ -377,13 +425,10 @@ func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID 
 		return
 	}
 
-	prompt := fmt.Sprintf(
-		"Erstelle einen sehr kurzen, prägnanten Titel (höchstens 6 Wörter, keine Anführungszeichen, kein abschließendes Satzzeichen) für diese Unterhaltung.\n\nFrage: %s\n\nAntwort: %s",
-		truncateRunes(userMsg, 800), truncateRunes(assistantMsg, 800))
-
 	titleMessages := []llm.Message{
-		{Role: "system", Content: "Du erstellst extrem kurze, prägnante Titel für Chat-Unterhaltungen."},
-		{Role: "user", Content: prompt},
+		{Role: "system", Content: s.t("prompt.title_system")},
+		{Role: "user", Content: s.t("prompt.title_user",
+			truncateRunes(userMsg, 800), truncateRunes(assistantMsg, 800))},
 	}
 
 	var sb strings.Builder
@@ -404,7 +449,7 @@ func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID 
 		return
 	}
 
-	// Header und Seitenleiste live aktualisieren.
+	// Update header and sidebar live.
 	chats, _ := s.store.ListChats(ctx)
 	chat, _ := s.store.GetChat(ctx, chatID)
 	data := struct {
@@ -415,7 +460,7 @@ func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID 
 	_ = sse.send("title", s.renderString("title-update", data))
 }
 
-// cleanTitle bereinigt einen vom Modell erzeugten Titel.
+// cleanTitle normalizes a title produced by the model.
 func cleanTitle(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.Trim(s, "\"'„“”`")
@@ -428,7 +473,7 @@ func cleanTitle(s string) string {
 	return s
 }
 
-// truncateRunes kürzt einen Text auf höchstens n Runen.
+// truncateRunes shortens a text to at most n runes.
 func truncateRunes(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -437,36 +482,39 @@ func truncateRunes(s string, n int) string {
 	return string(r[:n])
 }
 
-// buildLLMMessages baut die Nachrichtenliste inkl. RAG- und optionalem Web-Kontext
-// (RAG ist auf den Chat beschränkt).
+// buildLLMMessages assembles the message list including RAG context and
+// optional web context (RAG is limited to the current chat).
 func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.Config, history []storage.Message, query string, web bool) []llm.Message {
 	system := cfg.SystemPrompt
+	if strings.TrimSpace(system) == "" {
+		system = s.t("prompt.default_system")
+	}
 
-	// Relevante Dokumentabschnitte abrufen (sofern Embedding konfiguriert).
+	// Fetch relevant document sections (only if embeddings are configured).
 	if cfg.EmbeddingDeployment != "" && query != "" {
 		results, err := s.retriever.Retrieve(ctx, chatID, query, retrievalTopK)
 		if err != nil {
 			slog.Warn("retrieval failed", "err", err)
 		} else if len(results) > 0 {
 			var sb strings.Builder
-			sb.WriteString("\n\nNutze den folgenden Kontext aus hochgeladenen Dokumenten, sofern er für die Frage relevant ist. Wenn er nicht passt, ignoriere ihn.\n\n")
+			sb.WriteString(s.t("prompt.rag_intro"))
 			for i, res := range results {
-				fmt.Fprintf(&sb, "[Kontext %d]\n%s\n\n", i+1, res.Text)
+				sb.WriteString(s.t("prompt.rag_item", i+1, res.Text))
 			}
 			system += sb.String()
 		}
 	}
 
-	// Aktuelle Web-Ergebnisse einbeziehen, falls angefordert.
+	// Include current web results when requested.
 	if web && query != "" {
 		results, err := s.search.Search(ctx, query)
 		if err != nil {
 			slog.Warn("web search failed", "err", err)
 		} else if len(results) > 0 {
 			var sb strings.Builder
-			sb.WriteString("\n\nNutze die folgenden aktuellen Web-Ergebnisse, sofern sie für die Frage relevant sind. Zitiere die Quellen mit ihrer URL.\n\n")
+			sb.WriteString(s.t("prompt.web_intro"))
 			for i, res := range results {
-				fmt.Fprintf(&sb, "[Web %d] %s\nQuelle: %s\n%s\n\n", i+1, res.Title, res.URL, res.Content)
+				sb.WriteString(s.t("prompt.web_item", i+1, res.Title, res.URL, res.Content))
 			}
 			system += sb.String()
 		}
@@ -482,35 +530,43 @@ func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.
 	return msgs
 }
 
-// maxToolIterations begrenzt die Runden im Tool-Loop, um Endlosschleifen zu vermeiden.
+// maxToolIterations bounds the tool loop to prevent endless round trips.
 const maxToolIterations = 4
 
-// webSearchTool definiert das dem Modell angebotene Websuche-Werkzeug.
-func webSearchTool() llm.Tool {
+// webSearchTool defines the web search tool offered to the model.
+func (s *Server) webSearchTool() llm.Tool {
+	parameters, err := json.Marshal(map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"query": map[string]any{
+				"type":        "string",
+				"description": s.t("prompt.tool_query"),
+			},
+		},
+		"required": []string{"query"},
+	})
+	if err != nil {
+		// The schema is built from constants, so this cannot fail in practice.
+		slog.Error("build tool schema", "err", err)
+	}
 	return llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunction{
 			Name:        "web_search",
-			Description: "Durchsucht das Web nach aktuellen Informationen. Nutze dieses Werkzeug, wenn die Frage aktuelle Ereignisse, Nachrichten, Preise, Zahlen oder Fakten betrifft, die sich seit deinem Trainingsstand geändert haben könnten.",
-			Parameters: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"query": {"type": "string", "description": "Die Suchanfrage in natürlicher Sprache"}
-				},
-				"required": ["query"]
-			}`),
+			Description: s.t("prompt.tool_desc"),
+			Parameters:  parameters,
 		},
 	}
 }
 
-// streamWithSearch führt den Tool-Loop aus: Das Modell kann das web_search-Tool
-// selbst aufrufen; die Ergebnisse werden zurückgespeist, bis eine finale Antwort
-// (ohne Tool-Aufruf) gestreamt wird.
+// streamWithSearch runs the tool loop: the model may call the web_search tool
+// itself, results are fed back until a final answer (without a tool call) is
+// streamed.
 func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, messages []llm.Message, onDelta func(string) error) (llm.ChatResult, error) {
-	tools := []llm.Tool{webSearchTool()}
+	tools := []llm.Tool{s.webSearchTool()}
 	var final llm.ChatResult
 
-	for i := 0; i < maxToolIterations; i++ {
+	for range maxToolIterations {
 		turn, err := s.llm.ChatStreamWithTools(ctx, messages, tools, onDelta)
 		if err != nil {
 			return final, err
@@ -522,18 +578,18 @@ func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, messages 
 		final.Usage.CompletionTokens += turn.Usage.CompletionTokens
 		final.Usage.TotalTokens += turn.Usage.TotalTokens
 
-		// Keine Tool-Aufrufe → finale Antwort wurde bereits gestreamt.
+		// No tool calls -> the final answer has already been streamed.
 		if len(turn.ToolCalls) == 0 {
 			return final, nil
 		}
 
-		// Assistenten-Nachricht mit den angeforderten Tool-Aufrufen anhängen.
+		// Append the assistant message with the requested tool calls.
 		messages = append(messages, llm.Message{
 			Role:      "assistant",
 			Content:   turn.Content,
 			ToolCalls: turn.ToolCalls,
 		})
-		// Jeden Tool-Aufruf ausführen und das Ergebnis zurückspeisen.
+		// Execute every tool call and feed the result back.
 		for _, tc := range turn.ToolCalls {
 			resultText := s.executeToolCall(ctx, sse, tc)
 			messages = append(messages, llm.Message{
@@ -545,7 +601,7 @@ func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, messages 
 		}
 	}
 
-	// Maximale Rundenzahl erreicht: letzte Antwort ohne Tools erzwingen.
+	// Iteration limit reached: force a last answer without tools.
 	turn, err := s.llm.ChatStream(ctx, messages, onDelta)
 	if err != nil {
 		return final, err
@@ -559,58 +615,61 @@ func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, messages 
 	return final, nil
 }
 
-// executeToolCall führt einen Tool-Aufruf aus und liefert das Ergebnis als Text
-// für das Modell. Aktuell wird nur "web_search" unterstützt.
+// executeToolCall runs a tool call and returns the result as text for the
+// model. Currently only "web_search" is supported.
 func (s *Server) executeToolCall(ctx context.Context, sse *sseWriter, tc llm.ToolCall) string {
 	if tc.Function.Name != "web_search" {
-		return "Unbekanntes Werkzeug: " + tc.Function.Name
+		return s.t("tool.unknown", tc.Function.Name)
 	}
 
 	var args struct {
 		Query string `json:"query"`
 	}
-	_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+	if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+		slog.Warn("parse tool arguments", "err", err)
+	}
 	query := strings.TrimSpace(args.Query)
 	if query == "" {
-		return "Leere Suchanfrage."
+		return s.t("tool.empty_query")
 	}
 
-	// Status in der UI anzeigen.
+	// Show the status in the UI (best effort, see handleGenerate).
 	_ = sse.send("tool", s.renderString("tool-status", query))
 
 	results, err := s.search.Search(ctx, query)
 	if err != nil {
 		slog.Warn("web search (tool) failed", "query", query, "err", err)
-		return "Websuche fehlgeschlagen: " + err.Error()
+		return s.t("tool.search_failed", err.Error())
 	}
 	if len(results) == 0 {
-		return "Keine Web-Ergebnisse gefunden."
+		return s.t("tool.no_results")
 	}
 
 	var sb strings.Builder
-	sb.WriteString("Web-Ergebnisse (zitiere relevante Quellen mit ihrer URL):\n\n")
+	sb.WriteString(s.t("tool.results_intro"))
 	for i, res := range results {
-		fmt.Fprintf(&sb, "[%d] %s\nURL: %s\n%s\n\n", i+1, res.Title, res.URL, res.Content)
+		sb.WriteString(s.t("tool.result_item", i+1, res.Title, res.URL, res.Content))
 	}
 	return sb.String()
 }
 
-// handleConfigGet liefert den Einstellungs-Dialog.
-func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
+// handleConfigGet returns the settings dialog.
+func (s *Server) handleConfigGet(w http.ResponseWriter, _ *http.Request) {
 	s.renderConfig(w, false)
 }
 
-// handleConfigPost speichert die Konfiguration.
+// handleConfigPost stores the configuration.
 func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
 	cfg := s.cfg.Get()
+	previousLanguage := cfg.Language
 	locks := s.cfg.Locks()
-	// Per Umgebungsvariable gesperrte Endpoint-Felder werden im Formular
-	// deaktiviert (und daher nicht übertragen); sie dürfen nicht überschrieben
-	// werden. Save() schützt sie zusätzlich, hier vermeiden wir das Leeren.
+	// Endpoint fields locked via environment variables are disabled in the form
+	// (and therefore not submitted); they must not be cleared. Save() protects
+	// them as well, this only avoids blanking them here.
 	if !locks.Endpoint {
 		cfg.Endpoint = strings.TrimSpace(r.FormValue("endpoint"))
 	}
@@ -632,8 +691,18 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	if !locks.EmbeddingAPIVersion {
 		cfg.EmbeddingAPIVersion = strings.TrimSpace(r.FormValue("embedding_api_version"))
 	}
+	cfg.Language = i18n.Normalize(r.FormValue("language"))
 	cfg.SearchProvider = strings.ToLower(strings.TrimSpace(r.FormValue("search_provider")))
-	cfg.SearchEndpoint = strings.TrimSpace(r.FormValue("search_endpoint"))
+
+	// The SearXNG base URL is fetched by the server, so it is validated before
+	// it is stored (see websearch.ValidateEndpoint).
+	searchEndpoint := strings.TrimSpace(r.FormValue("search_endpoint"))
+	if err := websearch.ValidateEndpoint(searchEndpoint); err != nil {
+		s.renderConfigNotice(w, s.t("error.invalid_endpoint", err.Error()), true)
+		return
+	}
+	cfg.SearchEndpoint = searchEndpoint
+
 	if n, err := strconv.Atoi(strings.TrimSpace(r.FormValue("search_max_results"))); err == nil && n > 0 {
 		cfg.SearchMaxResults = n
 	}
@@ -643,21 +712,29 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 		cfg.Temperature = t
 	}
 
-	// Aktuell erzwungenes Modell verwerfen, falls es nicht mehr in der Liste steht.
-	if cfg.ChatModel != "" && !containsString(cfg.ChatModels, cfg.ChatModel) {
+	// Drop the pinned model if it is no longer part of the list.
+	if cfg.ChatModel != "" && !slices.Contains(cfg.ChatModels, cfg.ChatModel) {
 		cfg.ChatModel = ""
 	}
 
 	if err := s.cfg.Save(cfg); err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
-	// Konfiguration geändert: Verifizierung muss erneut erfolgen.
+	// Configuration changed: verification has to run again.
 	s.ready.invalidate()
+
+	// A language change affects the whole page, not just the dialog, so ask
+	// htmx for a full reload instead of swapping a single fragment.
+	if cfg.Language != previousLanguage && r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	s.renderConfig(w, true)
 }
 
-// handleVerify führt alle Bereitschaftsprüfungen aus und liefert das Ergebnis.
+// handleVerify runs all readiness checks and returns the result.
 func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	results := s.runChecks(r.Context())
 	data := struct {
@@ -674,16 +751,19 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "verify-results", data)
 }
 
-// handleStatus liefert den Verbindungs-Badge für die Seitenleiste. Wird von der
-// UI periodisch gepollt, damit Verbindungsausfälle sichtbar werden.
-func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+// handleStatus returns the connection badge for the sidebar. The UI polls it
+// periodically so connection failures become visible.
+func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	s.render(w, "status-badge", s.statusData())
 }
 
-// statusData bereitet die Daten für den Status-Badge auf.
+// statusData prepares the data for the status badge.
 func (s *Server) statusData() statusBadge {
 	snap := s.ready.snapshot()
-	docs, _ := s.store.CountDocuments(context.Background())
+	docs, err := s.store.CountDocuments(context.Background())
+	if err != nil {
+		slog.Warn("count documents", "err", err)
+	}
 	m := s.llm.Metrics()
 	b := statusBadge{
 		Configured: s.cfg.IsConfigured(),
@@ -698,31 +778,31 @@ func (s *Server) statusData() statusBadge {
 	b.DiskHuman = humanBytes(b.DiskBytes)
 	switch {
 	case !b.Configured:
-		b.Label = "Nicht konfiguriert"
+		b.Label = s.t("status.not_configured")
 		b.Level = "warn"
 	case !snap.Checked:
-		b.Label = "Prüfe…"
+		b.Label = s.t("status.checking")
 		b.Level = "warn"
 	case snap.AllOK:
-		b.Label = "Verbunden"
+		b.Label = s.t("status.connected")
 		b.Level = "ok"
 	case !snap.StorageOK:
-		b.Label = "Speicher-Fehler"
+		b.Label = s.t("status.storage_error")
 		b.Level = "err"
 	case !snap.ChatOK && !snap.EmbeddingOK:
-		b.Label = "Endpoints nicht erreichbar"
+		b.Label = s.t("status.endpoints_offline")
 		b.Level = "err"
 	case !snap.ChatOK:
-		b.Label = "Chat-Endpoint offline"
+		b.Label = s.t("status.chat_offline")
 		b.Level = "err"
 	default:
-		b.Label = "Embedding-Endpoint offline"
+		b.Label = s.t("status.embedding_offline")
 		b.Level = "err"
 	}
 	return b
 }
 
-// statusBadge sind die Anzeigedaten des Verbindungsstatus.
+// statusBadge holds the display data of the connection status.
 type statusBadge struct {
 	Configured bool
 	Checked    bool
@@ -737,24 +817,24 @@ type statusBadge struct {
 	Level      string // ok | warn | err
 }
 
-// handleSetModel übernimmt die Modellauswahl aus dem Header-Menü. Die Auswahl
-// ist global und bleibt damit beim Wechsel zwischen Chats erhalten.
+// handleSetModel applies the model selection from the header menu. The choice
+// is global and therefore survives switching between chats.
 func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
 	model := strings.TrimSpace(r.FormValue("model"))
 	if err := s.cfg.SetChatModel(model); err != nil {
 		slog.Warn("model selection rejected", "model", model, "err", err)
-		http.Error(w, "ungültiges modell", http.StatusBadRequest)
+		http.Error(w, s.t("error.invalid_model"), http.StatusBadRequest)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// refreshModels fragt die verfügbaren Modelle vom Endpoint ab und speichert sie
-// in der Konfiguration. Liefert die Anzahl gefundener Modelle.
+// refreshModels queries the models available at the endpoint and stores them in
+// the configuration. It returns the number of models found.
 func (s *Server) refreshModels(ctx context.Context) (int, error) {
 	models, err := s.llm.ListModels(ctx)
 	if err != nil {
@@ -762,8 +842,8 @@ func (s *Server) refreshModels(ctx context.Context) (int, error) {
 	}
 	cfg := s.cfg.Get()
 	cfg.ChatModels = models
-	// Erzwungenes Modell verwerfen, falls es nicht mehr angeboten wird.
-	if cfg.ChatModel != "" && !containsString(models, cfg.ChatModel) {
+	// Drop the pinned model if it is no longer offered.
+	if cfg.ChatModel != "" && !slices.Contains(models, cfg.ChatModel) {
 		cfg.ChatModel = ""
 	}
 	if err := s.cfg.Save(cfg); err != nil {
@@ -772,40 +852,30 @@ func (s *Server) refreshModels(ctx context.Context) (int, error) {
 	return len(models), nil
 }
 
-// handleRefreshModels fragt die Modelle vom Endpoint ab (Button im Konfig-Dialog)
-// und rendert den Konfig-Dialog mit dem Ergebnis neu.
+// handleRefreshModels queries the models from the endpoint (button in the
+// settings dialog) and re-renders the dialog with the result.
 func (s *Server) handleRefreshModels(w http.ResponseWriter, r *http.Request) {
-	// Ist die Modell-Liste per Umgebungsvariable festgelegt, ist sie gesperrt.
+	// If the model list is pinned via an environment variable it is read-only.
 	if s.cfg.Locks().ChatModels {
-		s.renderConfigNotice(w, "Modelle sind über die Umgebungsvariable AZURE_MODELS festgelegt und können hier nicht abgerufen werden.", true)
+		s.renderConfigNotice(w, s.t("models.locked"), true)
 		return
 	}
 	n, err := s.refreshModels(r.Context())
 	if err != nil {
 		slog.Warn("fetch models", "err", err)
-		s.renderConfigNotice(w, "Modelle konnten nicht abgerufen werden: "+err.Error(), true)
+		s.renderConfigNotice(w, s.t("models.fetch_failed", err.Error()), true)
 		return
 	}
-	s.renderConfigNotice(w, fmt.Sprintf("%d bereitgestellte Modelle übernommen.", n), false)
+	s.renderConfigNotice(w, s.t("models.fetched", n), false)
 }
 
-// parseModels zerlegt eine durch Zeilen oder Kommas getrennte Liste in
-// bereinigte, eindeutige Modellnamen.
+// parseModels splits a newline or comma separated list into trimmed, unique
+// model names.
 func parseModels(raw string) []string {
 	return config.ParseModelList(raw)
 }
 
-// containsString prüft, ob s in list enthalten ist.
-func containsString(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
-// handleUpload nimmt ein Dokument entgegen und verarbeitet es (RAG-Ingestion).
+// handleUpload accepts a document and processes it (RAG ingestion).
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -819,24 +889,30 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Uploads sind erst erlaubt, wenn Storage und Embedding-Endpoint verifiziert
-	// wurden. So gelangen keine Dokumente in die Pipeline, bevor die benötigten
-	// Komponenten nachweislich bereit sind.
+	// Uploads are only allowed once storage and the embedding endpoint have
+	// been verified, so no document enters the pipeline before the required
+	// components are demonstrably ready.
 	if !s.ready.uploadsAllowed() {
-		s.renderDocList(w, r, chatID,
-			"Upload gesperrt – bitte zuerst in den Einstellungen die Verbindung testen (Speicher & Embedding-Endpoint müssen bereit sein).", true)
+		s.renderDocList(w, r, chatID, s.t("upload.blocked"), true)
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxTotalUploadBytes)
-	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
-		httpError(w, err)
+	// #nosec G120 -- the request body is bounded by MaxBytesReader above and
+	// multipartMemoryBytes caps how much of it is kept in memory.
+	if err := r.ParseMultipartForm(multipartMemoryBytes); err != nil {
+		s.httpError(w, err)
 		return
 	}
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll() // delete spilled temporary files
+		}
+	}()
 
 	ecfg := s.cfg.Get()
 	if ecfg.EmbeddingDeployment == "" || ecfg.EmbeddingHost() == "" || !s.cfg.HasEmbeddingAPIKey() {
-		s.renderDocList(w, r, chatID, "Embedding nicht konfiguriert – bitte zuerst Einstellungen ausfüllen.", true)
+		s.renderDocList(w, r, chatID, s.t("upload.embedding_missing"), true)
 		return
 	}
 
@@ -845,7 +921,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		headers = r.MultipartForm.File["file"]
 	}
 	if len(headers) == 0 {
-		s.renderDocList(w, r, chatID, "Keine Datei empfangen.", true)
+		s.renderDocList(w, r, chatID, s.t("upload.no_file"), true)
 		return
 	}
 
@@ -855,29 +931,30 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	)
 	for _, header := range headers {
 		if header.Size > maxUploadBytes {
-			failures = append(failures, fmt.Sprintf("„%s“ (zu groß)", header.Filename))
+			failures = append(failures, s.t("upload.too_large", header.Filename))
 			continue
 		}
 		data, err := readMultipartFile(header)
 		if err != nil {
 			slog.Error("read upload", "file", header.Filename, "err", err)
-			failures = append(failures, fmt.Sprintf("„%s“ (Lesefehler)", header.Filename))
+			failures = append(failures, s.t("upload.read_error", header.Filename))
 			continue
 		}
 		mime := header.Header.Get("Content-Type")
 		if _, _, err := s.ingestor.Ingest(ctx, chatID, header.Filename, mime, data); err != nil {
 			slog.Error("ingest", "file", header.Filename, "err", err)
-			failures = append(failures, fmt.Sprintf("„%s“ (%s)", header.Filename, err.Error()))
+			failures = append(failures, s.t("upload.item_failed", header.Filename, err.Error()))
 			continue
 		}
 		added++
 	}
 
-	notice, isErr := uploadSummary(added, failures)
+	notice, isErr := s.uploadSummary(added, failures)
 	s.renderDocList(w, r, chatID, notice, isErr)
 }
 
-// readMultipartFile liest den gesamten Inhalt einer hochgeladenen Datei.
+// readMultipartFile reads the full content of an uploaded file. The size has
+// already been bounded by MaxBytesReader and the per-file check in handleUpload.
 func readMultipartFile(header *multipart.FileHeader) ([]byte, error) {
 	f, err := header.Open()
 	if err != nil {
@@ -885,39 +962,29 @@ func readMultipartFile(header *multipart.FileHeader) ([]byte, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	data := make([]byte, 0, header.Size)
-	buf := make([]byte, 32*1024)
-	for {
-		n, rerr := f.Read(buf)
-		if n > 0 {
-			data = append(data, buf[:n]...)
-		}
-		if rerr != nil {
-			if rerr == io.EOF {
-				break
-			}
-			return nil, rerr
-		}
+	buf := bytes.NewBuffer(make([]byte, 0, header.Size))
+	if _, err := io.Copy(buf, io.LimitReader(f, maxUploadBytes)); err != nil {
+		return nil, err
 	}
-	return data, nil
+	return buf.Bytes(), nil
 }
 
-// uploadSummary baut die Statusmeldung für einen (Mehrfach-)Upload.
-func uploadSummary(added int, failures []string) (string, bool) {
+// uploadSummary builds the status message for a (multi-file) upload.
+func (s *Server) uploadSummary(added int, failures []string) (string, bool) {
 	switch {
 	case added > 0 && len(failures) == 0:
 		if added == 1 {
-			return "1 Dokument hinzugefügt.", false
+			return s.t("upload.added_one"), false
 		}
-		return fmt.Sprintf("%d Dokumente hinzugefügt.", added), false
+		return s.t("upload.added_many", added), false
 	case added > 0 && len(failures) > 0:
-		return fmt.Sprintf("%d hinzugefügt. Fehlgeschlagen: %s", added, strings.Join(failures, ", ")), true
+		return s.t("upload.partial", added, strings.Join(failures, ", ")), true
 	default:
-		return "Verarbeitung fehlgeschlagen: " + strings.Join(failures, ", "), true
+		return s.t("upload.failed", strings.Join(failures, ", ")), true
 	}
 }
 
-// handleDeleteDocument entfernt ein Dokument aus einem Chat.
+// handleDeleteDocument removes a document from a chat.
 func (s *Server) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
 	chatID, err := strconv.ParseInt(chi.URLParam(r, "cid"), 10, 64)
 	if err != nil {
@@ -930,13 +997,13 @@ func (s *Server) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.DeleteDocument(r.Context(), docID); err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
 	s.renderDocList(w, r, chatID, "", false)
 }
 
-// ---- Render-Helfer ----
+// ---- render helpers ----
 
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
 	if err := s.tmpl.ExecuteTemplate(w, name, data); err != nil {
@@ -944,7 +1011,7 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 	}
 }
 
-// renderString rendert ein Template in einen String (für SSE-Events).
+// renderString renders a template into a string (for SSE events).
 func (s *Server) renderString(name string, data any) string {
 	var buf strings.Builder
 	if err := s.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
@@ -958,7 +1025,7 @@ func (s *Server) renderConfig(w http.ResponseWriter, saved bool) {
 	s.renderConfigData(w, saved, "", false)
 }
 
-// renderConfigNotice rendert den Konfig-Dialog mit einer Statusmeldung.
+// renderConfigNotice renders the settings dialog with a status message.
 func (s *Server) renderConfigNotice(w http.ResponseWriter, notice string, isErr bool) {
 	s.renderConfigData(w, false, notice, isErr)
 }
@@ -967,6 +1034,7 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 	data := struct {
 		Config             config.Config
 		Locks              config.Locks
+		Languages          []i18n.Option
 		HasKey             bool
 		HasEmbeddingKey    bool
 		HasOwnEmbeddingKey bool
@@ -980,6 +1048,7 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 	}{
 		Config:             s.cfg.Get(),
 		Locks:              s.cfg.Locks(),
+		Languages:          i18n.Options(),
 		HasKey:             s.cfg.HasAPIKey(),
 		HasEmbeddingKey:    s.cfg.HasEmbeddingAPIKey(),
 		HasOwnEmbeddingKey: s.cfg.HasOwnEmbeddingAPIKey(),
@@ -997,24 +1066,25 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 func (s *Server) renderDocList(w http.ResponseWriter, r *http.Request, chatID int64, notice string, isErr bool) {
 	docs, err := s.store.ListDocumentsByChat(r.Context(), chatID)
 	if err != nil {
-		httpError(w, err)
+		s.httpError(w, err)
 		return
 	}
 	s.render(w, "doclist", pageData{ChatID: chatID, Documents: docs, Notice: notice, NoticeErr: isErr})
 }
 
-// renderMarkdownString rendert Markdown zu einem HTML-String (für SSE).
+// renderMarkdownString renders Markdown into an HTML string (for SSE).
 func renderMarkdownString(src string) string {
 	return string(renderMarkdown(src))
 }
 
-// ---- sonstige Helfer ----
+// ---- misc helpers ----
 
 func parseID(r *http.Request) (int64, error) {
 	return strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 }
 
-// redirect setzt für HTMX-Anfragen den HX-Redirect-Header, sonst klassisch.
+// redirect sets the HX-Redirect header for HTMX requests, otherwise it performs
+// a classic HTTP redirect.
 func redirect(w http.ResponseWriter, r *http.Request, url string) {
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Redirect", url)
@@ -1024,12 +1094,14 @@ func redirect(w http.ResponseWriter, r *http.Request, url string) {
 	http.Redirect(w, r, url, http.StatusSeeOther)
 }
 
-func httpError(w http.ResponseWriter, err error) {
+// httpError logs the cause and returns a generic message, so internal details
+// never reach the client.
+func (s *Server) httpError(w http.ResponseWriter, err error) {
 	slog.Error("handler", "err", err)
-	http.Error(w, "interner fehler", http.StatusInternalServerError)
+	http.Error(w, s.t("error.internal"), http.StatusInternalServerError)
 }
 
-// makeTitle erzeugt einen kurzen Chat-Titel aus der ersten Nachricht.
+// makeTitle derives a short chat title from the first message.
 func makeTitle(msg string) string {
 	msg = strings.TrimSpace(strings.ReplaceAll(msg, "\n", " "))
 	runes := []rune(msg)
@@ -1039,7 +1111,7 @@ func makeTitle(msg string) string {
 	return msg
 }
 
-// humanBytes formatiert eine Byte-Größe als lesbare Zeichenkette (z.B. "2.4 MB").
+// humanBytes formats a byte size as a readable string (e.g. "2.4 MB").
 func humanBytes(b int64) string {
 	const unit = 1024
 	if b < unit {
@@ -1051,37 +1123,4 @@ func humanBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
-}
-
-// groupThousands formatiert eine Ganzzahl mit deutschen Tausender-Trennpunkten
-// (z.B. 1234567 -> "1.234.567").
-func groupThousands(n int64) string {
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	s := strconv.FormatInt(n, 10)
-	if len(s) <= 3 {
-		if neg {
-			return "-" + s
-		}
-		return s
-	}
-	// Von rechts in Dreiergruppen mit "." trennen.
-	var b strings.Builder
-	lead := len(s) % 3
-	if lead > 0 {
-		b.WriteString(s[:lead])
-	}
-	for i := lead; i < len(s); i += 3 {
-		if b.Len() > 0 {
-			b.WriteByte('.')
-		}
-		b.WriteString(s[i : i+3])
-	}
-	out := b.String()
-	if neg {
-		return "-" + out
-	}
-	return out
 }

@@ -2,7 +2,7 @@
 <aside class="sidebar">
 	<div class="sidebar-top">
 		<form hx-post="/chats" hx-target="body" hx-push-url="true" class="new-chat-form">
-			<button type="submit" class="btn btn-new">+ Neuer Chat</button>
+			<button type="submit" class="btn btn-new">{{t "nav.new_chat"}}</button>
 		</form>
 	</div>
 
@@ -12,8 +12,8 @@
 		<button class="btn btn-config"
 			hx-get="/config"
 			hx-target="#modal-root"
-			hx-swap="innerHTML">⚙ Einstellungen</button>
-		<a href="/stats" class="stats-link">📊 Statistik</a>
+			hx-swap="innerHTML">⚙ {{t "nav.settings"}}</button>
+		<a href="/stats" class="stats-link">📊 {{t "nav.stats"}}</a>
 		<div id="conn-status"
 			hx-get="/status"
 			hx-trigger="load, every 30s"
@@ -34,16 +34,16 @@
 {{define "chatnav-items"}}
 	{{range .Chats}}
 	<div class="chat-item {{if and $.CurrentChat (eq .ID $.CurrentChat.ID)}}active{{end}}">
-		<a href="/chat/{{.ID}}" class="chat-link" title="{{.Title}}">{{.Title}}</a>
+		<a href="/chat/{{.ID}}" class="chat-link" title="{{chatTitle .Title}}">{{chatTitle .Title}}</a>
 		<button class="chat-del"
 			hx-delete="/chats/{{.ID}}"
 			hx-target="body"
-			hx-confirm="Diesen Chat wirklich löschen?"
+			hx-confirm="{{t "chat.delete_confirm"}}"
 			hx-push-url="/"
-			title="Löschen">×</button>
+			title="{{t "action.delete"}}">×</button>
 	</div>
 	{{else}}
-	<p class="empty-hint">Noch keine Chats.</p>
+	<p class="empty-hint">{{t "chat.none_yet"}}</p>
 	{{end}}
 {{end}}
 
@@ -53,14 +53,14 @@
 	{{if .Documents}}
 	<div class="doc-chips">
 		{{range .Documents}}
-		<span class="doc-chip" title="{{.Name}} – {{.Chunks}} Abschnitte">
+		<span class="doc-chip" title="{{t "doc.chip_title" .Name .Chunks}}">
 			<span class="doc-chip-icon">📄</span>
 			<span class="doc-chip-name">{{.Name}}</span>
 			<button class="doc-chip-del"
 				hx-delete="/chat/{{.ChatID}}/documents/{{.ID}}"
 				hx-target="#doc-list"
 				hx-swap="outerHTML"
-				title="Entfernen">×</button>
+				title="{{t "action.remove"}}">×</button>
 		</span>
 		{{end}}
 	</div>
@@ -69,17 +69,17 @@
 {{end}}
 
 {{define "status-badge"}}
-<div class="status {{.Level}}" title="{{if .Uploads}}Uploads freigegeben{{else}}Uploads gesperrt – Verbindung prüfen{{end}}">
+<div class="status {{.Level}}" title="{{if .Uploads}}{{t "uploads.allowed_hint"}}{{else}}{{t "uploads.blocked_hint"}}{{end}}">
 	<span class="status-dot"></span>{{.Label}}
 </div>
-<div class="storage-line" title="Datenbankgröße inkl. Embeddings">
+<div class="storage-line" title="{{t "storage.title"}}">
 	<span class="storage-icon">💾</span>{{.DiskHuman}}
-	<span class="storage-docs">· {{.DocCount}} {{if eq .DocCount 1}}Dokument{{else}}Dokumente{{end}}</span>
+	<span class="storage-docs">· {{.DocCount}} {{if eq .DocCount 1}}{{t "doc.count_one"}}{{else}}{{t "doc.count_many"}}{{end}}</span>
 </div>
 {{if .HasUsage}}
-<div class="usage-line" title="Token-Verbrauch seit Serverstart&#10;Chat: {{thousands .Metrics.ChatTotalTokens}} ({{thousands .Metrics.ChatPromptTokens}} Eingabe / {{thousands .Metrics.ChatComplTokens}} Antwort) über {{thousands .Metrics.ChatRequests}} Anfragen&#10;Embeddings: {{thousands .Metrics.EmbedTokens}} über {{thousands .Metrics.EmbedRequests}} Anfragen&#10;Letzte Antwort: {{thousands .Metrics.LastTotalTokens}} ({{thousands .Metrics.LastPromptTokens}} Eingabe / {{thousands .Metrics.LastComplTokens}} Antwort)">
-	<span class="usage-icon">🪙</span>{{thousands .Metrics.TotalTokens}} Tokens
-	{{if gt .Metrics.LastTotalTokens 0}}<span class="usage-last">· zuletzt {{thousands .Metrics.LastTotalTokens}}</span>{{end}}
+<div class="usage-line" title="{{t "usage.tooltip_head"}}&#10;{{t "usage.tooltip_chat" (thousands .Metrics.ChatTotalTokens) (thousands .Metrics.ChatPromptTokens) (thousands .Metrics.ChatComplTokens) (thousands .Metrics.ChatRequests)}}&#10;{{t "usage.tooltip_embed" (thousands .Metrics.EmbedTokens) (thousands .Metrics.EmbedRequests)}}&#10;{{t "usage.tooltip_last" (thousands .Metrics.LastTotalTokens) (thousands .Metrics.LastPromptTokens) (thousands .Metrics.LastComplTokens)}}">
+	<span class="usage-icon">🪙</span>{{thousands .Metrics.TotalTokens}} {{t "usage.tokens"}}
+	{{if gt .Metrics.LastTotalTokens 0}}<span class="usage-last">· {{t "usage.last" (thousands .Metrics.LastTotalTokens)}}</span>{{end}}
 </div>
 {{end}}
 {{end}}

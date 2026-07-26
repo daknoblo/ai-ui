@@ -1,15 +1,15 @@
-# Lokaler Build-Cache und Git
+# Local build cache and Git metadata
 .git
 .gitignore
 *.md
 
-# Datenverzeichnis / lokale DB
+# Data directory / local database
 /data
 *.db
 *.db-wal
 *.db-shm
 
-# Build-Artefakte
+# Build artifacts
 /ai-ui
 /out
 

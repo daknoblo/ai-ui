@@ -2,13 +2,13 @@
 /ai-ui
 /out
 
-# Lokaler Datenpfad / SQLite
+# Local data path / SQLite
 /data
 *.db
 *.db-wal
 *.db-shm
 
-# Konfiguration mit potenziell sensiblen Werten
+# Configuration that may contain sensitive values
 appdata/config.json
 
 # OS / IDE

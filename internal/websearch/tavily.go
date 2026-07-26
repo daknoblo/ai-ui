@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
 
-// tavilyProvider nutzt die Tavily-Search-API, die direkt extrahierte Inhalte
-// liefert und damit besonders gut für RAG geeignet ist.
+// tavilyProvider uses the Tavily Search API, which returns already extracted
+// page content and is therefore particularly well suited for RAG.
 type tavilyProvider struct {
 	http   *http.Client
 	apiKey string
@@ -69,19 +70,19 @@ func (p *tavilyProvider) Search(ctx context.Context, query string, maxResults in
 		results = append(results, Result{
 			Title:   strings.TrimSpace(r.Title),
 			URL:     r.URL,
-			Content: truncate(strings.TrimSpace(r.Content), 1500),
+			Content: truncate(strings.TrimSpace(r.Content), maxContentRunes),
 		})
 	}
 	return results, nil
 }
 
-// readSearchError liest eine Fehlerantwort eines Such-Providers aus.
+// readSearchError reads and formats an error response from a search provider.
 func readSearchError(provider string, resp *http.Response) error {
 	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(resp.Body)
+	_, _ = buf.ReadFrom(io.LimitReader(resp.Body, 4<<10))
 	msg := strings.TrimSpace(buf.String())
 	if len(msg) > 300 {
 		msg = msg[:300]
 	}
-	return fmt.Errorf("%s-fehler %d: %s", provider, resp.StatusCode, msg)
+	return fmt.Errorf("%s error %d: %s", provider, resp.StatusCode, msg)
 }

@@ -7,17 +7,17 @@ import (
 	"time"
 )
 
-// checkResult ist das Ergebnis einer einzelnen Bereitschaftsprüfung.
+// checkResult is the outcome of a single readiness check.
 type checkResult struct {
 	Name   string
 	OK     bool
 	Detail string
 }
 
-// readiness hält den verifizierten Zustand der benötigten Abhängigkeiten
-// (Storage, Chat-Endpoint, Embedding-Endpoint). Uploads sind erst erlaubt, wenn
-// Storage und Embedding verifiziert wurden. Jede Konfigurationsänderung setzt
-// den Zustand zurück, sodass erneut geprüft werden muss.
+// readiness holds the verified state of the required dependencies (storage,
+// chat endpoint, embedding endpoint). Uploads are only allowed once storage and
+// embeddings have been verified. Every configuration change resets the state so
+// that a new check is required.
 type readiness struct {
 	mu          sync.RWMutex
 	storageOK   bool
@@ -26,7 +26,7 @@ type readiness struct {
 	checkedAt   time.Time
 }
 
-// invalidate setzt alle Prüfergebnisse zurück.
+// invalidate resets all check results.
 func (r *readiness) invalidate() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -36,7 +36,7 @@ func (r *readiness) invalidate() {
 	r.checkedAt = time.Time{}
 }
 
-// set übernimmt die Ergebnisse eines Prüflaufs.
+// set stores the results of a check run.
 func (r *readiness) set(storageOK, chatOK, embeddingOK bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -46,24 +46,24 @@ func (r *readiness) set(storageOK, chatOK, embeddingOK bool) {
 	r.checkedAt = time.Now()
 }
 
-// uploadsAllowed gibt an, ob Dokumente hochgeladen werden dürfen.
-// Voraussetzung: Storage und Embedding-Endpoint sind verifiziert.
+// uploadsAllowed reports whether documents may be uploaded. This requires
+// storage and the embedding endpoint to be verified.
 func (r *readiness) uploadsAllowed() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.storageOK && r.embeddingOK
 }
 
-// verified gibt an, ob seit dem letzten Prüflauf alle Kernkomponenten bereit sind.
+// verified reports whether all core components were ready during the last run.
 func (r *readiness) verified() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return !r.checkedAt.IsZero() && r.storageOK && r.chatOK && r.embeddingOK
 }
 
-// statusSnapshot beschreibt den aktuellen Verbindungszustand für die Anzeige.
+// statusSnapshot describes the current connection state for display.
 type statusSnapshot struct {
-	Checked     bool // wurde überhaupt schon geprüft?
+	Checked     bool // has a check run at all?
 	StorageOK   bool
 	ChatOK      bool
 	EmbeddingOK bool
@@ -72,7 +72,7 @@ type statusSnapshot struct {
 	CheckedAt   time.Time
 }
 
-// snapshot liefert eine konsistente Kopie des aktuellen Zustands.
+// snapshot returns a consistent copy of the current state.
 func (r *readiness) snapshot() statusSnapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -88,61 +88,61 @@ func (r *readiness) snapshot() statusSnapshot {
 	}
 }
 
-// runChecks führt alle Bereitschaftsprüfungen aus, speichert das Ergebnis und
-// liefert die Einzelresultate für die Anzeige.
+// runChecks executes all readiness checks, stores the result and returns the
+// individual outcomes for display.
 func (s *Server) runChecks(ctx context.Context) []checkResult {
-	results := make([]checkResult, 0, 3)
+	results := make([]checkResult, 0, 4)
 
-	// 1. Storage erreichbar & schreibbar.
+	// 1. Storage reachable & writable.
 	storageOK := true
-	storageDetail := "bereit"
+	storageDetail := s.t("check.storage_ready")
 	if err := s.store.Ping(ctx); err != nil {
 		storageOK = false
 		storageDetail = err.Error()
 	}
-	results = append(results, checkResult{Name: "Speicher (Datenpfad)", OK: storageOK, Detail: storageDetail})
+	results = append(results, checkResult{Name: s.t("check.storage"), OK: storageOK, Detail: storageDetail})
 
-	// 2. Chat-Endpoint erreichbar.
+	// 2. Chat endpoint reachable.
 	chatOK := true
-	chatDetail := "erreichbar"
+	chatDetail := s.t("check.reachable")
 	if err := s.llm.VerifyChat(ctx); err != nil {
 		chatOK = false
 		chatDetail = err.Error()
 	}
-	results = append(results, checkResult{Name: "Chat-Endpoint", OK: chatOK, Detail: chatDetail})
+	results = append(results, checkResult{Name: s.t("check.chat_endpoint"), OK: chatOK, Detail: chatDetail})
 
-	// 3. Embedding-Endpoint erreichbar & liefert Vektoren.
+	// 3. Embedding endpoint reachable & returning vectors.
 	embeddingOK := true
-	embeddingDetail := "erreichbar"
+	embeddingDetail := s.t("check.reachable")
 	if err := s.llm.VerifyEmbedding(ctx); err != nil {
 		embeddingOK = false
 		embeddingDetail = err.Error()
 	}
-	results = append(results, checkResult{Name: "Embedding-Endpoint", OK: embeddingOK, Detail: embeddingDetail})
+	results = append(results, checkResult{Name: s.t("check.embedding_endpoint"), OK: embeddingOK, Detail: embeddingDetail})
 
-	// 4. Web-Suche (nur informativ; blockiert keine Uploads). Nur prüfen, wenn
-	//    ein Provider konfiguriert ist.
+	// 4. Web search (informational only; it never blocks uploads). Checked only
+	//    when a provider is configured.
 	if s.search.Enabled() {
 		searchOK := true
-		searchDetail := s.search.ProviderName() + " erreichbar"
+		searchDetail := s.t("check.provider_reachable", s.search.ProviderName())
 		if err := s.search.Verify(ctx); err != nil {
 			searchOK = false
 			searchDetail = err.Error()
 		}
-		results = append(results, checkResult{Name: "Web-Suche", OK: searchOK, Detail: searchDetail})
+		results = append(results, checkResult{Name: s.t("check.web_search"), OK: searchOK, Detail: searchDetail})
 	}
 
 	s.ready.set(storageOK, chatOK, embeddingOK)
 	return results
 }
 
-// Monitor führt beim Start eine Verifizierung aus und prüft danach periodisch
-// die Verbindung. Nur sinnvoll, wenn die Mindestkonfiguration vorhanden ist;
-// andernfalls wird die Prüfung übersprungen, bis konfiguriert wurde.
-// Die Funktion blockiert bis ctx abgebrochen wird (z.B. beim Shutdown).
+// Monitor verifies the connection once at start-up and then checks it
+// periodically. It only makes sense when the minimum configuration is present;
+// otherwise the check is skipped until the app has been configured.
+// The function blocks until ctx is canceled (e.g. on shutdown).
 func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 	check := func(reason string) {
-		// Ohne Mindestkonfiguration macht eine Endpoint-Prüfung keinen Sinn.
+		// Without the minimum configuration an endpoint check is pointless.
 		if !s.cfg.IsConfigured() {
 			slog.Info("connection check skipped (not configured)", "reason", reason)
 			return
@@ -151,7 +151,7 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 		results := s.runChecks(ctx)
 		cur := s.ready.snapshot()
 
-		// Zustandsänderungen protokollieren, damit Ausfälle sichtbar werden.
+		// Log state changes so outages become visible.
 		switch {
 		case cur.AllOK && (!prev.Checked || !prev.AllOK):
 			slog.Info("connection ready", "reason", reason)
@@ -163,8 +163,8 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 			}
 		}
 
-		// Modelle automatisch vom Endpoint abrufen, sofern der Chat-Endpoint
-		// erreichbar ist und noch keine Liste gepflegt wurde.
+		// Fetch the models from the endpoint automatically when the chat
+		// endpoint is reachable and no list has been curated yet.
 		if cur.ChatOK && len(s.cfg.Get().ChatModels) == 0 {
 			if n, err := s.refreshModels(ctx); err != nil {
 				slog.Warn("auto-fetch models", "reason", reason, "err", err)
@@ -174,10 +174,10 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 		}
 	}
 
-	// Sofort beim Start prüfen.
+	// Check immediately at start-up.
 	check("start")
 
-	// interval <= 0 deaktiviert den periodischen Check (nur Start-Prüfung).
+	// interval <= 0 disables the periodic check (start-up check only).
 	if interval <= 0 {
 		<-ctx.Done()
 		return

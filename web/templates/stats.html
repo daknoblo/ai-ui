@@ -1,5 +1,5 @@
 {{define "stats"}}<!DOCTYPE html>
-<html lang="de">
+<html lang="{{lang}}">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,34 +9,34 @@
 <body>
 	<div class="stats-page">
 		<div class="stats-head">
-			<a href="/" class="btn btn-ghost btn-small">← Zurück</a>
-			<h1>Token-Statistik</h1>
+			<a href="/" class="btn btn-ghost btn-small">{{t "stats.back"}}</a>
+			<h1>{{t "stats.heading"}}</h1>
 		</div>
 
 		<div class="stats-cards">
 			<div class="stat-card">
 				<div class="stat-value">{{thousands .Summary.TotalTokens}}</div>
-				<div class="stat-label">Tokens gesamt</div>
+				<div class="stat-label">{{t "stats.total_tokens"}}</div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">{{thousands .Summary.ChatTotalTokens}}</div>
-				<div class="stat-label">Chat-Tokens<br><span class="stat-sub">{{thousands .Summary.ChatPromptTokens}} Eingabe / {{thousands .Summary.ChatComplTokens}} Antwort</span></div>
+				<div class="stat-label">{{t "stats.chat_tokens"}}<br><span class="stat-sub">{{t "stats.chat_sub" (thousands .Summary.ChatPromptTokens) (thousands .Summary.ChatComplTokens)}}</span></div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">{{thousands .Summary.EmbedTotalTokens}}</div>
-				<div class="stat-label">Embedding-Tokens</div>
+				<div class="stat-label">{{t "stats.embedding_tokens"}}</div>
 			</div>
 			<div class="stat-card">
 				<div class="stat-value">{{thousands .Summary.ChatRequests}}</div>
-				<div class="stat-label">Chat-Anfragen</div>
+				<div class="stat-label">{{t "stats.chat_requests"}}</div>
 			</div>
 		</div>
 
-		<h2>Verlauf (letzte 30 Tage)</h2>
+		<h2>{{t "stats.history"}}</h2>
 		{{if .Days}}
 		<table class="stats-table">
 			<thead>
-				<tr><th>Tag</th><th class="num">Chat</th><th class="num">Embedding</th><th class="num">Gesamt</th><th class="num">Anfragen</th></tr>
+				<tr><th>{{t "stats.day"}}</th><th class="num">{{t "stats.chat"}}</th><th class="num">{{t "stats.embedding"}}</th><th class="num">{{t "stats.total"}}</th><th class="num">{{t "stats.requests"}}</th></tr>
 			</thead>
 			<tbody>
 				{{range .Days}}
@@ -51,14 +51,14 @@
 			</tbody>
 		</table>
 		{{else}}
-		<p class="empty-hint">Noch keine Nutzung erfasst.</p>
+		<p class="empty-hint">{{t "stats.no_usage"}}</p>
 		{{end}}
 
-		<h2>Nach Modell</h2>
+		<h2>{{t "stats.by_model"}}</h2>
 		{{if .Models}}
 		<table class="stats-table">
 			<thead>
-				<tr><th>Modell</th><th class="num">Anfragen</th><th class="num">Tokens</th></tr>
+				<tr><th>{{t "stats.model"}}</th><th class="num">{{t "stats.requests"}}</th><th class="num">{{t "stats.total_tokens"}}</th></tr>
 			</thead>
 			<tbody>
 				{{range .Models}}
@@ -71,10 +71,10 @@
 			</tbody>
 		</table>
 		{{else}}
-		<p class="empty-hint">Noch keine Chat-Anfragen erfasst.</p>
+		<p class="empty-hint">{{t "stats.no_chat_requests"}}</p>
 		{{end}}
 
-		<p class="stats-note">Die Statistik wird dauerhaft im Datenpfad gespeichert und überlebt Neustarts. Kostenschätzungen (z.&nbsp;B. AIC) erfordern eine Preishinterlegung – sag Bescheid, falls gewünscht.</p>
+		<p class="stats-note">{{t "stats.note"}}</p>
 	</div>
 </body>
 </html>

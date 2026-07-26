@@ -1,3 +1,4 @@
+// Package config loads and persists the user-editable settings.
 package config
 
 import (
@@ -7,30 +8,33 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/daknoblo/ai-ui/internal/i18n"
 )
 
-// Config enthält die in der UI einstellbaren Werte. Der API-Key wird bewusst
-// NICHT hier gespeichert, sondern ausschließlich zur Laufzeit aus der
-// Umgebungsvariable AZURE_API_KEY bezogen.
+// Config holds the values that can be changed in the UI. API keys are
+// deliberately NOT stored here; they are read at runtime from environment
+// variables only.
 type Config struct {
-	Endpoint            string   `json:"endpoint"`              // Chat: z.B. https://my-router.openai.azure.com
-	ChatDeployment      string   `json:"chat_deployment"`       // Deployment-Name des Chat-Modells (bzw. Routers)
-	ChatModel           string   `json:"chat_model"`            // optional; erzwingt ein Modell statt Router-Auswahl
-	ChatModels          []string `json:"chat_models"`           // auswählbare Modelle für das Header-Menü
-	APIVersion          string   `json:"api_version"`           // z.B. 2024-08-01-preview
-	EmbeddingEndpoint   string   `json:"embedding_endpoint"`    // optional; fällt auf Endpoint zurück
-	EmbeddingDeployment string   `json:"embedding_deployment"`  // Deployment-Name des Embedding-Modells
-	EmbeddingAPIVersion string   `json:"embedding_api_version"` // optional; fällt auf APIVersion zurück
+	Language            string   `json:"language"`              // UI language: "en" or "de"
+	Endpoint            string   `json:"endpoint"`              // chat, e.g. https://my-router.openai.azure.com
+	ChatDeployment      string   `json:"chat_deployment"`       // deployment name of the chat model (or router)
+	ChatModel           string   `json:"chat_model"`            // optional; pins a model instead of letting the router choose
+	ChatModels          []string `json:"chat_models"`           // models offered in the header menu
+	APIVersion          string   `json:"api_version"`           // e.g. 2024-08-01-preview
+	EmbeddingEndpoint   string   `json:"embedding_endpoint"`    // optional; falls back to Endpoint
+	EmbeddingDeployment string   `json:"embedding_deployment"`  // deployment name of the embedding model
+	EmbeddingAPIVersion string   `json:"embedding_api_version"` // optional; falls back to APIVersion
 	SearchProvider      string   `json:"search_provider"`       // "", "tavily", "brave", "searxng"
-	SearchEndpoint      string   `json:"search_endpoint"`       // Basis-URL für SearXNG
-	SearchMaxResults    int      `json:"search_max_results"`    // Anzahl Treffer (Default 5)
-	SearchAuto          bool     `json:"search_auto"`           // Modell darf Websuche selbst per Tool-Calling auslösen
-	SystemPrompt        string   `json:"system_prompt"`
+	SearchEndpoint      string   `json:"search_endpoint"`       // base URL of the SearXNG instance
+	SearchMaxResults    int      `json:"search_max_results"`    // number of results (default 5)
+	SearchAuto          bool     `json:"search_auto"`           // allow the model to trigger a web search via tool calling
+	SystemPrompt        string   `json:"system_prompt"`         // empty means "use the localized default"
 	Temperature         float64  `json:"temperature"`
 }
 
-// EmbeddingVersion liefert die für Embeddings zu nutzende API-Version.
-// Ist kein eigener Wert gesetzt, wird die allgemeine APIVersion verwendet.
+// EmbeddingVersion returns the API version to use for embeddings. When no
+// dedicated value is set the general APIVersion applies.
 func (c Config) EmbeddingVersion() string {
 	if c.EmbeddingAPIVersion != "" {
 		return c.EmbeddingAPIVersion
@@ -38,8 +42,8 @@ func (c Config) EmbeddingVersion() string {
 	return c.APIVersion
 }
 
-// EmbeddingHost liefert den für Embeddings zu nutzenden Endpoint.
-// Ist kein eigener Wert gesetzt, wird der Chat-Endpoint verwendet.
+// EmbeddingHost returns the endpoint to use for embeddings. When no dedicated
+// value is set the chat endpoint applies.
 func (c Config) EmbeddingHost() string {
 	if c.EmbeddingEndpoint != "" {
 		return c.EmbeddingEndpoint
@@ -47,21 +51,21 @@ func (c Config) EmbeddingHost() string {
 	return c.Endpoint
 }
 
-// Overrides bündelt die per Umgebungsvariable festgelegten Endpoint-Werte. Jedes
-// nicht-leere Feld hat Vorrang vor der gespeicherten Konfiguration und wird in
-// der UI nur schreibgeschützt angezeigt (das Eingabefeld ist deaktiviert).
+// Overrides bundles the endpoint values pinned via environment variables. Every
+// non-empty field takes precedence over the stored configuration and is shown
+// read-only in the UI (the input field is disabled).
 type Overrides struct {
 	Endpoint            string   // AZURE_ENDPOINT
 	ChatDeployment      string   // AZURE_DEPLOYMENT
-	ChatModels          []string // AZURE_MODELS (Komma- oder Zeilen-getrennt)
+	ChatModels          []string // AZURE_MODELS (comma or newline separated)
 	APIVersion          string   // AZURE_API_VERSION
 	EmbeddingEndpoint   string   // AZURE_EMBEDDING_ENDPOINT
 	EmbeddingDeployment string   // AZURE_EMBEDDING_DEPLOYMENT
 	EmbeddingAPIVersion string   // AZURE_EMBEDDING_API_VERSION
 }
 
-// apply legt die gesetzten Overrides über die übergebene Konfiguration und
-// liefert die effektive Konfiguration zurück.
+// apply layers the configured overrides on top of c and returns the effective
+// configuration.
 func (o Overrides) apply(c Config) Config {
 	if o.Endpoint != "" {
 		c.Endpoint = o.Endpoint
@@ -87,7 +91,7 @@ func (o Overrides) apply(c Config) Config {
 	return c
 }
 
-// locks leitet aus den gesetzten Overrides ab, welche Felder gesperrt sind.
+// locks derives from the configured overrides which fields are read-only.
 func (o Overrides) locks() Locks {
 	return Locks{
 		Endpoint:            o.Endpoint != "",
@@ -100,8 +104,8 @@ func (o Overrides) locks() Locks {
 	}
 }
 
-// Locks gibt an, welche Endpoint-Felder per Umgebungsvariable festgelegt (und
-// damit in der UI gesperrt) sind. Die Felder entsprechen den Overrides.
+// Locks reports which endpoint fields are pinned via environment variables and
+// therefore locked in the UI. The fields mirror Overrides.
 type Locks struct {
 	Endpoint            bool
 	ChatDeployment      bool
@@ -112,14 +116,14 @@ type Locks struct {
 	EmbeddingAPIVersion bool
 }
 
-// Any gibt an, ob mindestens ein Endpoint-Feld per Umgebungsvariable gesperrt ist.
+// Any reports whether at least one endpoint field is locked via the environment.
 func (l Locks) Any() bool {
 	return l.Endpoint || l.ChatDeployment || l.ChatModels || l.APIVersion ||
 		l.EmbeddingEndpoint || l.EmbeddingDeployment || l.EmbeddingAPIVersion
 }
 
-// ParseModelList zerlegt eine durch Zeilen oder Kommas getrennte Liste in
-// bereinigte, eindeutige Modellnamen (z.B. für AZURE_MODELS).
+// ParseModelList splits a newline or comma separated list into trimmed, unique
+// model names (used for AZURE_MODELS, among others).
 func ParseModelList(raw string) []string {
 	fields := strings.FieldsFunc(raw, func(r rune) bool {
 		return r == ',' || r == '\n' || r == '\r'
@@ -140,9 +144,11 @@ func ParseModelList(raw string) []string {
 	return out
 }
 
-// Defaults liefert sinnvolle Startwerte.
+// Defaults returns sensible initial values. SystemPrompt stays empty on purpose
+// so that the localized default prompt is used and follows the UI language.
 func Defaults() Config {
 	return Config{
+		Language:            i18n.Default,
 		Endpoint:            "",
 		ChatDeployment:      "",
 		ChatModel:           "",
@@ -155,29 +161,28 @@ func Defaults() Config {
 		SearchEndpoint:      "",
 		SearchMaxResults:    5,
 		SearchAuto:          false,
-		SystemPrompt:        "Du bist ein hilfreicher Assistent. Antworte präzise und nutze den bereitgestellten Kontext, wenn er relevant ist.",
+		SystemPrompt:        "",
 		Temperature:         0.7,
 	}
 }
 
-// Store verwaltet das Laden und Speichern der Konfiguration als JSON-Datei.
+// Store manages loading and saving the configuration as a JSON file.
 type Store struct {
 	path            string
 	apiKey          string
 	embeddingAPIKey string
 	searchAPIKey    string
-	overrides       Overrides // per Umgebungsvariable festgelegte Endpoint-Werte
-	locks           Locks     // abgeleitet aus overrides; welche Felder gesperrt sind
+	overrides       Overrides // endpoint values pinned via environment variables
+	locks           Locks     // derived from overrides: which fields are read-only
 
 	mu  sync.RWMutex
-	cur Config // gespeicherte Rohkonfiguration (ohne angewandte Overrides)
+	cur Config // stored raw configuration (without overrides applied)
 }
 
-// NewStore erzeugt einen Konfigurationsspeicher für den angegebenen Pfad.
-// Die API-Keys stammen aus der Umgebung und werden niemals persistiert.
-// Ist embeddingAPIKey leer, wird für Embeddings apiKey verwendet. Gesetzte
-// overrides überschreiben die gespeicherten Endpoint-Werte und sperren die
-// zugehörigen Felder in der UI.
+// NewStore creates a configuration store for the given path. The API keys come
+// from the environment and are never persisted. An empty embeddingAPIKey makes
+// embeddings reuse apiKey. Configured overrides replace the stored endpoint
+// values and lock the corresponding fields in the UI.
 func NewStore(path, apiKey, embeddingAPIKey, searchAPIKey string, overrides Overrides) *Store {
 	return &Store{
 		path:            path,
@@ -190,8 +195,8 @@ func NewStore(path, apiKey, embeddingAPIKey, searchAPIKey string, overrides Over
 	}
 }
 
-// Load liest die Konfiguration von der Festplatte. Existiert keine Datei,
-// werden Defaults verwendet und gespeichert.
+// Load reads the configuration from disk. When no file exists the defaults are
+// used and written out.
 func (s *Store) Load() (Config, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -212,30 +217,39 @@ func (s *Store) Load() (Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return s.cur, err
 	}
+	cfg.Language = i18n.Normalize(cfg.Language)
 	s.cur = cfg
 	return s.cur, nil
 }
 
-// Get liefert die effektive Konfiguration: die gespeicherten Werte mit den
-// per Umgebungsvariable gesetzten Overrides überlagert.
+// Get returns the effective configuration: the stored values with the
+// environment overrides layered on top.
 func (s *Store) Get() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.overrides.apply(s.cur)
 }
 
-// Locks liefert die Information, welche Endpoint-Felder per Umgebungsvariable
-// festgelegt und damit in der UI gesperrt sind.
+// Language returns the normalized UI language. It is called on every template
+// render, so it deliberately avoids copying the whole configuration.
+func (s *Store) Language() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return i18n.Normalize(s.cur.Language)
+}
+
+// Locks reports which endpoint fields are pinned via environment variables and
+// therefore locked in the UI.
 func (s *Store) Locks() Locks {
 	return s.locks
 }
 
-// Save schreibt die Konfiguration atomar auf die Festplatte. Per Umgebungsvariable
-// gesperrte Felder behalten dabei ihren gespeicherten Rohwert und können nicht
-// über die UI verändert werden.
+// Save writes the configuration to disk atomically. Fields locked via the
+// environment keep their stored raw value and cannot be changed through the UI.
 func (s *Store) Save(cfg Config) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	cfg.Language = i18n.Normalize(cfg.Language)
 	s.keepLockedLocked(&cfg)
 	if err := s.writeLocked(cfg); err != nil {
 		return err
@@ -244,9 +258,9 @@ func (s *Store) Save(cfg Config) error {
 	return nil
 }
 
-// keepLockedLocked stellt sicher, dass gesperrte (per ENV gesetzte) Felder ihren
-// bereits gespeicherten Rohwert behalten und nicht durch UI-Eingaben oder den
-// Override-Wert überschrieben werden. Aufrufer müssen s.mu halten.
+// keepLockedLocked makes sure that locked (environment-pinned) fields keep the
+// raw value already on disk and are not overwritten by UI input or by the
+// override value itself. Callers must hold s.mu.
 func (s *Store) keepLockedLocked(cfg *Config) {
 	if s.locks.Endpoint {
 		cfg.Endpoint = s.cur.Endpoint
@@ -271,15 +285,15 @@ func (s *Store) keepLockedLocked(cfg *Config) {
 	}
 }
 
-// SetChatModel ändert nur das aktiv erzwungene Modell und speichert die Konfig.
-// Ein leerer Wert bedeutet "Router entscheidet". Werte außerhalb der gepflegten
-// Liste werden abgelehnt, leere Eingabe ist immer erlaubt.
+// SetChatModel changes only the pinned model and persists the configuration.
+// An empty value means "let the router decide". Values outside the curated list
+// are rejected; empty input is always allowed.
 func (s *Store) SetChatModel(model string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if model != "" {
-		// Gegen die effektive Modell-Liste prüfen (inkl. ENV-Override).
+		// Validate against the effective model list (including the ENV override).
 		eff := s.overrides.apply(s.cur)
 		allowed := false
 		for _, m := range eff.ChatModels {
@@ -289,7 +303,7 @@ func (s *Store) SetChatModel(model string) error {
 			}
 		}
 		if !allowed {
-			return fmt.Errorf("unbekanntes modell: %s", model)
+			return fmt.Errorf("unknown model: %s", model)
 		}
 	}
 
@@ -302,18 +316,18 @@ func (s *Store) SetChatModel(model string) error {
 	return nil
 }
 
-// APIKey liefert das aus der Umgebung geladene Secret.
+// APIKey returns the secret loaded from the environment.
 func (s *Store) APIKey() string {
 	return s.apiKey
 }
 
-// HasAPIKey gibt an, ob ein API-Key gesetzt wurde.
+// HasAPIKey reports whether an API key was provided.
 func (s *Store) HasAPIKey() bool {
 	return s.apiKey != ""
 }
 
-// EmbeddingAPIKey liefert den Key für Embeddings. Ist kein eigener Key gesetzt,
-// wird der allgemeine API-Key zurückgegeben.
+// EmbeddingAPIKey returns the key used for embeddings. When no dedicated key is
+// set the general API key is returned.
 func (s *Store) EmbeddingAPIKey() string {
 	if s.embeddingAPIKey != "" {
 		return s.embeddingAPIKey
@@ -321,34 +335,37 @@ func (s *Store) EmbeddingAPIKey() string {
 	return s.apiKey
 }
 
-// HasEmbeddingAPIKey gibt an, ob ein (eigener oder geerbter) Key für Embeddings vorhanden ist.
+// HasEmbeddingAPIKey reports whether a (dedicated or inherited) embedding key exists.
 func (s *Store) HasEmbeddingAPIKey() bool {
 	return s.EmbeddingAPIKey() != ""
 }
 
-// HasOwnEmbeddingAPIKey gibt an, ob ein dedizierter Embedding-Key gesetzt wurde.
+// HasOwnEmbeddingAPIKey reports whether a dedicated embedding key was provided.
 func (s *Store) HasOwnEmbeddingAPIKey() bool {
 	return s.embeddingAPIKey != ""
 }
 
-// SearchAPIKey liefert den aus der Umgebung geladenen Such-API-Key.
+// SearchAPIKey returns the web search API key loaded from the environment.
 func (s *Store) SearchAPIKey() string {
 	return s.searchAPIKey
 }
 
-// HasSearchAPIKey gibt an, ob ein Such-API-Key gesetzt wurde.
+// HasSearchAPIKey reports whether a web search API key was provided.
 func (s *Store) HasSearchAPIKey() bool {
 	return s.searchAPIKey != ""
 }
 
-// IsConfigured prüft, ob die Mindestangaben für Chat-Anfragen vorhanden sind.
+// IsConfigured checks whether the minimum settings for chat requests are present.
 func (s *Store) IsConfigured() bool {
 	c := s.Get()
 	return c.Endpoint != "" && c.ChatDeployment != "" && c.APIVersion != "" && s.apiKey != ""
 }
 
+// writeLocked serializes cfg and replaces the config file atomically. Callers
+// must hold s.mu. The file is written with 0600 because it may contain
+// endpoint details that are not meant to be world-readable.
 func (s *Store) writeLocked(cfg Config) error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o750); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")

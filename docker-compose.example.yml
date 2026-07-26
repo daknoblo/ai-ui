@@ -1,10 +1,10 @@
-# Beispiel: EIN ai-ui-Container. Kopiere die Datei nach docker-compose.yml oder
-# füge sie in Dockge ein. Das Projekt ist auf genau einen Container ausgelegt;
-# wie viele Instanzen du davon startest, ist dir überlassen.
+# Example: ONE ai-ui container. Copy this file to docker-compose.yml or paste it
+# into Dockge. The project is designed for exactly one container; how many
+# instances of it you run is up to you.
 #
-# Datenpfad: Der Container läuft als non-root (UID/GID 65532) und nutzt ein von
-# Docker verwaltetes Named Volume. Das übernimmt die Rechte automatisch aus dem
-# Image und läuft so out-of-the-box – auch in Dockge/Portainer als normaler User.
+# Data path: the container runs as non-root (UID/GID 65532) and uses a Docker
+# managed named volume. The volume inherits the permissions from the image and
+# therefore works out of the box, including in Dockge/Portainer as a normal user.
 
 services:
   ai-ui:
@@ -12,20 +12,21 @@ services:
     container_name: ai-ui
     restart: unless-stopped
     environment:
-      # Secret ausschließlich über Umgebungsvariable (nie in der Konfig-Datei).
+      # Secret via environment variable only (never in the config file).
       - AZURE_API_KEY=${AZURE_API_KEY}
-      # Optional: eigener Key, falls Embeddings auf separater Azure-Ressource liegen.
+      # Optional: dedicated key if embeddings live on a separate Azure resource.
       - AZURE_EMBEDDING_API_KEY=${AZURE_EMBEDDING_API_KEY:-}
-      # Optional: API-Key für die Web-Suche (Tavily/Brave). Für SearXNG nicht nötig.
+      # Optional: API key for web search (Tavily/Brave). Not needed for SearXNG.
       - SEARCH_API_KEY=${SEARCH_API_KEY:-}
       - PORT=8080
       - DATA_DIR=/appdata
-      # IANA-Zeitzone; das Binary bringt tzdata für Distroless selbst mit.
+      # IANA time zone; the binary bundles tzdata for distroless.
       - TZ=${TZ:-Europe/Berlin}
-      # Intervall der periodischen Verbindungsprüfung (z.B. 30s, 2m; 0/off = aus).
+      # Interval of the periodic connection check (e.g. 30s, 2m; 0/off = never).
       - HEALTHCHECK_INTERVAL=${HEALTHCHECK_INTERVAL:-60s}
-      # Optional: Endpoint-Einstellungen fest per Umgebungsvariable vorgeben.
-      # Gesetzte Werte haben Vorrang vor config.json und sind im UI deaktiviert.
+      # Optional: pin the endpoint settings via environment variables.
+      # Values that are set take precedence over config.json and are disabled
+      # in the UI.
       # - AZURE_ENDPOINT=${AZURE_ENDPOINT:-}
       # - AZURE_DEPLOYMENT=${AZURE_DEPLOYMENT:-}
       # - AZURE_MODELS=${AZURE_MODELS:-}
@@ -36,12 +37,18 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Persistenter Datenpfad (von Docker verwaltetes Named Volume): Chats,
-      # Dokumente, Embeddings und Konfiguration. Der Container läuft non-root
-      # (UID/GID 65532); das Named Volume übernimmt diese Rechte automatisch aus
-      # dem Image – kein manuelles Setzen nötig.
+      # Persistent data path (Docker managed named volume): chats, documents,
+      # embeddings and configuration. The container runs non-root (UID/GID
+      # 65532); the named volume inherits those permissions from the image, so
+      # nothing has to be set up manually.
       - ai-ui-data:/appdata
-    # ---- Alternative zu ports: Traefik ----
+    # ---- Hardening (optional but recommended) ----
+    # The application only writes to /appdata and to a temporary directory.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # ---- Alternative to ports: Traefik ----
     # labels:
     #   - "traefik.enable=true"
     #   - "traefik.http.routers.ai-ui.rule=Host(`chat.example.com`)"
@@ -55,7 +62,7 @@ services:
 volumes:
   ai-ui-data:
 
-# ---- Nur nötig, wenn oben die Traefik-networks eingekommentiert werden ----
+# ---- Only needed when the Traefik networks above are enabled ----
 # networks:
 #   traefik:
 #     external: true

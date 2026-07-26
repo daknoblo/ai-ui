@@ -1,130 +1,162 @@
 # ai-ui
 
-Eine schlanke, selbst gehostete ChatGPT-ähnliche Weboberfläche in Go mit
-Dokumenten-Kontext (RAG), angebunden an einen Azure-Foundry-Model-Router
-(Azure-OpenAI-kompatibel).
+A small, self-hosted ChatGPT-like web interface written in Go with document
+context (RAG), connected to an Azure Foundry model router (Azure OpenAI
+compatible).
 
-## Funktionen
+## Features
 
-- Chat-Oberfläche mit Seitenleiste, mehreren Konversationen und Verlauf
-- Antwort-Streaming (Token für Token) via Server-Sent Events
-- Modellauswahl oben rechts im Chatfenster (gepflegte Liste; "Auto" lässt den
-  Router entscheiden); die Auswahl gilt global und bleibt beim Chatwechsel erhalten
-- Dokumenten-Upload (Text/Markdown, PDF, DOCX) als RAG-Kontext
-  (Embeddings + Brute-Force-Cosine-Suche)
-- Dokumente direkt am Eingabefeld anhängen (📎) oder per Drag & Drop ins
-  Chatfenster ziehen; angehängte Dokumente werden als Chips über der Eingabe gezeigt
-- Optionale Web-Suche (🌐) pro Anfrage: bezieht aktuelle Online-Ergebnisse als
-  Kontext ein – provider-agnostisch (Tavily, Brave Search, SearXNG)
-- Dokumente sind an den jeweiligen Chat gebunden und werden beim Löschen des
-  Chats automatisch mit entfernt (inkl. Embeddings)
-- Konfigurationsdialog in der UI (Endpoint, Deployments, API-Version,
-  System-Prompt, Temperatur, Modell-Liste)
-- Bereitschafts-/Verbindungsprüfung: Uploads sind erst möglich, wenn Speicher
-  und Embedding-Endpoint verifiziert sind; Prüfung beim Start und periodisch im
-  Hintergrund, mit Statusanzeige in der Seitenleiste
-- API-Key ausschließlich über die Umgebungsvariable `AZURE_API_KEY`
-- Persistenz in SQLite unter dem gemounteten Datenpfad
-- Single-Binary, einzelnes Docker-Image (alpine), Betrieb hinter Traefik
+- Chat interface with a sidebar, multiple conversations and history
+- Answer streaming (token by token) via server-sent events
+- Model picker in the top right of the chat window (curated list; "Auto" lets
+  the router decide). The selection is global and survives switching chats
+- Document upload (text/Markdown, PDF, DOCX) as RAG context
+  (embeddings + brute-force cosine search)
+- Attach documents next to the input field (📎) or drag and drop them into the
+  chat window; attached documents are shown as chips above the input
+- Optional web search (🌐) per request: pulls in current online results as
+  context - provider agnostic (Tavily, Brave Search, SearXNG)
+- Documents are bound to their chat and are removed together with it
+  (including their embeddings)
+- Settings dialog in the UI (language, endpoints, deployments, API version,
+  system prompt, temperature, model list)
+- User interface available in **English and German**, switchable in the settings
+- Readiness/connection check: uploads are only possible once storage and the
+  embedding endpoint are verified; checked at start-up and periodically in the
+  background, with a status indicator in the sidebar
+- API key exclusively via the `AZURE_API_KEY` environment variable
+- Persistence in SQLite under the mounted data path
+- Single binary, single Docker image (distroless, non-root), designed to run
+  behind a reverse proxy such as Traefik
 
-## Architektur
+## Architecture
 
-- **Go** + `chi`-Router, `html/template` + **HTMX** (server-gerendert)
-- **SQLite** (`modernc.org/sqlite`, CGO-frei) für Chats, Nachrichten,
-  Dokumente und Embeddings
-- **goldmark** für Markdown-Rendering
-- RAG: Chunking → Embeddings → Kosinus-Ähnlichkeit (Top-k)
+- **Go** + `chi` router, `html/template` + **HTMX** (server rendered)
+- **SQLite** (`modernc.org/sqlite`, CGO free) for chats, messages, documents
+  and embeddings
+- **goldmark** for Markdown rendering (raw HTML is escaped, never rendered)
+- RAG: chunking → embeddings → cosine similarity (top-k)
 
-## Konfiguration
+## Configuration
 
-| Variable        | Default  | Beschreibung                                  |
+| Variable        | Default  | Description                                   |
 | --------------- | -------- | --------------------------------------------- |
-| `AZURE_API_KEY` | –        | **Secret.** API-Key des AI-Endpoints (Chat). |
-| `AZURE_EMBEDDING_API_KEY` | – | **Secret, optional.** Eigener Key, falls Embeddings auf einer separaten Azure-Ressource liegen. Leer ⇒ `AZURE_API_KEY` wird genutzt. |
-| `SEARCH_API_KEY` | – | **Secret, optional.** API-Key für die Web-Suche (Tavily oder Brave). Für SearXNG nicht erforderlich. |
-| `DATA_DIR`      | `/appdata`  | Persistenter Datenpfad (DB + `appdata/`).     |
-| `PORT`          | `8080`   | HTTP-Port.                                    |
-| `HEALTHCHECK_INTERVAL` | `60s` | Intervall der periodischen Verbindungsprüfung (Go-Dauer, z.B. `30s`, `2m`). `0` oder `off` deaktiviert den periodischen Check (die Prüfung beim Start läuft weiterhin). |
+| `AZURE_API_KEY` | –        | **Secret.** API key of the AI endpoint (chat). |
+| `AZURE_EMBEDDING_API_KEY` | – | **Secret, optional.** Dedicated key if embeddings live on a separate Azure resource. Empty ⇒ `AZURE_API_KEY` is used. |
+| `SEARCH_API_KEY` | – | **Secret, optional.** API key for web search (Tavily or Brave). Not required for SearXNG. |
+| `DATA_DIR`      | `/appdata` | Persistent data path. The SQLite database is stored directly in it, the UI settings in `<DATA_DIR>/appdata/config.json`. |
+| `PORT`          | `8080`   | HTTP port.                                    |
+| `HEALTHCHECK_INTERVAL` | `60s` | Interval of the periodic connection check (Go duration, e.g. `30s`, `2m`). `0` or `off` disables the periodic check (the start-up check still runs). |
+| `TZ`            | –        | IANA time zone name. The binary bundles `time/tzdata`, so this works in the distroless image. |
 
-Die übrigen Einstellungen werden im UI-Dialog gesetzt und unter
-`<DATA_DIR>/appdata/config.json` gespeichert (ohne Secret). Der generelle
-AI-Endpoint und die Embeddings können getrennte Endpoints, Deployments und
-API-Versionen verwenden; die Embedding-Felder fallen bei Leereingabe auf die
-Werte des AI-Endpoints zurück.
+All remaining settings are configured in the UI dialog and stored in
+`<DATA_DIR>/appdata/config.json` (without secrets). The general AI endpoint and
+the embeddings can use separate endpoints, deployments and API versions; empty
+embedding fields fall back to the values of the AI endpoint.
 
-Zwei Endpoint-Schemata werden automatisch erkannt: das klassische
-Azure-OpenAI-Format (`https://<ressource>.openai.azure.com`, Deployment im Pfad,
-`api-version` erforderlich) und das neue OpenAI-kompatible **v1-Format** von Azure
-AI Foundry, erkennbar am Pfad `/openai/v1`
-(`https://<ressource>.services.ai.azure.com/openai/v1`). Beim v1-Format wird das
-Deployment als `model` im Request übergeben und `api-version` ist optional. Chat-
-und Embedding-Endpoint dürfen unterschiedliche Schemata verwenden.
+Two endpoint schemas are detected automatically: the classic Azure OpenAI format
+(`https://<resource>.openai.azure.com`, deployment in the path, `api-version`
+required) and the new OpenAI compatible **v1 format** of Azure AI Foundry,
+recognizable by the `/openai/v1` path
+(`https://<resource>.services.ai.azure.com/openai/v1`). With the v1 format the
+deployment is passed as `model` in the request and `api-version` is optional.
+The chat and embedding endpoints may use different schemas.
 
-### Endpoint per Umgebungsvariable festlegen (optional)
+### Language
 
-Die Endpoint-Einstellungen lassen sich alternativ zum UI-Dialog vollständig über
-Umgebungsvariablen vorgeben. Ist eine dieser Variablen gesetzt, hat ihr Wert
-Vorrang vor `config.json` und das zugehörige Feld im Einstellungsdialog wird nur
-angezeigt, aber deaktiviert (nicht über die UI änderbar):
+The interface language (English or German) is selected in the settings dialog
+and applies to the whole application, including the prompts used for the
+automatic chat titles and the document/web context. The page reloads once after
+the language has been changed. New installations default to English.
 
-Das Namensschema ist einheitlich: der **generelle AI-Endpoint** nutzt die
-Basis-Namen `AZURE_*`, die **Embeddings** durchgängig `AZURE_EMBEDDING_*`.
+### Pinning the endpoint via environment variables (optional)
 
-Genereller AI-Endpoint:
+The endpoint settings can be provided entirely through environment variables
+instead of the UI dialog. When one of these variables is set, its value takes
+precedence over `config.json` and the matching field in the settings dialog is
+shown but disabled (not editable through the UI):
 
-| Variable        | Einstellung                                   |
+The naming scheme is consistent: the **general AI endpoint** uses the base names
+`AZURE_*`, the **embeddings** consistently use `AZURE_EMBEDDING_*`.
+
+General AI endpoint:
+
+| Variable        | Setting                                       |
 | --------------- | --------------------------------------------- |
-| `AZURE_ENDPOINT` | Endpoint-URL des AI-Endpoints.               |
-| `AZURE_DEPLOYMENT` | Deployment-Name des Chat-Modells.          |
-| `AZURE_MODELS` | Auswählbare Modelle (Komma- oder Zeilen-getrennt). |
-| `AZURE_API_VERSION` | API-Version des AI-Endpoints.             |
+| `AZURE_ENDPOINT` | Endpoint URL of the AI endpoint.             |
+| `AZURE_DEPLOYMENT` | Deployment name of the chat model.         |
+| `AZURE_MODELS` | Selectable models (comma or newline separated). |
+| `AZURE_API_VERSION` | API version of the AI endpoint.           |
 
-Embeddings (fallen bei Leereingabe auf den AI-Endpoint zurück):
+Embeddings (fall back to the AI endpoint when empty):
 
-| Variable        | Einstellung                                   |
+| Variable        | Setting                                       |
 | --------------- | --------------------------------------------- |
-| `AZURE_EMBEDDING_ENDPOINT` | Embedding-Endpoint-URL.               |
-| `AZURE_EMBEDDING_DEPLOYMENT` | Deployment-Name des Embedding-Modells. |
-| `AZURE_EMBEDDING_API_VERSION` | Embedding-API-Version.              |
+| `AZURE_EMBEDDING_ENDPOINT` | Embedding endpoint URL.               |
+| `AZURE_EMBEDDING_DEPLOYMENT` | Deployment name of the embedding model. |
+| `AZURE_EMBEDDING_API_VERSION` | Embedding API version.              |
 
-Die zugehörigen Secrets sind `AZURE_API_KEY` bzw. `AZURE_EMBEDDING_API_KEY`
-(siehe Tabelle oben).
+The matching secrets are `AZURE_API_KEY` and `AZURE_EMBEDDING_API_KEY`
+respectively (see the table above).
 
-Nicht gesetzte Variablen bleiben im UI frei editierbar. Leere Werte gelten als
-„nicht gesetzt“ und aktivieren keine Sperre.
+Variables that are not set stay editable in the UI. Empty values count as
+"not set" and do not lock anything.
 
+### Readiness & connection check
 
-### Bereitschaft & Verbindungsprüfung
+After configuring the app in the UI for the first time, click **Save** and then
+**Test connection**. Storage (data path writable), the chat endpoint and the
+embedding endpoint are checked. Document uploads are only enabled once storage
+and the embedding endpoint are green. Every configuration change resets the
+verification. The connection is verified automatically when the container starts
+(if configured); a background check (`HEALTHCHECK_INTERVAL`) monitors it
+continuously and reports failures through the sidebar status and the log.
 
-Nach dem ersten Konfigurieren im UI auf **Speichern** und dann **Verbindung
-testen** klicken. Geprüft werden Speicher (Datenpfad schreibbar), Chat-Endpoint
-und Embedding-Endpoint. Dokument-Uploads sind erst freigegeben, wenn Speicher
-und Embedding-Endpoint grün sind. Jede Konfigurationsänderung setzt die
-Verifizierung zurück. Beim Container-Start wird automatisch verifiziert (sofern
-konfiguriert); ein Hintergrund-Check (`HEALTHCHECK_INTERVAL`) überwacht die
-Verbindung laufend und meldet Ausfälle über den Status in der Seitenleiste sowie
-im Log.
+### Web search (optional)
 
-### Web-Suche (optional)
+Pick a provider in the settings dialog under **Web search**:
 
-Im Einstellungsdialog unter **Web-Suche** einen Anbieter wählen:
+- **Tavily** – optimized for LLM/RAG, returns already extracted content
+  (requires `SEARCH_API_KEY`).
+- **Brave Search** – REST API (requires `SEARCH_API_KEY`).
+- **SearXNG** – self-hosted meta search; only the base URL is needed, no key.
 
-- **Tavily** – auf LLM/RAG optimiert, liefert direkt extrahierte Inhalte
-  (benötigt `SEARCH_API_KEY`).
-- **Brave Search** – REST-API (benötigt `SEARCH_API_KEY`).
-- **SearXNG** – selbst gehostete Meta-Suche; nur die Basis-URL angeben, kein Key
-  nötig.
+When a provider is configured, a 🌐 toggle appears next to the chat input. While
+it is active, the message is enriched with current web results; the state
+survives switching chats. The search API key is - like the Azure keys - read
+exclusively from the `SEARCH_API_KEY` environment variable and never stored in
+`config.json`.
 
-Ist ein Anbieter konfiguriert, erscheint im Chat neben dem Eingabefeld ein
-🌐-Umschalter. Ist er aktiv, wird die jeweilige Nachricht mit aktuellen
-Web-Ergebnissen angereichert; der Zustand bleibt über Chatwechsel hinweg
-erhalten. Der Such-API-Key wird – wie die Azure-Keys – ausschließlich über die
-Umgebungsvariable `SEARCH_API_KEY` bezogen und nie in `config.json` gespeichert.
+The SearXNG base URL is fetched by the server, so it is validated: only
+`http`/`https` URLs are accepted, and connections to loopback and link-local
+addresses (including the cloud metadata service `169.254.169.254`) are refused.
+Private LAN ranges stay reachable because that is where a self-hosted instance
+usually lives.
 
-## Lokal starten
+## Security
+
+- Single static binary on a distroless base image, running as non-root
+  (UID/GID `65532`); the container image is signed with cosign and scanned with
+  Trivy in CI
+- Secrets are read from environment variables only and are never written to
+  `config.json`
+- All SQL statements are parameterized; no user input is concatenated into
+  queries
+- Model and document content is rendered as sanitized Markdown - raw HTML is
+  escaped, never injected
+- Defensive response headers on every request: `Content-Security-Policy`,
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
+  `Cross-Origin-Opener-Policy` and `Permissions-Policy`
+- Uploads are limited to 25 MiB per file and 150 MiB per request; PDF and DOCX
+  parsing is bounded against decompression bombs
+- The app is meant to run inside a trusted network or behind a reverse
+  proxy/VPN. It has no user accounts and should not be exposed to the internet
+  unprotected
+
+## Running locally
 
 ```sh
-export AZURE_API_KEY=dein-key
+export AZURE_API_KEY=your-key
 DATA_DIR=./data PORT=8080 go run .
 # http://localhost:8080
 ```
@@ -134,16 +166,16 @@ DATA_DIR=./data PORT=8080 go run .
 ```sh
 docker build -t ai-ui .
 docker run --rm -p 8080:8080 \
-  -e AZURE_API_KEY=dein-key \
+  -e AZURE_API_KEY=your-key \
   -v ai-ui-data:/appdata \
   ai-ui
 ```
 
-### Datenpfad-Berechtigungen (non-root)
+### Data path permissions (non-root)
 
-Der Container läuft als non-root-User (**UID/GID `65532`**) und speichert alle
-Daten (Chats, Dokumente, Embeddings, Konfiguration) unter `/appdata`. Als
-persistenter Speicher dient ein von Docker verwaltetes **Named Volume**:
+The container runs as a non-root user (**UID/GID `65532`**) and stores all data
+(chats, documents, embeddings, configuration) under `/appdata`. A Docker managed
+**named volume** is used as persistent storage:
 
 ```yaml
 services:
@@ -155,17 +187,30 @@ volumes:
   ai-ui-data:
 ```
 
-Ein frisch angelegtes Named Volume übernimmt die Eigentümerschaft automatisch aus
-dem Image (`65532`) und läuft damit out-of-the-box – auch in Dockge/Portainer als
-normaler User, ohne jede manuelle Rechtevergabe. Docker verwaltet das Volume; es
-sind keine Eingriffe auf dem Host nötig.
+A freshly created named volume inherits its ownership from the image (`65532`)
+and therefore works out of the box - including in Dockge/Portainer as a normal
+user, without any manual permission handling. Docker manages the volume; no
+changes on the host are required.
 
 ## Deployment
 
-Die [docker-compose.example.yml](docker-compose.example.yml) enthält **einen**
-`ai-ui`-Container mit Named Volume und veröffentlichtem Port `8080`;
-Traefik-Labels sind optional auskommentiert enthalten. Das Projekt ist auf genau
-einen Container ausgelegt – wie viele Instanzen davon betrieben werden, bleibt dem
-Nutzer überlassen (z.B. mehrere Services in einem Stack). Das Image wird per
-GitHub Actions nach `ghcr.io/daknoblo/ai-ui` gebaut und veröffentlicht (Push auf
-`main` sowie `v*`-Tags).
+[docker-compose.example.yml](docker-compose.example.yml) contains **one**
+`ai-ui` container with a named volume and the published port `8080`; Traefik
+labels are included but commented out. The project is designed for exactly one
+container - how many instances of it you run is up to you (e.g. several services
+in a single stack). The image is built and published to
+`ghcr.io/daknoblo/ai-ui` by GitHub Actions (on pushes to `main` and on `v*`
+tags).
+
+## Development
+
+```sh
+gofmt -l .                  # must print nothing
+go vet ./...
+golangci-lint run ./...
+go test -race ./...
+CGO_ENABLED=0 go build ./...
+```
+
+User interface strings live in [internal/i18n](internal/i18n/i18n.go). Every key
+must exist in all supported languages; a test enforces that.

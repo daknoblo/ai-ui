@@ -10,25 +10,24 @@ import (
 )
 
 const (
-	defaultChunkSize = 1200
-	defaultOverlap   = 200
-	embedBatchSize   = 16
+	defaultChunkSize = 1200 // target size of a chunk in runes
+	defaultOverlap   = 200  // overlap between neighboring chunks in runes
+	embedBatchSize   = 16   // chunks per embedding request
 )
 
-// Ingestor verarbeitet hochgeladene Dokumente: parsen → chunken → embedden → speichern.
+// Ingestor processes uploaded documents: parse -> chunk -> embed -> store.
 type Ingestor struct {
 	store *storage.Store
 	llm   *llm.Client
 }
 
-// NewIngestor erzeugt einen Ingestor.
+// NewIngestor creates an ingestor.
 func NewIngestor(store *storage.Store, client *llm.Client) *Ingestor {
 	return &Ingestor{store: store, llm: client}
 }
 
-// Ingest verarbeitet ein einzelnes Dokument und liefert die erzeugte Document-ID
-// sowie die Anzahl gespeicherter Chunks. Das Dokument wird dem angegebenen Chat
-// zugeordnet.
+// Ingest processes a single document and returns the created document ID plus
+// the number of stored chunks. The document is attached to the given chat.
 func (in *Ingestor) Ingest(ctx context.Context, chatID int64, filename, mime string, data []byte) (int64, int, error) {
 	text, err := docparse.Extract(filename, mime, data)
 	if err != nil {
@@ -37,23 +36,21 @@ func (in *Ingestor) Ingest(ctx context.Context, chatID int64, filename, mime str
 
 	chunks := ChunkText(text, defaultChunkSize, defaultOverlap)
 	if len(chunks) == 0 {
-		return 0, 0, fmt.Errorf("dokument enthält keinen verwertbaren text")
+		return 0, 0, fmt.Errorf("document contains no usable text")
 	}
 
-	// Embeddings batchweise erzeugen, bevor das Dokument angelegt wird.
+	// Create the embeddings in batches before the document row is created, so a
+	// failing endpoint does not leave an empty document behind.
 	embeddings := make([][]float32, 0, len(chunks))
 	for start := 0; start < len(chunks); start += embedBatchSize {
-		end := start + embedBatchSize
-		if end > len(chunks) {
-			end = len(chunks)
-		}
+		end := min(start+embedBatchSize, len(chunks))
 		batch := chunks[start:end]
 		vecs, err := in.llm.Embed(ctx, batch)
 		if err != nil {
-			return 0, 0, fmt.Errorf("embedding fehlgeschlagen: %w", err)
+			return 0, 0, fmt.Errorf("embedding failed: %w", err)
 		}
 		if len(vecs) != len(batch) {
-			return 0, 0, fmt.Errorf("unerwartete anzahl embeddings: %d statt %d", len(vecs), len(batch))
+			return 0, 0, fmt.Errorf("unexpected number of embeddings: %d instead of %d", len(vecs), len(batch))
 		}
 		embeddings = append(embeddings, vecs...)
 	}
@@ -63,10 +60,8 @@ func (in *Ingestor) Ingest(ctx context.Context, chatID int64, filename, mime str
 		return 0, 0, err
 	}
 
-	for i, chunk := range chunks {
-		if err := in.store.AddChunk(ctx, docID, i, chunk, embeddings[i]); err != nil {
-			return docID, i, err
-		}
+	if err := in.store.AddChunks(ctx, docID, chunks, embeddings); err != nil {
+		return docID, 0, err
 	}
 
 	return docID, len(chunks), nil

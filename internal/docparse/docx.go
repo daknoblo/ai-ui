@@ -4,36 +4,51 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 )
 
-// parseDOCX extrahiert den Text aus einer .docx-Datei (Office Open XML).
-// Eine .docx ist ein ZIP-Archiv; der Fließtext steht in word/document.xml.
+// maxDOCXPartBytes caps the uncompressed size of word/document.xml. A .docx is
+// a ZIP archive, so a few hundred kilobytes on disk can expand into gigabytes
+// in memory ("zip bomb"). Both the declared size and the actual read are
+// bounded, because the declared size in the ZIP header cannot be trusted.
+const maxDOCXPartBytes = 64 << 20 // 64 MiB
+
+// parseDOCX extracts the text from a .docx file (Office Open XML).
+// A .docx is a ZIP archive; the body text lives in word/document.xml.
 func parseDOCX(data []byte) (string, error) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		return "", fmt.Errorf("docx (zip) lesen: %w", err)
+		return "", fmt.Errorf("read docx (zip): %w", err)
 	}
 
 	var docXML []byte
 	for _, f := range zr.File {
-		if f.Name == "word/document.xml" {
-			rc, err := f.Open()
-			if err != nil {
-				return "", err
-			}
-			docXML, err = io.ReadAll(rc)
-			_ = rc.Close()
-			if err != nil {
-				return "", err
-			}
-			break
+		if f.Name != "word/document.xml" {
+			continue
 		}
+		if f.UncompressedSize64 > maxDOCXPartBytes {
+			return "", fmt.Errorf("docx document.xml too large (%d bytes)", f.UncompressedSize64)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return "", err
+		}
+		// Read one byte beyond the limit so an understated header is detected.
+		docXML, err = io.ReadAll(io.LimitReader(rc, maxDOCXPartBytes+1))
+		_ = rc.Close()
+		if err != nil {
+			return "", err
+		}
+		if len(docXML) > maxDOCXPartBytes {
+			return "", fmt.Errorf("docx document.xml exceeds the size limit")
+		}
+		break
 	}
 	if docXML == nil {
-		return "", fmt.Errorf("word/document.xml nicht im docx gefunden")
+		return "", fmt.Errorf("word/document.xml not found in docx")
 	}
 
 	text, err := extractDOCXText(docXML)
@@ -42,23 +57,23 @@ func parseDOCX(data []byte) (string, error) {
 	}
 	out := strings.TrimSpace(text)
 	if out == "" {
-		return "", fmt.Errorf("kein extrahierbarer text im docx gefunden")
+		return "", fmt.Errorf("no extractable text found in docx")
 	}
 	return out, nil
 }
 
-// extractDOCXText liest die relevanten Elemente aus document.xml:
-//   - <w:t>   Textläufe
-//   - <w:tab> Tabulator
-//   - <w:br> / <w:cr> Zeilenumbruch
-//   - </w:p> Absatzende
+// extractDOCXText reads the relevant elements from document.xml:
+//   - <w:t>   text runs
+//   - <w:tab> tabulator
+//   - <w:br> / <w:cr> line break
+//   - </w:p> end of paragraph
 func extractDOCXText(xmlData []byte) (string, error) {
 	dec := xml.NewDecoder(bytes.NewReader(xmlData))
 	var sb strings.Builder
 
-	for {
+	for sb.Len() < maxTextBytes {
 		tok, err := dec.Token()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

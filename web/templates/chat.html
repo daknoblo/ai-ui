@@ -1,12 +1,12 @@
 {{define "content"}}
 <div class="chat-main" id="chat-dropzone" data-chat-id="{{.ChatID}}" data-uploads-ready="{{if .UploadsReady}}1{{else}}0{{end}}">
 	<div class="chat-header">
-		<h1 id="chat-title">{{if .CurrentChat}}{{.CurrentChat.Title}}{{else}}Neuer Chat{{end}}</h1>
+		<h1 id="chat-title">{{if .CurrentChat}}{{chatTitle .CurrentChat.Title}}{{else}}{{t "chat.default_title"}}{{end}}</h1>
 		{{if .Models}}
 		<form class="model-picker" hx-post="/model" hx-trigger="change" hx-swap="none">
-			<label class="model-label" for="model-select">Modell</label>
+			<label class="model-label" for="model-select">{{t "chat.model_label"}}</label>
 			<select id="model-select" name="model">
-				<option value="" {{if eq .CurrentModel ""}}selected{{end}}>Auto (Router)</option>
+				<option value="" {{if eq .CurrentModel ""}}selected{{end}}>{{t "chat.model_auto"}}</option>
 				{{range .Models}}
 				<option value="{{.}}" {{if eq . $.CurrentModel}}selected{{end}}>{{.}}</option>
 				{{end}}
@@ -18,11 +18,11 @@
 	<div id="messages" class="messages">
 		{{if not .Messages}}
 		<div class="welcome">
-			<h2>Womit kann ich helfen?</h2>
-			<p>Stelle eine Frage. Hochgeladene Dokumente werden automatisch als Kontext genutzt.</p>
-			<p class="welcome-hint">Tipp: Hänge Dokumente über 📎 an oder ziehe sie ins Fenster. Mit 🌐 beziehst du aktuelle Web-Ergebnisse ein.</p>
+			<h2>{{t "chat.welcome_title"}}</h2>
+			<p>{{t "chat.welcome_text"}}</p>
+			<p class="welcome-hint">{{t "chat.welcome_hint"}}</p>
 			{{if not .Configured}}
-			<p class="warn-text">⚠ Bitte zuerst unter <strong>Einstellungen</strong> den Azure-Endpoint konfigurieren.</p>
+			<p class="warn-text">{{t "chat.not_configured"}}</p>
 			{{end}}
 		</div>
 		{{end}}
@@ -36,14 +36,14 @@
 		{{template "doclist" .}}
 
 		<div class="composer">
-			<label class="composer-btn attach-btn" title="Dokumente anhängen">
+			<label class="composer-btn attach-btn" title="{{t "chat.attach_title"}}">
 				📎
 				<input type="file" id="attach-input" accept=".txt,.md,.markdown,.json,.pdf,.docx" multiple
 					data-chat-id="{{.ChatID}}"
 					onchange="handleAttach(this)">
 			</label>
 			<button type="button" class="composer-btn web-toggle" id="web-toggle"
-				aria-pressed="false" title="Websuche für die nächste Nachricht"
+				aria-pressed="false" title="{{t "chat.web_toggle_title"}}"
 				onclick="toggleWeb(this)" {{if not .SearchEnabled}}hidden{{end}}>🌐</button>
 			<form id="chat-form" class="composer-form"
 				hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
@@ -51,11 +51,11 @@
 				hx-swap="beforeend"
 				hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';syncWebToggle();}">
 				<input type="hidden" name="web" id="web-flag" value="0">
-				<textarea name="message" rows="1" placeholder="Nachricht schreiben…"
+				<textarea name="message" rows="1" placeholder="{{t "chat.input_placeholder"}}"
 					oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px';"
 					onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"
 					required></textarea>
-				<button type="submit" class="btn btn-send" title="Senden">↑</button>
+				<button type="submit" class="btn btn-send" title="{{t "chat.send_title"}}">↑</button>
 			</form>
 		</div>
 	</div>
@@ -63,13 +63,13 @@
 	<div class="drop-overlay" id="drop-overlay" aria-hidden="true">
 		<div class="drop-inner drop-ready">
 			<div class="drop-icon">⬇</div>
-			<div>Dokumente hier ablegen</div>
-			<div class="drop-sub">Text, Markdown, PDF oder DOCX</div>
+			<div>{{t "drop.ready_title"}}</div>
+			<div class="drop-sub">{{t "drop.ready_sub"}}</div>
 		</div>
 		<div class="drop-inner drop-blocked">
 			<div class="drop-icon">⛔</div>
-			<div>Uploads gesperrt</div>
-			<div class="drop-sub">Bitte zuerst in den Einstellungen die Verbindung testen</div>
+			<div>{{t "drop.blocked_title"}}</div>
+			<div class="drop-sub">{{t "drop.blocked_sub"}}</div>
 		</div>
 	</div>
 </div>
@@ -77,18 +77,18 @@
 
 {{define "message"}}
 <div class="msg {{.Role}}">
-	<div class="msg-role">{{if eq .Role "user"}}Du{{else}}Assistent{{end}}</div>
+	<div class="msg-role">{{if eq .Role "user"}}{{t "role.user"}}{{else}}{{t "role.assistant"}}{{end}}</div>
 	<div class="bubble">{{renderMarkdown .Content}}</div>
 </div>
 {{end}}
 
-{{/* assistant-stream: vom Send-Handler zurückgegeben, öffnet die SSE-Verbindung */}}
+{{/* assistant-stream: returned by the send handler, opens the SSE connection */}}
 {{define "assistant-stream"}}
 <div class="msg assistant"
 	hx-ext="sse"
 	sse-connect="/chat/{{.ChatID}}/generate{{if .Web}}?web=1{{end}}"
 	sse-close="done">
-	<div class="msg-role">Assistent<span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span>{{if .Web}} <span class="web-tag">🌐 Web</span>{{end}}</div>
+	<div class="msg-role">{{t "role.assistant"}}<span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span>{{if .Web}} <span class="web-tag">🌐 {{t "chat.web_tag"}}</span>{{end}}</div>
 	<div class="msg-tools" sse-swap="tool" hx-swap="beforeend"></div>
 	<div class="bubble" sse-swap="token" hx-swap="innerHTML"><span class="cursor">▍</span></div>
 	<div class="msg-usage" sse-swap="usage" hx-swap="innerHTML"></div>
@@ -96,14 +96,14 @@
 </div>
 {{end}}
 
-{{/* tool-status: kleine Statuszeile für eine laufende Websuche */}}
-{{define "tool-status"}}<div class="tool-status">🔎 Websuche: {{.}}</div>{{end}}
+{{/* tool-status: small status line for a running web search */}}
+{{define "tool-status"}}<div class="tool-status">{{t "tool.web_search_status" .}}</div>{{end}}
 
-{{/* title-update: aktualisiert Header-Titel und Seitenleiste per Out-of-Band-Swap */}}
-{{define "title-update"}}<h1 id="chat-title" hx-swap-oob="true">{{.Title}}</h1><nav id="chat-list" class="chat-list" hx-swap-oob="true">{{template "chatnav-items" .}}</nav>{{end}}
+{{/* title-update: updates the header title and the sidebar via out-of-band swap */}}
+{{define "title-update"}}<h1 id="chat-title" hx-swap-oob="true">{{chatTitle .Title}}</h1><nav id="chat-list" class="chat-list" hx-swap-oob="true">{{template "chatnav-items" .}}</nav>{{end}}
 
-{{/* model-tag: zeigt das tatsächlich verwendete Modell neben der Rolle */}}
-{{define "model-tag"}} <span class="model-badge" title="Für diese Antwort verwendetes Modell">{{.}}</span>{{end}}
+{{/* model-tag: shows the model that was actually used next to the role */}}
+{{define "model-tag"}} <span class="model-badge" title="{{t "model.badge_title"}}">{{.}}</span>{{end}}
 
-{{/* title-oob: aktualisiert den Header-Titel per Out-of-Band-Swap */}}
-{{define "title-oob"}}<h1 id="chat-title" hx-swap-oob="true">{{.Title}}</h1>{{end}}
+{{/* title-oob: updates the header title via out-of-band swap */}}
+{{define "title-oob"}}<h1 id="chat-title" hx-swap-oob="true">{{chatTitle .Title}}</h1>{{end}}

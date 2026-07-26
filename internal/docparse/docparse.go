@@ -1,23 +1,49 @@
-// Package docparse extrahiert Klartext aus hochgeladenen Dokumenten.
+// Package docparse extracts plain text from uploaded documents.
 package docparse
 
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
-// Extract wählt anhand von Dateiname/MIME den passenden Parser und liefert Klartext.
+// maxTextBytes caps the plain text extracted from a single upload. Without such
+// a limit a small but highly compressed file could expand into gigabytes of
+// text and exhaust memory during chunking and embedding.
+const maxTextBytes = 8 << 20 // 8 MiB
+
+// Extract picks the parser matching the file name/MIME type and returns plain text.
 func Extract(filename, mime string, data []byte) (string, error) {
+	var (
+		text string
+		err  error
+	)
 	switch {
 	case isText(filename, mime):
-		return parseText(data), nil
+		text = parseText(data)
 	case isPDF(filename, mime):
-		return parsePDF(data)
+		text, err = parsePDF(data)
 	case isDOCX(filename, mime):
-		return parseDOCX(data)
+		text, err = parseDOCX(data)
 	default:
-		return "", fmt.Errorf("nicht unterstütztes format: %s (%s)", filename, mime)
+		return "", fmt.Errorf("unsupported format: %s (%s)", filename, mime)
 	}
+	if err != nil {
+		return "", err
+	}
+	return capText(text), nil
+}
+
+// capText truncates text at a rune boundary so the result stays valid UTF-8.
+func capText(s string) string {
+	if len(s) <= maxTextBytes {
+		return s
+	}
+	cut := maxTextBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 func isText(filename, mime string) bool {

@@ -12,13 +12,13 @@ import (
 	"github.com/daknoblo/ai-ui/internal/config"
 )
 
-// TestIsChatModelName prüft, dass Nicht-Chat-Modelle (Embeddings, Bild, Audio)
-// zuverlässig aus der Auswahl gefiltert werden.
+// TestIsChatModelName verifies that non-chat models (embeddings, image, audio)
+// are reliably filtered out of the picker.
 func TestIsChatModelName(t *testing.T) {
 	chat := []string{"gpt-4o", "gpt-4o-mini", "o3", "o4-mini", "gpt-4.1"}
 	for _, name := range chat {
 		if !isChatModelName(name) {
-			t.Errorf("erwartet Chat-Modell, wurde aber gefiltert: %s", name)
+			t.Errorf("expected a chat model but it was filtered out: %s", name)
 		}
 	}
 
@@ -29,14 +29,14 @@ func TestIsChatModelName(t *testing.T) {
 	}
 	for _, name := range nonChat {
 		if isChatModelName(name) {
-			t.Errorf("erwartet Filterung, wurde aber als Chat-Modell akzeptiert: %s", name)
+			t.Errorf("expected filtering but it was accepted as a chat model: %s", name)
 		}
 	}
 }
 
-// TestListModelsUsesDeployments stellt sicher, dass ListModels den
-// Deployments-Endpoint abfragt und nur eindeutige, sortierte Chat-Modellnamen
-// der erfolgreich bereitgestellten Deployments liefert.
+// TestListModelsUsesDeployments makes sure ListModels queries the deployments
+// endpoint and returns only unique, sorted chat model names of successfully
+// provisioned deployments.
 func TestListModelsUsesDeployments(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,7 @@ func TestListModelsUsesDeployments(t *testing.T) {
 	cfg.Endpoint = srv.URL
 	cfg.APIVersion = "2024-08-01-preview"
 	if err := store.Save(cfg); err != nil {
-		t.Fatalf("konfiguration speichern: %v", err)
+		t.Fatalf("save configuration: %v", err)
 	}
 
 	models, err := New(store).ListModels(context.Background())
@@ -73,19 +73,19 @@ func TestListModelsUsesDeployments(t *testing.T) {
 	}
 
 	if !strings.HasSuffix(gotPath, "/openai/deployments") {
-		t.Errorf("erwartet Abfrage von /openai/deployments, war aber %q", gotPath)
+		t.Errorf("expected a request to /openai/deployments, got %q", gotPath)
 	}
 
-	// Erwartet: Embedding gefiltert, nicht bereitgestelltes "o3" (creating)
-	// ignoriert, doppeltes gpt-4o dedupliziert, Ergebnis sortiert.
+	// Expected: embeddings filtered out, the not-yet-provisioned "o3"
+	// (creating) ignored, the duplicate gpt-4o deduplicated, result sorted.
 	want := []string{"gpt-4o", "gpt-4o-mini"}
 	if !reflect.DeepEqual(models, want) {
-		t.Errorf("unerwartete Modelle: got %v, want %v", models, want)
+		t.Errorf("unexpected models: got %v, want %v", models, want)
 	}
 }
 
-// TestChatCompletionsURL prüft die Schema-Erkennung (klassisch vs. v1) für die
-// Chat-Completions-URL.
+// TestChatCompletionsURL checks the schema detection (classic vs. v1) for the
+// chat completions URL.
 func TestChatCompletionsURL(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -102,14 +102,14 @@ func TestChatCompletionsURL(t *testing.T) {
 			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions",
 		},
 		{
-			name:       "v1 mit Slash",
+			name:       "v1 with trailing slash",
 			endpoint:   "https://x.services.ai.azure.com/openai/v1/",
 			deployment: "model-router",
 			apiVersion: "preview",
 			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions",
 		},
 		{
-			name:       "klassisch",
+			name:       "classic",
 			endpoint:   "https://x.openai.azure.com",
 			deployment: "gpt-4o",
 			apiVersion: "2024-08-01-preview",
@@ -125,35 +125,36 @@ func TestChatCompletionsURL(t *testing.T) {
 	}
 }
 
-// TestEmbeddingsAndModelsURL prüft die Embeddings- und Modell-URLs je Schema.
+// TestEmbeddingsAndModelsURL checks the embeddings and models URLs per schema.
 func TestEmbeddingsAndModelsURL(t *testing.T) {
 	if got := embeddingsURL("https://x.services.ai.azure.com/openai/v1", "text-embedding-3-large", "v"); got != "https://x.services.ai.azure.com/openai/v1/embeddings" {
-		t.Errorf("embeddingsURL v1 falsch: %q", got)
+		t.Errorf("embeddingsURL v1 is wrong: %q", got)
 	}
 	if got := embeddingsURL("https://x.cognitiveservices.azure.com", "text-embedding-3-large", "2024-02-01"); got != "https://x.cognitiveservices.azure.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-02-01" {
-		t.Errorf("embeddingsURL klassisch falsch: %q", got)
+		t.Errorf("embeddingsURL classic is wrong: %q", got)
 	}
 	if got := modelsURL("https://x.services.ai.azure.com/openai/v1", "v"); got != "https://x.services.ai.azure.com/openai/v1/models" {
-		t.Errorf("modelsURL v1 falsch: %q", got)
+		t.Errorf("modelsURL v1 is wrong: %q", got)
 	}
 	if got := modelsURL("https://x.openai.azure.com", "2024-08-01-preview"); got != "https://x.openai.azure.com/openai/deployments?api-version=2024-08-01-preview" {
-		t.Errorf("modelsURL klassisch falsch: %q", got)
+		t.Errorf("modelsURL classic is wrong: %q", got)
 	}
 }
 
-// TestChatModelField prüft, dass beim v1-Schema das Deployment als model dient,
-// ein erzwungenes Modell aber Vorrang hat und klassisch leer bleibt (Router).
+// TestChatModelField verifies that with the v1 schema the deployment is used as
+// the model, that a pinned model takes precedence and that the classic schema
+// leaves the field empty (router decides).
 func TestChatModelField(t *testing.T) {
 	v1 := config.Config{Endpoint: "https://x.services.ai.azure.com/openai/v1", ChatDeployment: "model-router"}
 	if got := chatModelField(v1); got != "model-router" {
-		t.Errorf("v1 ohne Force: got %q, want model-router", got)
+		t.Errorf("v1 without a pinned model: got %q, want model-router", got)
 	}
 	v1.ChatModel = "gpt-4o"
 	if got := chatModelField(v1); got != "gpt-4o" {
-		t.Errorf("v1 mit Force: got %q, want gpt-4o", got)
+		t.Errorf("v1 with a pinned model: got %q, want gpt-4o", got)
 	}
 	classic := config.Config{Endpoint: "https://x.openai.azure.com", ChatDeployment: "model-router"}
 	if got := chatModelField(classic); got != "" {
-		t.Errorf("klassisch ohne Force: got %q, want leer", got)
+		t.Errorf("classic without a pinned model: got %q, want empty", got)
 	}
 }

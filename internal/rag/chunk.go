@@ -1,11 +1,11 @@
-// Package rag implementiert Chunking, Ingestion und Retrieval (Brute-Force-Cosine).
+// Package rag implements chunking, ingestion and retrieval (brute-force cosine).
 package rag
 
 import "strings"
 
-// ChunkText teilt einen Text in überlappende Abschnitte.
-// maxRunes ist die Zielgröße pro Chunk, overlap der Überlappungsbereich.
-// Es wird bevorzugt an Absatz-/Satzgrenzen getrennt.
+// ChunkText splits a text into overlapping sections. maxRunes is the target size
+// per chunk, overlap the size of the overlapping region. Paragraph boundaries
+// are preferred as split points.
 func ChunkText(text string, maxRunes, overlap int) []string {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -18,7 +18,7 @@ func ChunkText(text string, maxRunes, overlap int) []string {
 		overlap = maxRunes / 5
 	}
 
-	// In Absätze aufteilen und zu Chunks zusammensetzen.
+	// Split into paragraphs and reassemble them into chunks.
 	paras := splitParagraphs(text)
 
 	var chunks []string
@@ -36,7 +36,7 @@ func ChunkText(text string, maxRunes, overlap int) []string {
 	for _, p := range paras {
 		pRunes := len([]rune(p))
 
-		// Sehr lange Absätze hart unterteilen.
+		// Hard-split very long paragraphs.
 		if pRunes > maxRunes {
 			flush()
 			chunks = append(chunks, splitLong(p, maxRunes, overlap)...)
@@ -73,7 +73,7 @@ func splitParagraphs(text string) []string {
 	return out
 }
 
-// splitLong unterteilt einen überlangen Absatz in überlappende Stücke.
+// splitLong divides an over-long paragraph into overlapping pieces.
 func splitLong(s string, maxRunes, overlap int) []string {
 	runes := []rune(s)
 	var out []string
@@ -82,10 +82,7 @@ func splitLong(s string, maxRunes, overlap int) []string {
 		step = maxRunes
 	}
 	for start := 0; start < len(runes); start += step {
-		end := start + maxRunes
-		if end > len(runes) {
-			end = len(runes)
-		}
+		end := min(start+maxRunes, len(runes))
 		piece := strings.TrimSpace(string(runes[start:end]))
 		if piece != "" {
 			out = append(out, piece)

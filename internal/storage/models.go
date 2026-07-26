@@ -2,7 +2,7 @@ package storage
 
 import "time"
 
-// Chat ist eine Konversation in der Seitenleiste.
+// Chat is a conversation shown in the sidebar.
 type Chat struct {
 	ID        int64     `json:"id"`
 	Title     string    `json:"title"`
@@ -10,16 +10,16 @@ type Chat struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Message ist eine einzelne Nachricht innerhalb eines Chats.
+// Message is a single message within a chat.
 type Message struct {
 	ID        int64     `json:"id"`
 	ChatID    int64     `json:"chat_id"`
-	Role      string    `json:"role"` // "user" oder "assistant"
+	Role      string    `json:"role"` // "user" or "assistant"
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Document beschreibt ein hochgeladenes Dokument.
+// Document describes an uploaded document.
 type Document struct {
 	ID        int64     `json:"id"`
 	ChatID    int64     `json:"chat_id"`
@@ -29,11 +29,9 @@ type Document struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Chunk ist ein Textabschnitt eines Dokuments samt Embedding.
-type Chunk struct {
+// ChunkVector is a chunk reduced to the fields needed for similarity scoring.
+type ChunkVector struct {
 	ID         int64
 	DocumentID int64
-	Ordinal    int
-	Text       string
 	Embedding  []float32
 }

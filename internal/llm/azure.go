@@ -1,3 +1,4 @@
+// Package llm talks to the Azure-OpenAI-compatible model router.
 package llm
 
 import (
@@ -6,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -14,9 +16,12 @@ import (
 	"github.com/daknoblo/ai-ui/internal/config"
 )
 
-// Message ist eine Chat-Nachricht im OpenAI-Format. Für Tool-Calling werden
-// zusätzliche Felder genutzt (ToolCalls für Assistenten-Aufrufe, ToolCallID/Name
-// für Tool-Ergebnisse).
+// maxErrorBodyBytes limits how much of an error response is read before it is
+// turned into a Go error. Endpoints can return very large HTML error pages.
+const maxErrorBodyBytes = 8 << 10
+
+// Message is a chat message in OpenAI format. Tool calling uses the additional
+// fields (ToolCalls for assistant requests, ToolCallID/Name for tool results).
 type Message struct {
 	Role       string     `json:"role"`
 	Content    string     `json:"content"`
@@ -25,33 +30,33 @@ type Message struct {
 	Name       string     `json:"name,omitempty"`
 }
 
-// ToolCall beschreibt einen vom Modell angeforderten Funktionsaufruf.
+// ToolCall describes a function call requested by the model.
 type ToolCall struct {
 	ID       string           `json:"id"`
 	Type     string           `json:"type"`
 	Function ToolCallFunction `json:"function"`
 }
 
-// ToolCallFunction enthält Name und (JSON-)Argumente eines Tool-Aufrufs.
+// ToolCallFunction holds the name and JSON arguments of a tool call.
 type ToolCallFunction struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 }
 
-// Tool definiert ein dem Modell angebotenes Werkzeug (Function-Calling).
+// Tool defines a tool offered to the model (function calling).
 type Tool struct {
 	Type     string       `json:"type"`
 	Function ToolFunction `json:"function"`
 }
 
-// ToolFunction beschreibt eine aufrufbare Funktion samt JSON-Schema.
+// ToolFunction describes a callable function including its JSON schema.
 type ToolFunction struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Parameters  json.RawMessage `json:"parameters"`
 }
 
-// Client spricht mit dem Azure-OpenAI-kompatiblen Model-Router.
+// Client talks to the Azure-OpenAI-compatible model router.
 type Client struct {
 	store    *config.Store
 	http     *http.Client
@@ -59,43 +64,55 @@ type Client struct {
 	recorder UsageRecorder
 }
 
-// UsageRecorder erhält jeden Token-Verbrauch zur dauerhaften Speicherung.
+// UsageRecorder receives every token usage for persistent storage.
 type UsageRecorder interface {
 	RecordUsage(kind, model string, u Usage)
 }
 
-// New erzeugt einen neuen LLM-Client.
+// New creates a new LLM client. The transport keeps idle connections around so
+// that consecutive chat and embedding calls reuse the TLS session instead of
+// performing a full handshake each time.
 func New(store *config.Store) *Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 16
+	transport.MaxIdleConnsPerHost = 8
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.ForceAttemptHTTP2 = true
+
 	return &Client{
-		store:   store,
-		http:    &http.Client{Timeout: 5 * time.Minute},
+		store: store,
+		http: &http.Client{
+			// Long timeout: a streamed answer can legitimately take minutes.
+			Timeout:   5 * time.Minute,
+			Transport: transport,
+		},
 		metrics: &Metrics{},
 	}
 }
 
-// SetUsageRecorder hinterlegt einen Empfänger für die dauerhafte Nutzungsstatistik.
+// SetUsageRecorder registers a receiver for the persistent usage statistics.
 func (c *Client) SetUsageRecorder(r UsageRecorder) {
 	c.recorder = r
 }
 
-// Metrics liefert einen Snapshot des kumulativen Token-Verbrauchs.
+// Metrics returns a snapshot of the cumulative token usage.
 func (c *Client) Metrics() MetricsSnapshot {
 	return c.metrics.Snapshot()
 }
 
-// Usage beschreibt den Token-Verbrauch einer Anfrage.
+// Usage describes the token usage of a request.
 type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
 }
 
-// streamOptions aktiviert die Usage-Ausgabe am Ende eines Streams.
+// streamOptions enables usage reporting at the end of a stream.
 type streamOptions struct {
 	IncludeUsage bool `json:"include_usage"`
 }
 
-// chatRequest ist der Request-Body für Chat Completions.
+// chatRequest is the request body for chat completions.
 type chatRequest struct {
 	Model         string         `json:"model,omitempty"`
 	Messages      []Message      `json:"messages"`
@@ -107,7 +124,7 @@ type chatRequest struct {
 	ToolChoice    string         `json:"tool_choice,omitempty"`
 }
 
-// streamChunk ist ein einzelnes SSE-Delta der Chat-Completions-Antwort.
+// streamChunk is a single SSE delta of the chat completions response.
 type streamChunk struct {
 	Model   string `json:"model"`
 	Choices []struct {
@@ -128,14 +145,14 @@ type streamChunk struct {
 	Usage *Usage `json:"usage"`
 }
 
-// ChatResult bündelt die Metadaten einer abgeschlossenen Chat-Antwort.
+// ChatResult bundles the metadata of a finished chat answer.
 type ChatResult struct {
 	Usage Usage
-	Model string // tatsächlich verwendetes Modell (vom Router gemeldet)
+	Model string // model actually used (as reported by the router)
 }
 
-// TurnResult ist das Ergebnis eines einzelnen Stream-Durchgangs inkl. der ggf.
-// vom Modell angeforderten Tool-Aufrufe.
+// TurnResult is the outcome of a single stream pass including the tool calls
+// the model requested, if any.
 type TurnResult struct {
 	Content      string
 	ToolCalls    []ToolCall
@@ -144,17 +161,18 @@ type TurnResult struct {
 	Model        string
 }
 
-// isV1Endpoint erkennt das neue OpenAI-kompatible v1-Schema von Azure AI Foundry
-// daran, dass der Endpoint-Pfad "/openai/v1" enthält (z.B.
-// https://ressource.services.ai.azure.com/openai/v1). Bei diesem Schema werden
-// die OpenAI-Standardpfade angehängt und das Deployment im "model"-Feld des
-// Request-Bodys übergeben – nicht im URL-Pfad. Andernfalls gilt das klassische
-// Azure-OpenAI-Schema (/openai/deployments/{deployment}/...?api-version=...).
+// isV1Endpoint detects the new OpenAI-compatible v1 schema of Azure AI Foundry
+// by the "/openai/v1" path segment (e.g.
+// https://resource.services.ai.azure.com/openai/v1). With that schema the
+// standard OpenAI paths are appended and the deployment is passed in the
+// "model" field of the request body instead of in the URL path. Otherwise the
+// classic Azure OpenAI schema applies
+// (/openai/deployments/{deployment}/...?api-version=...).
 func isV1Endpoint(endpoint string) bool {
 	return strings.Contains(strings.TrimRight(endpoint, "/"), "/openai/v1")
 }
 
-// chatCompletionsURL baut die Chat-Completions-URL passend zum Endpoint-Schema.
+// chatCompletionsURL builds the chat completions URL for the endpoint schema.
 func chatCompletionsURL(endpoint, deployment, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
 	if isV1Endpoint(base) {
@@ -163,7 +181,7 @@ func chatCompletionsURL(endpoint, deployment, apiVersion string) string {
 	return fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s", base, deployment, apiVersion)
 }
 
-// embeddingsURL baut die Embeddings-URL passend zum Endpoint-Schema.
+// embeddingsURL builds the embeddings URL for the endpoint schema.
 func embeddingsURL(endpoint, deployment, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
 	if isV1Endpoint(base) {
@@ -172,7 +190,7 @@ func embeddingsURL(endpoint, deployment, apiVersion string) string {
 	return fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=%s", base, deployment, apiVersion)
 }
 
-// modelsURL baut die URL zum Abfragen der verfügbaren Modelle/Deployments.
+// modelsURL builds the URL for querying the available models/deployments.
 func modelsURL(endpoint, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
 	if isV1Endpoint(base) {
@@ -181,10 +199,10 @@ func modelsURL(endpoint, apiVersion string) string {
 	return fmt.Sprintf("%s/openai/deployments?api-version=%s", base, apiVersion)
 }
 
-// chatModelField liefert den Wert für das "model"-Feld im Request-Body. Beim
-// v1-Schema muss dort die Deployment-Kennung stehen (Pflichtfeld); ein erzwungenes
-// Modell (ChatModel) hat Vorrang. Beim klassischen Schema bedeutet ein leerer Wert
-// "Router entscheidet".
+// chatModelField returns the value for the "model" field of the request body.
+// With the v1 schema this must be the deployment identifier (required); a pinned
+// model (ChatModel) takes precedence. With the classic schema an empty value
+// means "let the router decide".
 func chatModelField(cfg config.Config) string {
 	if cfg.ChatModel != "" {
 		return cfg.ChatModel
@@ -195,29 +213,29 @@ func chatModelField(cfg config.Config) string {
 	return ""
 }
 
-// ChatStream sendet die Nachrichten und ruft onDelta für jedes Text-Token auf.
-// Liefert nach Abschluss Token-Nutzung und das tatsächlich verwendete Modell.
+// ChatStream sends the messages and calls onDelta for every text token. When
+// finished it returns the token usage and the model that was actually used.
 func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta func(string) error) (ChatResult, error) {
 	turn, err := c.streamTurn(ctx, messages, nil, onDelta)
 	return ChatResult{Usage: turn.Usage, Model: turn.Model}, err
 }
 
-// ChatStreamWithTools verhält sich wie ChatStream, bietet dem Modell aber die
-// übergebenen Tools an und liefert die ggf. angeforderten Tool-Aufrufe zurück.
+// ChatStreamWithTools behaves like ChatStream but offers the given tools to the
+// model and returns the tool calls it requested, if any.
 func (c *Client) ChatStreamWithTools(ctx context.Context, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
 	return c.streamTurn(ctx, messages, tools, onDelta)
 }
 
-// streamTurn führt einen Streaming-Durchgang aus, streamt Text über onDelta und
-// sammelt optionale Tool-Aufrufe (deren Argumente über mehrere Chunks kommen).
+// streamTurn runs one streaming pass, streams text through onDelta and collects
+// optional tool calls (whose arguments arrive across several chunks).
 func (c *Client) streamTurn(ctx context.Context, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
 	var result TurnResult
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || cfg.APIVersion == "" {
-		return result, fmt.Errorf("konfiguration unvollständig: endpoint, chat-deployment und api-version erforderlich")
+		return result, fmt.Errorf("incomplete configuration: endpoint, chat deployment and api version are required")
 	}
 	if !c.store.HasAPIKey() {
-		return result, fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
+		return result, fmt.Errorf("no API key set (AZURE_API_KEY)")
 	}
 
 	url := chatCompletionsURL(cfg.Endpoint, cfg.ChatDeployment, cfg.APIVersion)
@@ -256,7 +274,7 @@ func (c *Client) streamTurn(ctx context.Context, messages []Message, tools []Too
 		return result, readError(resp)
 	}
 
-	// Tool-Aufrufe werden je Index aufgebaut (Argumente kommen fragmentiert).
+	// Tool calls are accumulated per index (arguments arrive fragmented).
 	toolAcc := map[int]*ToolCall{}
 	var toolOrder []int
 	var content strings.Builder
@@ -277,7 +295,7 @@ func (c *Client) streamTurn(ctx context.Context, messages []Message, tools []Too
 		}
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue // unvollständige/leere Zeilen überspringen
+			continue // skip incomplete/empty lines
 		}
 		if chunk.Model != "" {
 			result.Model = chunk.Model
@@ -330,15 +348,15 @@ func (c *Client) streamTurn(ctx context.Context, messages []Message, tools []Too
 	return result, nil
 }
 
-// VerifyChat prüft mit einer minimalen Anfrage, ob der Chat-Endpoint erreichbar
-// ist und gültig antwortet.
+// VerifyChat performs a minimal request to check that the chat endpoint is
+// reachable and answers with a valid response.
 func (c *Client) VerifyChat(ctx context.Context) error {
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || cfg.APIVersion == "" {
-		return fmt.Errorf("endpoint, chat-deployment und api-version erforderlich")
+		return fmt.Errorf("endpoint, chat deployment and api version are required")
 	}
 	if !c.store.HasAPIKey() {
-		return fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
+		return fmt.Errorf("no API key set (AZURE_API_KEY)")
 	}
 
 	url := chatCompletionsURL(cfg.Endpoint, cfg.ChatDeployment, cfg.APIVersion)
@@ -370,8 +388,8 @@ func (c *Client) VerifyChat(ctx context.Context) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		// Ein 400 wegen erschöpftem Token-Budget beweist dennoch, dass Endpoint,
-		// Deployment und Authentifizierung korrekt sind – das werten wir als Erfolg.
+		// A 400 caused by an exhausted token budget still proves that endpoint,
+		// deployment and authentication are correct, so it counts as success.
 		if resp.StatusCode == http.StatusBadRequest && responseMentionsMaxTokens(resp) {
 			return nil
 		}
@@ -380,41 +398,39 @@ func (c *Client) VerifyChat(ctx context.Context) error {
 	return nil
 }
 
-// responseMentionsMaxTokens prüft, ob eine Fehlerantwort auf ein erschöpftes
-// Token-Limit hinweist (Endpoint ist dann grundsätzlich erreichbar).
+// responseMentionsMaxTokens reports whether an error response hints at an
+// exhausted token limit (in which case the endpoint itself is reachable).
 func responseMentionsMaxTokens(resp *http.Response) bool {
 	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(resp.Body)
+	_, _ = buf.ReadFrom(io.LimitReader(resp.Body, maxErrorBodyBytes))
 	msg := strings.ToLower(buf.String())
 	return strings.Contains(msg, "max_tokens") || strings.Contains(msg, "output limit")
 }
 
-// deploymentsResponse ist die Antwort der Deployment-Liste (Data-Plane).
-// Geliefert werden nur die in der Ressource tatsächlich bereitgestellten
-// Deployments – im Gegensatz zu /openai/models, das den kompletten
-// Modellkatalog der Ressource (inkl. aller nicht bereitgestellten Modelle)
-// zurückgibt.
+// deploymentsResponse is the response of the deployment list (data plane).
+// It only contains the deployments actually provisioned in the resource, unlike
+// /openai/models which returns the full model catalog of the resource
+// (including everything that is not deployed).
 type deploymentsResponse struct {
 	Data []struct {
-		ID     string `json:"id"`     // Name des Deployments
-		Model  string `json:"model"`  // zugrunde liegendes Basismodell
-		Status string `json:"status"` // z.B. "succeeded"
+		ID     string `json:"id"`     // name of the deployment
+		Model  string `json:"model"`  // underlying base model
+		Status string `json:"status"` // e.g. "succeeded"
 	} `json:"data"`
 }
 
-// ListModels fragt die in der Ressource bereitgestellten Deployments ab und
-// liefert die zugehörigen Chat-Modellnamen. Anders als der komplette
-// Modellkatalog (/openai/models) enthält dies nur die tatsächlich verfügbaren
-// Modelle. Die Namen eignen sich als Werte für die Modellauswahl im Header
-// (Body-Feld "model"), mit denen sich ein bestimmtes Modell statt der
-// automatischen Router-Auswahl erzwingen lässt.
+// ListModels queries the deployments provisioned in the resource and returns
+// their chat model names. Unlike the full model catalog (/openai/models) this
+// only contains models that are actually available. The names are suitable as
+// values for the model picker in the header (body field "model"), which pins a
+// specific model instead of letting the router choose.
 func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.APIVersion == "" {
-		return nil, fmt.Errorf("endpoint und api-version erforderlich")
+		return nil, fmt.Errorf("endpoint and api version are required")
 	}
 	if !c.store.HasAPIKey() {
-		return nil, fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY)")
+		return nil, fmt.Errorf("no API key set (AZURE_API_KEY)")
 	}
 
 	url := modelsURL(cfg.Endpoint, cfg.APIVersion)
@@ -444,17 +460,17 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	// Chat-taugliche Modellnamen der erfolgreich bereitgestellten Deployments
-	// sammeln. Embedding-, Bild- und Audio-Deployments gehören nicht in die
-	// Chat-Auswahl; mehrfach genutzte Basismodelle werden dedupliziert.
+	// Collect the chat-capable model names of successfully provisioned
+	// deployments. Embedding, image and audio deployments do not belong in the
+	// chat picker; base models used more than once are deduplicated.
 	seen := make(map[string]struct{}, len(out.Data))
 	var models []string
 	for _, d := range out.Data {
 		if d.Status != "" && !strings.EqualFold(d.Status, "succeeded") {
 			continue
 		}
-		// Bevorzugt das zugrunde liegende Modell; nur wenn keines gemeldet
-		// wird, dient der Deployment-Name als Rückfallwert.
+		// Prefer the underlying model; fall back to the deployment name only
+		// when none is reported.
 		name := strings.TrimSpace(d.Model)
 		if name == "" {
 			name = strings.TrimSpace(d.ID)
@@ -472,9 +488,9 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 	return models, nil
 }
 
-// isChatModelName filtert offensichtlich nicht chat-taugliche Modelle (z.B.
-// Embeddings, Bildgeneratoren, Audio-/Transkriptionsmodelle) anhand des Namens
-// heraus, damit die Modellauswahl nur sinnvolle Chat-Modelle enthält.
+// isChatModelName filters out models that are obviously not chat capable (e.g.
+// embeddings, image generators, audio/transcription models) by name, so the
+// model picker only offers sensible chat models.
 func isChatModelName(name string) bool {
 	lower := strings.ToLower(name)
 	excluded := []string{
@@ -489,8 +505,8 @@ func isChatModelName(name string) bool {
 	return true
 }
 
-// VerifyEmbedding prüft mit einer minimalen Anfrage, ob der Embedding-Endpoint
-// erreichbar ist und ein gültiges Embedding liefert.
+// VerifyEmbedding performs a minimal request to check that the embedding
+// endpoint is reachable and returns a valid embedding.
 func (c *Client) VerifyEmbedding(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -500,17 +516,17 @@ func (c *Client) VerifyEmbedding(ctx context.Context) error {
 		return err
 	}
 	if len(vecs) == 0 || len(vecs[0]) == 0 {
-		return fmt.Errorf("kein gültiges embedding erhalten")
+		return fmt.Errorf("no valid embedding received")
 	}
 	return nil
 }
 
-// embeddingRequest ist der Request-Body für die Embeddings-API.
+// embeddingRequest is the request body for the embeddings API.
 type embeddingRequest struct {
 	Input []string `json:"input"`
 }
 
-// embeddingResponse ist die Antwort der Embeddings-API.
+// embeddingResponse is the response of the embeddings API.
 type embeddingResponse struct {
 	Data []struct {
 		Embedding []float32 `json:"embedding"`
@@ -519,14 +535,14 @@ type embeddingResponse struct {
 	Usage Usage `json:"usage"`
 }
 
-// Embed erzeugt Embeddings für die übergebenen Texte.
+// Embed creates embeddings for the given texts.
 func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error) {
 	cfg := c.store.Get()
 	if cfg.EmbeddingDeployment == "" {
-		return nil, fmt.Errorf("kein embedding-deployment konfiguriert")
+		return nil, fmt.Errorf("no embedding deployment configured")
 	}
 	if !c.store.HasEmbeddingAPIKey() {
-		return nil, fmt.Errorf("kein API-Key gesetzt (AZURE_API_KEY bzw. AZURE_EMBEDDING_API_KEY)")
+		return nil, fmt.Errorf("no API key set (AZURE_API_KEY or AZURE_EMBEDDING_API_KEY)")
 	}
 
 	url := embeddingsURL(cfg.EmbeddingHost(), cfg.EmbeddingDeployment, cfg.EmbeddingVersion())
@@ -572,13 +588,13 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 	return result, nil
 }
 
-// readError liest eine Fehlerantwort aus und formatiert sie.
+// readError reads an error response and formats it.
 func readError(resp *http.Response) error {
 	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(resp.Body)
+	_, _ = buf.ReadFrom(io.LimitReader(resp.Body, maxErrorBodyBytes))
 	msg := strings.TrimSpace(buf.String())
 	if len(msg) > 500 {
 		msg = msg[:500]
 	}
-	return fmt.Errorf("azure-fehler %d: %s", resp.StatusCode, msg)
+	return fmt.Errorf("azure error %d: %s", resp.StatusCode, msg)
 }

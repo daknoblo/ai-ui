@@ -1,4 +1,4 @@
-// Package server enthält den HTTP-Server, die Routen und Handler.
+// Package server contains the HTTP server, its routes and handlers.
 package server
 
 import (
@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/daknoblo/ai-ui/internal/config"
+	"github.com/daknoblo/ai-ui/internal/i18n"
 	"github.com/daknoblo/ai-ui/internal/llm"
 	"github.com/daknoblo/ai-ui/internal/rag"
 	"github.com/daknoblo/ai-ui/internal/storage"
@@ -20,7 +21,7 @@ import (
 	"github.com/daknoblo/ai-ui/web"
 )
 
-// Server bündelt alle Abhängigkeiten der HTTP-Schicht.
+// Server bundles all dependencies of the HTTP layer.
 type Server struct {
 	cfg       *config.Store
 	store     *storage.Store
@@ -32,16 +33,33 @@ type Server struct {
 	ready     *readiness
 }
 
-// New erzeugt einen Server und parst die Templates.
+// New creates a server and parses the templates.
 func New(cfg *config.Store, store *storage.Store) *Server {
 	client := llm.New(cfg)
-	// Token-Verbrauch dauerhaft in der Datenbank aufzeichnen.
+	// Persist token usage in the database.
 	client.SetUsageRecorder(usageRecorder{store: store})
 
+	// The template helpers read the active language from the configuration on
+	// every call. That keeps the language a single global setting instead of a
+	// field that would have to be threaded through every template data struct.
 	tmpl := template.Must(template.New("").
 		Funcs(template.FuncMap{
 			"renderMarkdown": renderMarkdown,
-			"thousands":      groupThousands,
+			"lang":           cfg.Language,
+			"t": func(key string, args ...any) string {
+				return i18n.T(cfg.Language(), key, args...)
+			},
+			"thousands": func(n int64) string {
+				return i18n.GroupThousands(cfg.Language(), n)
+			},
+			// chatTitle substitutes the localized placeholder for chats that
+			// have not been named yet.
+			"chatTitle": func(title string) string {
+				if isUntitled(title) {
+					return i18n.T(cfg.Language(), "chat.default_title")
+				}
+				return title
+			},
 		}).
 		ParseFS(web.TemplatesFS, "templates/*.html"))
 
@@ -57,7 +75,17 @@ func New(cfg *config.Store, store *storage.Store) *Server {
 	}
 }
 
-// usageRecorder speichert den Token-Verbrauch dauerhaft im Datenpfad.
+// t translates a key into the configured UI language.
+func (s *Server) t(key string, args ...any) string {
+	return i18n.T(s.cfg.Language(), key, args...)
+}
+
+// thousands formats an integer using the separator of the configured language.
+func (s *Server) thousands(n int64) string {
+	return i18n.GroupThousands(s.cfg.Language(), n)
+}
+
+// usageRecorder persists token usage in the data path.
 type usageRecorder struct {
 	store *storage.Store
 }
@@ -70,21 +98,30 @@ func (u usageRecorder) RecordUsage(kind, model string, usage llm.Usage) {
 	}
 }
 
-// Routes registriert alle HTTP-Routen.
+// Routes registers all HTTP routes.
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.Recoverer)
+	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
+	r.Use(middleware.Recoverer)
+	r.Use(securityHeaders)
+	r.Use(requestLogger)
+	// Compression saves a large share of the transferred bytes for HTML and the
+	// bundled JavaScript. text/event-stream is deliberately not listed, so SSE
+	// responses keep streaming unbuffered.
+	r.Use(middleware.Compress(5, "text/html", "text/css", "text/javascript", "application/javascript", "application/json"))
 
-	// Statische Assets aus dem eingebetteten Dateisystem. Cache-Control: no-cache
-	// erzwingt eine Revalidierung, damit nach einem Update (neues Image) sofort
-	// das aktuelle CSS/JS geladen wird und keine veraltete Version im Browser hängt.
-	staticFS, _ := fs.Sub(web.StaticFS, "static")
-	fileServer := http.StripPrefix("/static/", http.FileServer(http.FS(staticFS)))
-	r.Handle("/static/*", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache")
-		fileServer.ServeHTTP(w, req)
-	}))
+	// Static assets from the embedded file system, served with content based
+	// ETags so browsers can revalidate cheaply (see newStaticHandler).
+	staticFS, err := fs.Sub(web.StaticFS, "static")
+	if err != nil {
+		panic("embedded static assets missing: " + err.Error())
+	}
+	staticHandler, err := newStaticHandler(staticFS)
+	if err != nil {
+		panic("cannot index static assets: " + err.Error())
+	}
+	r.Handle("/static/*", staticHandler)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

@@ -1,5 +1,5 @@
-// Package websearch bietet eine provider-agnostische Web-Suche, deren Ergebnisse
-// als zusätzlicher Kontext in den Chat einfließen können.
+// Package websearch provides a provider-agnostic web search whose results can
+// be fed into the chat as additional context.
 package websearch
 
 import (
@@ -12,22 +12,22 @@ import (
 	"github.com/daknoblo/ai-ui/internal/config"
 )
 
-// Result ist ein einzelnes Suchergebnis.
+// Result is a single search hit.
 type Result struct {
 	Title   string
 	URL     string
 	Content string
 }
 
-// Provider abstrahiert einen konkreten Suchanbieter.
+// Provider abstracts a concrete search backend.
 type Provider interface {
-	// Search liefert bis zu maxResults Treffer zur Anfrage.
+	// Search returns up to maxResults hits for the query.
 	Search(ctx context.Context, query string, maxResults int) ([]Result, error)
-	// Name liefert den Anzeigenamen des Providers.
+	// Name returns the display name of the provider.
 	Name() string
 }
 
-// Provider-Bezeichner für die Konfiguration.
+// Provider identifiers used in the configuration.
 const (
 	ProviderNone    = ""
 	ProviderTavily  = "tavily"
@@ -35,27 +35,34 @@ const (
 	ProviderSearXNG = "searxng"
 )
 
-// Client wählt anhand der Konfiguration den passenden Provider und führt Suchen aus.
+// maxContentRunes caps how much text of a single hit is passed to the model.
+const maxContentRunes = 1500
+
+// Client picks the provider matching the configuration and runs searches.
 type Client struct {
 	store *config.Store
 	http  *http.Client
 }
 
-// New erzeugt einen Such-Client.
+// New creates a search client. It uses a hardened transport because the SearXNG
+// base URL is user supplied (see newSafeTransport).
 func New(store *config.Store) *Client {
 	return &Client{
 		store: store,
-		http:  &http.Client{Timeout: 20 * time.Second},
+		http: &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: newSafeTransport(),
+		},
 	}
 }
 
-// Enabled gibt an, ob ein Suchanbieter konfiguriert ist.
+// Enabled reports whether a search provider is configured.
 func (c *Client) Enabled() bool {
 	return c.provider() != nil
 }
 
-// provider baut den aktiven Provider aus der Konfiguration. Liefert nil, wenn
-// keiner konfiguriert oder ein benötigter Key/Endpoint fehlt.
+// provider builds the active provider from the configuration. It returns nil if
+// none is configured or a required key/endpoint is missing or invalid.
 func (c *Client) provider() Provider {
 	cfg := c.store.Get()
 	key := c.store.SearchAPIKey()
@@ -71,20 +78,21 @@ func (c *Client) provider() Provider {
 		}
 		return &braveProvider{http: c.http, apiKey: key}
 	case ProviderSearXNG:
-		if strings.TrimSpace(cfg.SearchEndpoint) == "" {
+		endpoint := strings.TrimSpace(cfg.SearchEndpoint)
+		if endpoint == "" || ValidateEndpoint(endpoint) != nil {
 			return nil
 		}
-		return &searxngProvider{http: c.http, endpoint: cfg.SearchEndpoint}
+		return &searxngProvider{http: c.http, endpoint: endpoint}
 	default:
 		return nil
 	}
 }
 
-// Search führt eine Suche mit dem konfigurierten Provider aus.
+// Search runs a query with the configured provider.
 func (c *Client) Search(ctx context.Context, query string) ([]Result, error) {
 	p := c.provider()
 	if p == nil {
-		return nil, fmt.Errorf("keine websuche konfiguriert")
+		return nil, fmt.Errorf("no web search configured")
 	}
 	max := c.store.Get().SearchMaxResults
 	if max <= 0 {
@@ -93,11 +101,11 @@ func (c *Client) Search(ctx context.Context, query string) ([]Result, error) {
 	return p.Search(ctx, query, max)
 }
 
-// Verify prüft, ob der konfigurierte Provider erreichbar ist und antwortet.
+// Verify checks whether the configured provider is reachable and responds.
 func (c *Client) Verify(ctx context.Context) error {
 	p := c.provider()
 	if p == nil {
-		return fmt.Errorf("keine websuche konfiguriert")
+		return fmt.Errorf("no web search configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -107,7 +115,7 @@ func (c *Client) Verify(ctx context.Context) error {
 	return nil
 }
 
-// ProviderName liefert den Namen des aktiven Providers (oder "").
+// ProviderName returns the name of the active provider (or "").
 func (c *Client) ProviderName() string {
 	if p := c.provider(); p != nil {
 		return p.Name()
@@ -115,7 +123,7 @@ func (c *Client) ProviderName() string {
 	return ""
 }
 
-// truncate kürzt einen Text auf höchstens n Runen.
+// truncate shortens a text to at most n runes.
 func truncate(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {

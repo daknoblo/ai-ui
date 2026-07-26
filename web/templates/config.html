@@ -2,30 +2,40 @@
 <div class="modal-overlay" hx-on:click="if(event.target===this)this.remove()">
 	<div class="modal">
 		<div class="modal-head">
-			<h2>Einstellungen</h2>
+			<h2>{{t "config.title"}}</h2>
 			<button class="modal-close" hx-on:click="document.querySelector('.modal-overlay').remove()">×</button>
 		</div>
 
 		<form hx-post="/config" hx-target="#modal-root" hx-swap="innerHTML" class="config-form">
-			<div class="config-section-head">Chat (Model-Router)</div>
-			{{if .Locks.Any}}<div class="config-secret ok">Einige Endpoint-Felder sind über Umgebungsvariablen festgelegt und daher hier deaktiviert. Ihre Werte werden angezeigt, können aber nur über die Umgebung geändert werden.</div>{{end}}
+			<div class="config-section-head">{{t "config.section_general"}}</div>
 			<label>
-				Azure Endpoint-URL {{if .Locks.Endpoint}}<span class="hint">(per <code>AZURE_ENDPOINT</code> gesetzt)</span>{{end}}
+				{{t "config.language"}} <span class="hint">{{t "config.language_hint"}}</span>
+				<select name="language">
+					{{range .Languages}}
+					<option value="{{.Code}}" {{if eq .Code $.Config.Language}}selected{{end}}>{{.Name}}</option>
+					{{end}}
+				</select>
+			</label>
+
+			<div class="config-section-head">{{t "config.section_chat"}}</div>
+			{{if .Locks.Any}}<div class="config-secret ok">{{t "config.locks_notice"}}</div>{{end}}
+			<label>
+				{{t "config.endpoint"}} {{if .Locks.Endpoint}}<span class="hint">{{t "config.set_via" "AZURE_ENDPOINT"}}</span>{{end}}
 				<input type="url" name="endpoint" value="{{.Config.Endpoint}}"
-					placeholder="https://mein-router.openai.azure.com" required{{if .Locks.Endpoint}} disabled{{end}}>
+					placeholder="https://my-router.openai.azure.com" required{{if .Locks.Endpoint}} disabled{{end}}>
 			</label>
 			<label>
-				API-Version {{if .Locks.APIVersion}}<span class="hint">(per <code>AZURE_API_VERSION</code> gesetzt)</span>{{end}}
+				{{t "config.api_version"}} {{if .Locks.APIVersion}}<span class="hint">{{t "config.set_via" "AZURE_API_VERSION"}}</span>{{end}}
 				<input type="text" name="api_version" value="{{.Config.APIVersion}}"
 					placeholder="2024-08-01-preview" required{{if .Locks.APIVersion}} disabled{{end}}>
 			</label>
 			<label>
-				Deployment-Name (Chat-Modell) {{if .Locks.ChatDeployment}}<span class="hint">(per <code>AZURE_DEPLOYMENT</code> gesetzt)</span>{{end}}
+				{{t "config.chat_deployment"}} {{if .Locks.ChatDeployment}}<span class="hint">{{t "config.set_via" "AZURE_DEPLOYMENT"}}</span>{{end}}
 				<input type="text" name="chat_deployment" value="{{.Config.ChatDeployment}}"
 					placeholder="gpt-4o" required{{if .Locks.ChatDeployment}} disabled{{end}}>
 			</label>
 			<label class="config-full">
-				Verfügbare Modelle <span class="hint">{{if .Locks.ChatModels}}(per <code>AZURE_MODELS</code> gesetzt){{else}}(eines pro Zeile oder per Komma; oben rechts wählbar){{end}}</span>
+				{{t "config.models"}} <span class="hint">{{if .Locks.ChatModels}}{{t "config.set_via" "AZURE_MODELS"}}{{else}}{{t "config.models_hint"}}{{end}}</span>
 				<textarea name="chat_models" rows="3" placeholder="gpt-4o&#10;gpt-4o-mini&#10;o3"{{if .Locks.ChatModels}} disabled{{end}}>{{range $i, $m := .Config.ChatModels}}{{if $i}}&#10;{{end}}{{$m}}{{end}}</textarea>
 			</label>
 			<button type="button" class="btn btn-ghost btn-small"
@@ -34,90 +44,85 @@
 				hx-swap="innerHTML"
 				hx-disabled-elt="this"
 				{{if .Locks.ChatModels}}disabled{{end}}
-				title="Übernimmt die in der Ressource bereitgestellten Deployments (nur Chat-Modelle) statt des kompletten Modellkatalogs (Endpoint & API-Version müssen gespeichert sein)">
-				⟳ Bereitgestellte Modelle abrufen
+				title="{{t "config.fetch_models_title"}}">
+				{{t "config.fetch_models"}}
 			</button>
 			{{if .Notice}}<div class="config-{{if .NoticeErr}}notice-err{{else}}saved{{end}}">{{.Notice}}</div>{{end}}
 
-			<div class="config-section-head">Embeddings (Dokument-Kontext)</div>
+			<div class="config-section-head">{{t "config.section_embeddings"}}</div>
 			<label>
-				Embedding-Endpoint-URL <span class="hint">{{if .Locks.EmbeddingEndpoint}}(per <code>AZURE_EMBEDDING_ENDPOINT</code> gesetzt){{else}}(optional, sonst wie Chat){{end}}</span>
+				{{t "config.embedding_endpoint"}} <span class="hint">{{if .Locks.EmbeddingEndpoint}}{{t "config.set_via" "AZURE_EMBEDDING_ENDPOINT"}}{{else}}{{t "config.optional_same_as_chat"}}{{end}}</span>
 				<input type="url" name="embedding_endpoint" value="{{.Config.EmbeddingEndpoint}}"
-					placeholder="https://ddf6-msfoundry.cognitiveservices.azure.com"{{if .Locks.EmbeddingEndpoint}} disabled{{end}}>
+					placeholder="https://my-resource.cognitiveservices.azure.com"{{if .Locks.EmbeddingEndpoint}} disabled{{end}}>
 			</label>
 			<label>
-				Embedding-API-Version <span class="hint">{{if .Locks.EmbeddingAPIVersion}}(per <code>AZURE_EMBEDDING_API_VERSION</code> gesetzt){{else}}(optional, sonst wie Chat){{end}}</span>
+				{{t "config.embedding_api_version"}} <span class="hint">{{if .Locks.EmbeddingAPIVersion}}{{t "config.set_via" "AZURE_EMBEDDING_API_VERSION"}}{{else}}{{t "config.optional_same_as_chat"}}{{end}}</span>
 				<input type="text" name="embedding_api_version" value="{{.Config.EmbeddingAPIVersion}}"
 					placeholder="2023-05-15"{{if .Locks.EmbeddingAPIVersion}} disabled{{end}}>
 			</label>
 			<label>
-				Embedding-Deployment-Name {{if .Locks.EmbeddingDeployment}}<span class="hint">(per <code>AZURE_EMBEDDING_DEPLOYMENT</code> gesetzt)</span>{{end}}
+				{{t "config.embedding_deployment"}} {{if .Locks.EmbeddingDeployment}}<span class="hint">{{t "config.set_via" "AZURE_EMBEDDING_DEPLOYMENT"}}</span>{{end}}
 				<input type="text" name="embedding_deployment" value="{{.Config.EmbeddingDeployment}}"
 					placeholder="text-embedding-3-large"{{if .Locks.EmbeddingDeployment}} disabled{{end}}>
 			</label>
 
-			<div class="config-section-head">Web-Suche (optional)</div>
+			<div class="config-section-head">{{t "config.section_search"}}</div>
 			<label>
-				Anbieter
+				{{t "config.search_provider"}}
 				<select name="search_provider">
-					<option value="" {{if eq .Config.SearchProvider ""}}selected{{end}}>Aus</option>
+					<option value="" {{if eq .Config.SearchProvider ""}}selected{{end}}>{{t "config.search_off"}}</option>
 					<option value="tavily" {{if eq .Config.SearchProvider "tavily"}}selected{{end}}>Tavily</option>
 					<option value="brave" {{if eq .Config.SearchProvider "brave"}}selected{{end}}>Brave Search</option>
-					<option value="searxng" {{if eq .Config.SearchProvider "searxng"}}selected{{end}}>SearXNG (selbst gehostet)</option>
+					<option value="searxng" {{if eq .Config.SearchProvider "searxng"}}selected{{end}}>{{t "config.search_searxng"}}</option>
 				</select>
 			</label>
 			<label>
-				Anzahl Treffer
+				{{t "config.search_max_results"}}
 				<input type="number" name="search_max_results" value="{{.Config.SearchMaxResults}}"
 					min="1" max="10" step="1">
 			</label>
 			<label>
-				SearXNG-Endpoint <span class="hint">(nur für SearXNG)</span>
+				{{t "config.searxng_endpoint"}} <span class="hint">{{t "config.searxng_only"}}</span>
 				<input type="url" name="search_endpoint" value="{{.Config.SearchEndpoint}}"
 					placeholder="https://searxng.example.com">
 			</label>
 			<label class="config-check">
 				<input type="checkbox" name="search_auto" {{if .Config.SearchAuto}}checked{{end}}>
-				<span>Automatisch (Tool-Calling) — das Modell entscheidet selbst, wann es das Web durchsucht <span class="hint">(erfordert Tool-Calling-Unterstützung des Routers)</span></span>
+				<span>{{t "config.search_auto"}} <span class="hint">{{t "config.search_auto_hint"}}</span></span>
 			</label>
 			<div class="config-secret {{if .HasSearchKey}}ok{{else}}warn{{end}}">
-				Such-API-Key (Secret):
-				{{if .HasSearchKey}}über Umgebungsvariable SEARCH_API_KEY gesetzt ✓
-				{{else}}nicht gesetzt — für Tavily/Brave die Umgebungsvariable <code>SEARCH_API_KEY</code> setzen (SearXNG benötigt keinen Key){{end}}
+				{{t "config.search_key"}}
+				{{if .HasSearchKey}}{{t "config.search_key_set"}}{{else}}{{t "config.search_key_missing"}}{{end}}
 			</div>
 
-			<div class="config-section-head">Verhalten</div>
+			<div class="config-section-head">{{t "config.section_behavior"}}</div>
 			<label class="config-full">
-				System-Prompt
-				<textarea name="system_prompt" rows="3">{{.Config.SystemPrompt}}</textarea>
+				{{t "config.system_prompt"}}
+				<textarea name="system_prompt" rows="3" placeholder="{{t "prompt.default_system"}}">{{.Config.SystemPrompt}}</textarea>
 			</label>
 			<label>
-				Temperatur ({{printf "%.1f" .Config.Temperature}})
+				{{t "config.temperature"}} ({{printf "%.1f" .Config.Temperature}})
 				<input type="number" name="temperature" value="{{.Config.Temperature}}"
 					min="0" max="2" step="0.1">
 			</label>
 
 			<div class="config-secret {{if .HasKey}}ok{{else}}warn{{end}}">
-				Chat-API-Key (Secret):
-				{{if .HasKey}}über Umgebungsvariable AZURE_API_KEY gesetzt ✓{{else}}
-				nicht gesetzt — Umgebungsvariable <code>AZURE_API_KEY</code> beim Containerstart angeben{{end}}
+				{{t "config.chat_key"}}
+				{{if .HasKey}}{{t "config.chat_key_set"}}{{else}}{{t "config.chat_key_missing"}}{{end}}
 			</div>
 			<div class="config-secret {{if .HasEmbeddingKey}}ok{{else}}warn{{end}}">
-				Embedding-API-Key (Secret):
-				{{if .HasOwnEmbeddingKey}}eigener Key über <code>AZURE_EMBEDDING_API_KEY</code> gesetzt ✓
-				{{else if .HasEmbeddingKey}}nutzt <code>AZURE_API_KEY</code> (kein eigener Key gesetzt) ✓
-				{{else}}nicht gesetzt — bei getrennter Ressource <code>AZURE_EMBEDDING_API_KEY</code> setzen{{end}}
+				{{t "config.embedding_key"}}
+				{{if .HasOwnEmbeddingKey}}{{t "config.embedding_key_own"}}
+				{{else if .HasEmbeddingKey}}{{t "config.embedding_key_inherit"}}
+				{{else}}{{t "config.embedding_key_missing"}}{{end}}
 			</div>
 
-			{{if .Saved}}<div class="config-saved">Gespeichert ✓</div>{{end}}
+			{{if .Saved}}<div class="config-saved">{{t "config.saved"}}</div>{{end}}
 
-			<div class="config-section-head">Bereitschaft &amp; Verbindung</div>
-			<p class="hint" style="margin:0">
-				Dokument-Uploads sind erst möglich, wenn Speicher und Embedding-Endpoint
-				verifiziert sind. Bitte zuerst speichern, dann testen.
-			</p>
+			<div class="config-section-head">{{t "config.section_readiness"}}</div>
+			<p class="hint config-hint-tight">{{t "config.readiness_hint"}}</p>
 			<div class="verify-banner {{if .UploadsAllowed}}ok{{else}}warn{{end}}">
-				{{if .UploadsAllowed}}Uploads freigegeben ✓{{else}}Uploads gesperrt – noch nicht verifiziert{{end}}
+				{{if .UploadsAllowed}}{{t "config.uploads_allowed"}}{{else}}{{t "config.uploads_blocked"}}{{end}}
 			</div>
 			<button type="button" class="btn btn-ghost"
 				hx-post="/verify"
@@ -125,17 +130,17 @@
 				hx-swap="innerHTML"
 				hx-disabled-elt="this"
 				hx-indicator="#verify-indicator">
-				Verbindung testen
+				{{t "config.verify"}}
 			</button>
-			<div id="verify-indicator" class="htmx-indicator hint">Prüfe Speicher und Endpoints…</div>
+			<div id="verify-indicator" class="htmx-indicator hint">{{t "config.verify_running"}}</div>
 			<div id="verify-results">
-				{{if .Verified}}<div class="verify-banner ok">Zuletzt verifiziert ✓</div>{{end}}
+				{{if .Verified}}<div class="verify-banner ok">{{t "config.verified_last"}}</div>{{end}}
 			</div>
 
 			<div class="modal-actions">
 				<button type="button" class="btn btn-ghost"
-					hx-on:click="document.querySelector('.modal-overlay').remove()">Schließen</button>
-				<button type="submit" class="btn">Speichern</button>
+					hx-on:click="document.querySelector('.modal-overlay').remove()">{{t "action.close"}}</button>
+				<button type="submit" class="btn">{{t "action.save"}}</button>
 			</div>
 		</form>
 	</div>
@@ -153,7 +158,7 @@
 	{{end}}
 </ul>
 <div class="verify-banner {{if .UploadsAllowed}}ok{{else}}warn{{end}}">
-	{{if .UploadsAllowed}}Speicher &amp; Embedding bereit – Uploads freigegeben ✓{{else}}Uploads bleiben gesperrt, bis Speicher und Embedding grün sind{{end}}
+	{{if .UploadsAllowed}}{{t "verify.uploads_ready"}}{{else}}{{t "verify.uploads_blocked"}}{{end}}
 </div>
 <div id="conn-status" hx-swap-oob="true"
 	hx-get="/status" hx-trigger="load, every 30s" hx-swap="innerHTML">

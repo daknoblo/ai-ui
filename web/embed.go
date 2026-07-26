@@ -1,14 +1,14 @@
-// Package web bündelt die eingebetteten Templates und statischen Assets.
+// Package web bundles the embedded templates and static assets.
 package web
 
 import "embed"
 
-// TemplatesFS enthält alle HTML-Templates.
+// TemplatesFS contains all HTML templates.
 //
 //go:embed templates/*.html
 var TemplatesFS embed.FS
 
-// StaticFS enthält CSS und JavaScript.
+// StaticFS contains CSS and JavaScript.
 //
 //go:embed static/*
 var StaticFS embed.FS

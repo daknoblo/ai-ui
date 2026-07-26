@@ -1,3 +1,4 @@
+// Package storage wraps all access to the SQLite database.
 package storage
 
 import (
@@ -5,40 +6,62 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
-// Store kapselt den Zugriff auf die SQLite-Datenbank.
+// Store encapsulates access to the SQLite database.
 type Store struct {
 	db   *sql.DB
 	path string
 }
 
-// Open öffnet (oder erstellt) die SQLite-Datenbank am angegebenen Pfad.
+// Open opens (or creates) the SQLite database at the given path.
+//
+// Pragmas:
+//   - busy_timeout    waits instead of failing immediately on a locked database
+//   - journal_mode    WAL keeps readers from blocking the single writer
+//   - synchronous     NORMAL is the recommended companion of WAL: it avoids an
+//     fsync per commit (far less I/O) and is still crash safe;
+//     only a power loss can lose the most recent transactions
+//   - foreign_keys    enables ON DELETE CASCADE
+//   - auto_vacuum     INCREMENTAL lets deletes reclaim space without rewriting
+//     the whole file (see Vacuum)
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)")
+	dsn := path + "?_pragma=busy_timeout(5000)" +
+		"&_pragma=journal_mode(WAL)" +
+		"&_pragma=synchronous(NORMAL)" +
+		"&_pragma=foreign_keys(ON)" +
+		"&_pragma=auto_vacuum(incremental)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
-	// SQLite verträgt bei Schreibzugriffen nur einen Writer.
+	// SQLite tolerates only a single writer, and this application is sized for a
+	// handful of concurrent users. One connection keeps the pragmas above in
+	// effect for every statement and removes all lock contention.
 	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxIdleTime(0)
 	if err := db.Ping(); err != nil {
+		_ = db.Close()
 		return nil, err
 	}
 	return &Store{db: db, path: path}, nil
 }
 
-// Close schließt die Datenbankverbindung.
+// Close closes the database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// DiskUsage liefert die aktuelle Größe der Datenbank in Bytes, inklusive der
-// WAL- und SHM-Hilfsdateien (SQLite legt diese im WAL-Modus an).
+// DiskUsage returns the current size of the database in bytes, including the
+// WAL and SHM helper files that SQLite creates in WAL mode.
 func (s *Store) DiskUsage() int64 {
 	var total int64
 	for _, suffix := range []string{"", "-wal", "-shm"} {
@@ -49,19 +72,19 @@ func (s *Store) DiskUsage() int64 {
 	return total
 }
 
-// Ping prüft, ob die Datenbank erreichbar und schreibbar ist.
+// Ping checks whether the database is reachable and writable.
 func (s *Store) Ping(ctx context.Context) error {
 	if err := s.db.PingContext(ctx); err != nil {
 		return err
 	}
-	// Schreibbarkeit verifizieren (Datenpfad gemountet & beschreibbar?).
+	// Verify writability (is the data path mounted and writable?).
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS _healthcheck (id INTEGER PRIMARY KEY)`); err != nil {
 		return err
 	}
 	return nil
 }
 
-// Migrate legt das Schema an, falls es noch nicht existiert.
+// Migrate creates the schema if it does not exist yet.
 func (s *Store) Migrate(ctx context.Context) error {
 	const schema = `
 CREATE TABLE IF NOT EXISTS chats (
@@ -70,6 +93,7 @@ CREATE TABLE IF NOT EXISTS chats (
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_chats_updated ON chats(updated_at DESC);
 CREATE TABLE IF NOT EXISTS messages (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	chat_id    INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -77,7 +101,9 @@ CREATE TABLE IF NOT EXISTS messages (
 	content    TEXT NOT NULL,
 	created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id);
+-- Composite index: ListMessages filters by chat_id and orders by id, so this
+-- serves both parts and removes the sort step.
+CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id, id);
 CREATE TABLE IF NOT EXISTS documents (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	chat_id    INTEGER REFERENCES chats(id) ON DELETE CASCADE,
@@ -104,18 +130,37 @@ CREATE TABLE IF NOT EXISTS usage_daily (
 	total_tokens      INTEGER NOT NULL,
 	PRIMARY KEY (day, kind, model)
 );
+-- UsageByModel filters on kind and groups by model.
+CREATE INDEX IF NOT EXISTS idx_usage_kind_model ON usage_daily(kind, model);
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return err
 	}
-	// Bestehende Datenbanken nachrüsten: chat_id-Spalte ergänzen, falls sie fehlt.
+	// Retrofit existing databases: add the chat_id column if it is missing.
 	if err := s.ensureDocumentChatColumn(ctx); err != nil {
 		return err
 	}
-	return nil
+	// Older databases were created without auto_vacuum. The connection pragma
+	// only takes effect for the current file after a full VACUUM, which is run
+	// exactly once here.
+	return s.ensureIncrementalVacuum(ctx)
 }
 
-// ensureDocumentChatColumn fügt documents.chat_id für ältere Schemata hinzu.
+// ensureIncrementalVacuum converts a legacy database to incremental auto-vacuum.
+func (s *Store) ensureIncrementalVacuum(ctx context.Context) error {
+	const incremental = 2
+	var mode int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA auto_vacuum`).Scan(&mode); err != nil {
+		return err
+	}
+	if mode == incremental {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `VACUUM`)
+	return err
+}
+
+// ensureDocumentChatColumn adds documents.chat_id for older schemas.
 func (s *Store) ensureDocumentChatColumn(ctx context.Context) error {
 	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(documents)`)
 	if err != nil {
@@ -153,7 +198,7 @@ func (s *Store) ensureDocumentChatColumn(ctx context.Context) error {
 
 // ---- Chats ----
 
-// CreateChat legt einen neuen Chat an und liefert dessen ID.
+// CreateChat creates a new chat and returns its ID.
 func (s *Store) CreateChat(ctx context.Context, title string) (int64, error) {
 	now := nowStr()
 	res, err := s.db.ExecContext(ctx,
@@ -165,7 +210,7 @@ func (s *Store) CreateChat(ctx context.Context, title string) (int64, error) {
 	return res.LastInsertId()
 }
 
-// ListChats liefert alle Chats, neueste zuerst.
+// ListChats returns all chats, most recently updated first.
 func (s *Store) ListChats(ctx context.Context) ([]Chat, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, title, created_at, updated_at FROM chats ORDER BY updated_at DESC`)
@@ -188,7 +233,7 @@ func (s *Store) ListChats(ctx context.Context) ([]Chat, error) {
 	return chats, rows.Err()
 }
 
-// GetChat liefert einen einzelnen Chat.
+// GetChat returns a single chat.
 func (s *Store) GetChat(ctx context.Context, id int64) (Chat, error) {
 	var c Chat
 	var created, updated string
@@ -206,21 +251,21 @@ func (s *Store) GetChat(ctx context.Context, id int64) (Chat, error) {
 	return c, nil
 }
 
-// UpdateChatTitle ändert den Titel eines Chats.
+// UpdateChatTitle changes the title of a chat.
 func (s *Store) UpdateChatTitle(ctx context.Context, id int64, title string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE chats SET title = ?, updated_at = ? WHERE id = ?`, title, nowStr(), id)
 	return err
 }
 
-// TouchChat aktualisiert den updated_at-Zeitstempel.
+// TouchChat refreshes the updated_at timestamp.
 func (s *Store) TouchChat(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE chats SET updated_at = ? WHERE id = ?`, nowStr(), id)
 	return err
 }
 
-// DeleteChat entfernt einen Chat samt Nachrichten.
+// DeleteChat removes a chat including its messages and documents.
 func (s *Store) DeleteChat(ctx context.Context, id int64) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM chats WHERE id = ?`, id); err != nil {
 		return err
@@ -228,9 +273,9 @@ func (s *Store) DeleteChat(ctx context.Context, id int64) error {
 	return s.Vacuum(ctx)
 }
 
-// DeleteEmptyChats entfernt Chats, die weder Nachrichten noch Dokumente enthalten
-// (verwaiste "Neuer Chat"-Einträge). exceptID bleibt erhalten (0 = keiner).
-// Liefert die Anzahl entfernter Chats.
+// DeleteEmptyChats removes chats that contain neither messages nor documents
+// (orphaned "new chat" entries). exceptID is kept (0 = keep none). It returns
+// the number of removed chats.
 func (s *Store) DeleteEmptyChats(ctx context.Context, exceptID int64) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
 		`DELETE FROM chats
@@ -246,7 +291,7 @@ func (s *Store) DeleteEmptyChats(ctx context.Context, exceptID int64) (int64, er
 
 // ---- Messages ----
 
-// AddMessage speichert eine Nachricht und liefert deren ID.
+// AddMessage stores a message and returns its ID.
 func (s *Store) AddMessage(ctx context.Context, chatID int64, role, content string) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)`,
@@ -257,7 +302,7 @@ func (s *Store) AddMessage(ctx context.Context, chatID int64, role, content stri
 	return res.LastInsertId()
 }
 
-// ListMessages liefert alle Nachrichten eines Chats in chronologischer Reihenfolge.
+// ListMessages returns all messages of a chat in chronological order.
 func (s *Store) ListMessages(ctx context.Context, chatID int64) ([]Message, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, chat_id, role, content, created_at FROM messages WHERE chat_id = ? ORDER BY id ASC`,
@@ -280,9 +325,9 @@ func (s *Store) ListMessages(ctx context.Context, chatID int64) ([]Message, erro
 	return msgs, rows.Err()
 }
 
-// ---- Documents & Chunks ----
+// ---- Documents & chunks ----
 
-// CreateDocument legt ein Dokument für einen Chat an und liefert dessen ID.
+// CreateDocument creates a document for a chat and returns its ID.
 func (s *Store) CreateDocument(ctx context.Context, chatID int64, name, mime string) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO documents (chat_id, name, mime, created_at) VALUES (?, ?, ?, ?)`,
@@ -293,15 +338,34 @@ func (s *Store) CreateDocument(ctx context.Context, chatID int64, name, mime str
 	return res.LastInsertId()
 }
 
-// AddChunk speichert einen Textabschnitt samt Embedding.
-func (s *Store) AddChunk(ctx context.Context, documentID int64, ordinal int, text string, embedding []float32) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO chunks (document_id, ordinal, text, embedding) VALUES (?, ?, ?, ?)`,
-		documentID, ordinal, text, encodeEmbedding(embedding))
-	return err
+// AddChunks stores all sections of a document in a single transaction. One
+// commit instead of one per chunk avoids a WAL sync per insert.
+func (s *Store) AddChunks(ctx context.Context, documentID int64, texts []string, embeddings [][]float32) error {
+	if len(texts) != len(embeddings) {
+		return fmt.Errorf("chunk/embedding count mismatch: %d vs %d", len(texts), len(embeddings))
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }() // no-op once Commit succeeded
+
+	stmt, err := tx.PrepareContext(ctx,
+		`INSERT INTO chunks (document_id, ordinal, text, embedding) VALUES (?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stmt.Close() }()
+
+	for i, text := range texts {
+		if _, err := stmt.ExecContext(ctx, documentID, i, text, encodeEmbedding(embeddings[i])); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
-// ListDocumentsByChat liefert die Dokumente eines Chats mit Chunk-Anzahl.
+// ListDocumentsByChat returns the documents of a chat including the chunk count.
 func (s *Store) ListDocumentsByChat(ctx context.Context, chatID int64) ([]Document, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT d.id, d.chat_id, d.name, d.mime, d.created_at, COUNT(c.id)
@@ -326,7 +390,7 @@ func (s *Store) ListDocumentsByChat(ctx context.Context, chatID int64) ([]Docume
 	return docs, rows.Err()
 }
 
-// DeleteDocument entfernt ein Dokument samt Chunks.
+// DeleteDocument removes a document including its chunks.
 func (s *Store) DeleteDocument(ctx context.Context, id int64) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM documents WHERE id = ?`, id); err != nil {
 		return err
@@ -334,16 +398,14 @@ func (s *Store) DeleteDocument(ctx context.Context, id int64) error {
 	return s.Vacuum(ctx)
 }
 
-// Vacuum schreibt die Datenbank ohne freie Seiten neu und gibt damit nach dem
-// Löschen belegten Speicher an das Dateisystem zurück. VACUUM kann nicht in
-// einer Transaktion laufen; bei sehr großen Datenbanken ist es kurzzeitig
-// sperrend, für den persönlichen Maßstab hier aber unproblematisch.
+// Vacuum returns space freed by deletions to the file system.
 //
-// Im WAL-Modus landet das verkleinerte Ergebnis zunächst in der WAL-Datei; ein
-// anschließender TRUNCATE-Checkpoint überträgt es in die Hauptdatei und schneidet
-// die WAL ab, sodass die Dateigröße auf der Platte tatsächlich sinkt.
+// With auto_vacuum=INCREMENTAL (see Open) this only releases the free pages
+// instead of rewriting the entire database, which keeps deletes cheap even for
+// large embedding tables. The subsequent TRUNCATE checkpoint moves the change
+// from the WAL into the main file so the size on disk actually shrinks.
 func (s *Store) Vacuum(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
+	if _, err := s.db.ExecContext(ctx, `PRAGMA incremental_vacuum`); err != nil {
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
@@ -352,31 +414,78 @@ func (s *Store) Vacuum(ctx context.Context) error {
 	return nil
 }
 
-// ChunksByChat liefert alle Chunks der Dokumente eines Chats samt Embeddings.
-func (s *Store) ChunksByChat(ctx context.Context, chatID int64) ([]Chunk, error) {
+// EachChunkVector streams the embedding of every chunk that belongs to the
+// documents of a chat.
+//
+// Retrieval only needs the vectors to score candidates, so the (much larger)
+// chunk text is deliberately not loaded here; the texts of the few selected
+// hits are fetched afterwards via ChunkTexts. The Embedding slice handed to fn
+// is reused between rows and must not be retained by the callback.
+func (s *Store) EachChunkVector(ctx context.Context, chatID int64, fn func(ChunkVector) error) error {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT c.id, c.document_id, c.ordinal, c.text, c.embedding
+		`SELECT c.id, c.document_id, c.embedding
 		 FROM chunks c JOIN documents d ON d.id = c.document_id
 		 WHERE d.chat_id = ?`, chatID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var (
+		// sql.RawBytes avoids copying every BLOB; it stays valid until the next
+		// call to rows.Next, which is why it is decoded immediately below.
+		blob sql.RawBytes
+		vec  []float32
+		cv   ChunkVector
+	)
+	for rows.Next() {
+		if err := rows.Scan(&cv.ID, &cv.DocumentID, &blob); err != nil {
+			return err
+		}
+		vec = decodeEmbeddingInto(vec, blob)
+		cv.Embedding = vec
+		if err := fn(cv); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+// ChunkTexts loads the text of the given chunk IDs.
+func (s *Store) ChunkTexts(ctx context.Context, ids []int64) (map[int64]string, error) {
+	if len(ids) == 0 {
+		return map[int64]string{}, nil
+	}
+	// Only the number of placeholders is derived from the input; the IDs
+	// themselves are always passed as bound parameters.
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	query := `SELECT id, text FROM chunks WHERE id IN (?` + //#nosec G202 -- only "?" placeholders are concatenated, never user input
+		strings.Repeat(",?", len(ids)-1) + `)`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	var chunks []Chunk
+	out := make(map[int64]string, len(ids))
 	for rows.Next() {
-		var c Chunk
-		var blob []byte
-		if err := rows.Scan(&c.ID, &c.DocumentID, &c.Ordinal, &c.Text, &blob); err != nil {
+		var (
+			id   int64
+			text string
+		)
+		if err := rows.Scan(&id, &text); err != nil {
 			return nil, err
 		}
-		c.Embedding = decodeEmbedding(blob)
-		chunks = append(chunks, c)
+		out[id] = text
 	}
-	return chunks, rows.Err()
+	return out, rows.Err()
 }
 
-// CountChunksByChat liefert die Anzahl Chunks der Dokumente eines Chats.
+// CountChunksByChat returns the number of chunks across the documents of a chat.
 func (s *Store) CountChunksByChat(ctx context.Context, chatID int64) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,
@@ -385,17 +494,17 @@ func (s *Store) CountChunksByChat(ctx context.Context, chatID int64) (int, error
 	return n, err
 }
 
-// CountDocuments liefert die Gesamtanzahl gespeicherter Dokumente.
+// CountDocuments returns the total number of stored documents.
 func (s *Store) CountDocuments(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM documents`).Scan(&n)
 	return n, err
 }
 
-// ---- Token-Nutzung (persistente Statistik) ----
+// ---- Token usage (persistent statistics) ----
 
-// RecordUsage verbucht den Token-Verbrauch einer Anfrage tagesweise aggregiert.
-// kind ist z.B. "chat" oder "embedding"; model kann leer sein.
+// RecordUsage books the token usage of a request, aggregated per day.
+// kind is e.g. "chat" or "embedding"; model may be empty.
 func (s *Store) RecordUsage(ctx context.Context, kind, model string, prompt, completion, total int) error {
 	day := time.Now().UTC().Format("2006-01-02")
 	_, err := s.db.ExecContext(ctx,
@@ -410,7 +519,7 @@ func (s *Store) RecordUsage(ctx context.Context, kind, model string, prompt, com
 	return err
 }
 
-// UsageSummary ist die Gesamtübersicht des Token-Verbrauchs.
+// UsageSummary is the overall token usage overview.
 type UsageSummary struct {
 	ChatRequests     int64
 	ChatPromptTokens int64
@@ -421,7 +530,7 @@ type UsageSummary struct {
 	TotalTokens      int64
 }
 
-// UsageDay ist der Verbrauch eines einzelnen Tages.
+// UsageDay is the usage of a single day.
 type UsageDay struct {
 	Day             string
 	ChatTokens      int64
@@ -430,14 +539,14 @@ type UsageDay struct {
 	Requests        int64
 }
 
-// UsageModel ist der Verbrauch je Modell.
+// UsageModel is the usage per model.
 type UsageModel struct {
 	Model       string
 	Requests    int64
 	TotalTokens int64
 }
 
-// UsageSummaryTotals liefert die aggregierte Gesamtübersicht.
+// UsageSummaryTotals returns the aggregated overview.
 func (s *Store) UsageSummaryTotals(ctx context.Context) (UsageSummary, error) {
 	var u UsageSummary
 	rows, err := s.db.QueryContext(ctx,
@@ -464,7 +573,7 @@ func (s *Store) UsageSummaryTotals(ctx context.Context) (UsageSummary, error) {
 	return u, rows.Err()
 }
 
-// UsageByDay liefert den Verbrauch der letzten n Tage, neueste zuerst.
+// UsageByDay returns the usage of the last n days, most recent first.
 func (s *Store) UsageByDay(ctx context.Context, limit int) ([]UsageDay, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT day,
@@ -488,7 +597,8 @@ func (s *Store) UsageByDay(ctx context.Context, limit int) ([]UsageDay, error) {
 	return out, rows.Err()
 }
 
-// UsageByModel liefert den Verbrauch je Modell, größter zuerst.
+// UsageByModel returns the usage per model, largest first. Rows without a model
+// name keep an empty Model field; the presentation layer localizes that case.
 func (s *Store) UsageByModel(ctx context.Context) ([]UsageModel, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT model, SUM(requests), SUM(total_tokens)
@@ -504,18 +614,15 @@ func (s *Store) UsageByModel(ctx context.Context) ([]UsageModel, error) {
 		if err := rows.Scan(&m.Model, &m.Requests, &m.TotalTokens); err != nil {
 			return nil, err
 		}
-		if m.Model == "" {
-			m.Model = "(Auto/Router)"
-		}
 		out = append(out, m)
 	}
 	return out, rows.Err()
 }
 
-// ---- Helfer ----
+// ---- Helpers ----
 
-// ErrNotFound wird zurückgegeben, wenn ein Datensatz nicht existiert.
-var ErrNotFound = errors.New("nicht gefunden")
+// ErrNotFound is returned when a record does not exist.
+var ErrNotFound = errors.New("not found")
 
 const timeLayout = time.RFC3339Nano
 
@@ -531,7 +638,7 @@ func parseTime(s string) time.Time {
 	return t
 }
 
-// encodeEmbedding serialisiert einen float32-Vektor als little-endian BLOB.
+// encodeEmbedding serializes a float32 vector as a little-endian BLOB.
 func encodeEmbedding(v []float32) []byte {
 	buf := make([]byte, len(v)*4)
 	for i, f := range v {
@@ -540,12 +647,16 @@ func encodeEmbedding(v []float32) []byte {
 	return buf
 }
 
-// decodeEmbedding deserialisiert einen BLOB zurück in einen float32-Vektor.
-func decodeEmbedding(b []byte) []float32 {
+// decodeEmbeddingInto deserializes a BLOB into dst, reusing its capacity when
+// possible. It returns the (possibly reallocated) slice.
+func decodeEmbeddingInto(dst []float32, b []byte) []float32 {
 	n := len(b) / 4
-	v := make([]float32, n)
-	for i := 0; i < n; i++ {
-		v[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[i*4:]))
+	if cap(dst) < n {
+		dst = make([]float32, n)
 	}
-	return v
+	dst = dst[:n]
+	for i := range n {
+		dst[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[i*4:]))
+	}
+	return dst
 }

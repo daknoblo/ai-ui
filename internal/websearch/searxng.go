@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// searxngProvider nutzt eine selbst gehostete SearXNG-Instanz (JSON-API).
-// Es wird kein API-Key benötigt, nur die Basis-URL der Instanz.
+// searxngProvider queries a self-hosted SearXNG instance (JSON API).
+// No API key is required, only the base URL of the instance.
 type searxngProvider struct {
 	http     *http.Client
 	endpoint string
@@ -60,7 +60,7 @@ func (p *searxngProvider) Search(ctx context.Context, query string, maxResults i
 		results = append(results, Result{
 			Title:   strings.TrimSpace(r.Title),
 			URL:     r.URL,
-			Content: truncate(strings.TrimSpace(r.Content), 1500),
+			Content: truncate(strings.TrimSpace(r.Content), maxContentRunes),
 		})
 	}
 	return results, nil

@@ -6,23 +6,25 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/daknoblo/ai-ui/internal/i18n"
 )
 
-// TestParseModelList prüft die Zerlegung getrennter Modell-Listen inkl.
-// Trimmen, Leerfeld- und Duplikat-Filterung.
+// TestParseModelList checks the splitting of separated model lists including
+// trimming as well as empty-field and duplicate filtering.
 func TestParseModelList(t *testing.T) {
 	got := ParseModelList(" gpt-4o, gpt-4o\n gpt-4o-mini \n\n, o3 ,")
 	want := []string{"gpt-4o", "gpt-4o-mini", "o3"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ParseModelList = %#v, erwartet %#v", got, want)
+		t.Fatalf("ParseModelList = %#v, want %#v", got, want)
 	}
 	if ParseModelList("   ") != nil {
-		t.Fatalf("erwartet nil für leere Eingabe")
+		t.Fatalf("expected nil for empty input")
 	}
 }
 
-// TestOverridesApplyAndLocks stellt sicher, dass gesetzte Overrides die
-// effektive Konfiguration überlagern und die passenden Locks liefern.
+// TestOverridesApplyAndLocks makes sure configured overrides layer over the
+// effective configuration and produce the matching locks.
 func TestOverridesApplyAndLocks(t *testing.T) {
 	o := Overrides{
 		Endpoint:            "https://env.example",
@@ -31,30 +33,30 @@ func TestOverridesApplyAndLocks(t *testing.T) {
 	}
 	locks := o.locks()
 	if !locks.Endpoint || !locks.ChatModels || !locks.EmbeddingDeployment {
-		t.Fatalf("gesetzte Felder müssen gesperrt sein: %+v", locks)
+		t.Fatalf("configured fields must be locked: %+v", locks)
 	}
 	if locks.ChatDeployment || locks.APIVersion || locks.EmbeddingEndpoint || locks.EmbeddingAPIVersion {
-		t.Fatalf("nicht gesetzte Felder dürfen nicht gesperrt sein: %+v", locks)
+		t.Fatalf("unset fields must not be locked: %+v", locks)
 	}
 	if !locks.Any() {
-		t.Fatalf("Any() muss true liefern, wenn Felder gesperrt sind")
+		t.Fatalf("Any() must report true when fields are locked")
 	}
 
 	base := Config{Endpoint: "https://stored", ChatDeployment: "stored-dep", APIVersion: "v1"}
 	eff := o.apply(base)
 	if eff.Endpoint != "https://env.example" {
-		t.Errorf("Endpoint-Override nicht angewendet: %q", eff.Endpoint)
+		t.Errorf("endpoint override was not applied: %q", eff.Endpoint)
 	}
 	if eff.ChatDeployment != "stored-dep" {
-		t.Errorf("nicht gesetzter Override darf gespeicherten Wert nicht ändern: %q", eff.ChatDeployment)
+		t.Errorf("an unset override must not change the stored value: %q", eff.ChatDeployment)
 	}
 	if !reflect.DeepEqual(eff.ChatModels, []string{"gpt-4o"}) {
-		t.Errorf("ChatModels-Override nicht angewendet: %#v", eff.ChatModels)
+		t.Errorf("ChatModels override was not applied: %#v", eff.ChatModels)
 	}
 }
 
-// TestStoreGetAppliesOverrides prüft, dass Get() die effektive Konfiguration
-// (gespeicherte Werte plus Overrides) liefert.
+// TestStoreGetAppliesOverrides checks that Get() returns the effective
+// configuration (stored values plus overrides).
 func TestStoreGetAppliesOverrides(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	s := NewStore(path, "key", "", "", Overrides{Endpoint: "https://env.example"})
@@ -62,16 +64,16 @@ func TestStoreGetAppliesOverrides(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if got := s.Get().Endpoint; got != "https://env.example" {
-		t.Fatalf("Get().Endpoint = %q, erwartet Override", got)
+		t.Fatalf("Get().Endpoint = %q, expected the override", got)
 	}
 	if !s.Locks().Endpoint {
-		t.Fatalf("Endpoint muss gesperrt sein")
+		t.Fatalf("endpoint must be locked")
 	}
 }
 
-// TestSaveKeepsLockedFields stellt sicher, dass ein Speichern gesperrte Felder
-// weder in der effektiven Konfiguration noch in der Rohdatei verändert, während
-// nicht gesperrte Felder normal übernommen werden.
+// TestSaveKeepsLockedFields makes sure that saving changes neither the
+// effective configuration nor the raw file for locked fields, while unlocked
+// fields are stored normally.
 func TestSaveKeepsLockedFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	s := NewStore(path, "key", "", "", Overrides{Endpoint: "https://env.example"})
@@ -79,23 +81,23 @@ func TestSaveKeepsLockedFields(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	// Versuch, das gesperrte Endpoint-Feld zu überschreiben und zugleich ein
-	// nicht gesperrtes Feld zu setzen.
+	// Try to overwrite the locked endpoint field and set an unlocked one at the
+	// same time.
 	cfg := s.Get()
-	cfg.Endpoint = "https://versuch-ueberschreiben"
+	cfg.Endpoint = "https://attempted-overwrite"
 	cfg.ChatDeployment = "gpt-4o"
 	if err := s.Save(cfg); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
 	if got := s.Get().Endpoint; got != "https://env.example" {
-		t.Errorf("gesperrtes Endpoint wurde verändert: %q", got)
+		t.Errorf("locked endpoint was modified: %q", got)
 	}
 	if got := s.Get().ChatDeployment; got != "gpt-4o" {
-		t.Errorf("nicht gesperrtes Feld wurde nicht gespeichert: %q", got)
+		t.Errorf("unlocked field was not stored: %q", got)
 	}
 
-	// Rohdatei darf den ENV-Wert nicht enthalten.
+	// The raw file must not contain the ENV value.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
@@ -105,15 +107,45 @@ func TestSaveKeepsLockedFields(t *testing.T) {
 		t.Fatalf("Unmarshal: %v", err)
 	}
 	if raw.Endpoint != "" {
-		t.Errorf("Rohkonfiguration darf ENV-/UI-Wert nicht speichern, war %q", raw.Endpoint)
+		t.Errorf("the raw configuration must not store the ENV/UI value, was %q", raw.Endpoint)
 	}
 	if raw.ChatDeployment != "gpt-4o" {
-		t.Errorf("nicht gesperrtes Feld fehlt in Rohkonfiguration: %q", raw.ChatDeployment)
+		t.Errorf("unlocked field missing from the raw configuration: %q", raw.ChatDeployment)
 	}
 }
 
-// TestSetChatModelUsesEffectiveList erlaubt die Auswahl eines Modells, das nur
-// über den ENV-Override der Modell-Liste bereitgestellt wird.
+// TestLanguageIsNormalized ensures a hand-edited or unknown language code never
+// reaches the templates.
+func TestLanguageIsNormalized(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	s := NewStore(path, "key", "", "", Overrides{})
+	if _, err := s.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := s.Language(); got != i18n.Default {
+		t.Errorf("default language = %q, want %q", got, i18n.Default)
+	}
+
+	cfg := s.Get()
+	cfg.Language = "klingon"
+	if err := s.Save(cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if got := s.Language(); got != i18n.Default {
+		t.Errorf("unknown language = %q, want the default %q", got, i18n.Default)
+	}
+
+	cfg.Language = "DE"
+	if err := s.Save(cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if got := s.Language(); got != i18n.DE {
+		t.Errorf("language = %q, want %q", got, i18n.DE)
+	}
+}
+
+// TestSetChatModelUsesEffectiveList allows selecting a model that is only
+// provided through the ENV override of the model list.
 func TestSetChatModelUsesEffectiveList(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	s := NewStore(path, "key", "", "", Overrides{ChatModels: []string{"gpt-4o", "o3"}})
@@ -121,18 +153,18 @@ func TestSetChatModelUsesEffectiveList(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if err := s.SetChatModel("o3"); err != nil {
-		t.Fatalf("SetChatModel(o3) sollte erlaubt sein: %v", err)
+		t.Fatalf("SetChatModel(o3) should be allowed: %v", err)
 	}
 	if got := s.Get().ChatModel; got != "o3" {
-		t.Errorf("ChatModel = %q, erwartet o3", got)
+		t.Errorf("ChatModel = %q, want o3", got)
 	}
-	if err := s.SetChatModel("unbekannt"); err == nil {
-		t.Errorf("unbekanntes Modell muss abgelehnt werden")
+	if err := s.SetChatModel("unknown"); err == nil {
+		t.Errorf("an unknown model must be rejected")
 	}
 }
 
-// TestIsConfiguredWithOverrides bestätigt, dass per ENV gesetzte Endpoint-Werte
-// zur Konfiguriert-Erkennung beitragen.
+// TestIsConfiguredWithOverrides confirms that endpoint values set via ENV count
+// towards the "configured" detection.
 func TestIsConfiguredWithOverrides(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	s := NewStore(path, "key", "", "", Overrides{
@@ -142,12 +174,12 @@ func TestIsConfiguredWithOverrides(t *testing.T) {
 	if _, err := s.Load(); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	// APIVersion stammt aus den Defaults, Endpoint/Deployment aus ENV, Key gesetzt.
+	// APIVersion comes from the defaults, endpoint/deployment from ENV, key set.
 	if !s.IsConfigured() {
-		t.Fatalf("erwartet konfiguriert mit ENV-Overrides")
+		t.Fatalf("expected configured with ENV overrides")
 	}
 
-	// Ohne API-Key darf nicht als konfiguriert gelten.
+	// Without an API key it must not count as configured.
 	s2 := NewStore(filepath.Join(t.TempDir(), "config.json"), "", "", "", Overrides{
 		Endpoint:       "https://env.example",
 		ChatDeployment: "gpt-4o",
@@ -156,6 +188,6 @@ func TestIsConfiguredWithOverrides(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if s2.IsConfigured() {
-		t.Fatalf("ohne API-Key darf nicht konfiguriert sein")
+		t.Fatalf("must not be configured without an API key")
 	}
 }

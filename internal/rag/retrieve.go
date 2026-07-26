@@ -9,27 +9,39 @@ import (
 	"github.com/daknoblo/ai-ui/internal/storage"
 )
 
-// Result ist ein Treffer der Vektorsuche.
+// Result is a hit of the vector search.
 type Result struct {
 	Text       string
 	Score      float32
 	DocumentID int64
 }
 
-// Retriever führt eine Brute-Force-Cosine-Suche über alle gespeicherten Chunks aus.
+// candidate is a scored chunk before its text has been loaded.
+type candidate struct {
+	ID         int64
+	DocumentID int64
+	Score      float32
+}
+
+// Retriever runs a brute-force cosine search over the stored chunks.
 type Retriever struct {
 	store *storage.Store
 	llm   *llm.Client
 }
 
-// NewRetriever erzeugt einen Retriever.
+// NewRetriever creates a retriever.
 func NewRetriever(store *storage.Store, client *llm.Client) *Retriever {
 	return &Retriever{store: store, llm: client}
 }
 
-// Retrieve liefert die topK relevantesten Chunks zur Anfrage, beschränkt auf
-// die Dokumente des angegebenen Chats. Sind keine Dokumente vorhanden, wird eine
-// leere Liste zurückgegeben.
+// Retrieve returns the topK most relevant chunks for the query, limited to the
+// documents of the given chat. It returns an empty list when the chat has no
+// documents.
+//
+// Scoring streams the embeddings and keeps only (id, document, score) per
+// chunk. The chunk texts – by far the larger part – are loaded afterwards for
+// the handful of selected hits only, which keeps peak memory independent of the
+// corpus size.
 func (r *Retriever) Retrieve(ctx context.Context, chatID int64, query string, topK int) ([]Result, error) {
 	count, err := r.store.CountChunksByChat(ctx, chatID)
 	if err != nil {
@@ -47,18 +59,28 @@ func (r *Retriever) Retrieve(ctx context.Context, chatID int64, query string, to
 		return nil, nil
 	}
 	qv := vecs[0]
+	qNorm := norm(qv)
+	if qNorm == 0 {
+		return nil, nil
+	}
 
-	chunks, err := r.store.ChunksByChat(ctx, chatID)
+	scored := make([]candidate, 0, count)
+	err = r.store.EachChunkVector(ctx, chatID, func(cv storage.ChunkVector) error {
+		if len(cv.Embedding) != len(qv) {
+			return nil // skip incompatible dimensions (e.g. after a model change)
+		}
+		scored = append(scored, candidate{
+			ID:         cv.ID,
+			DocumentID: cv.DocumentID,
+			Score:      cosine(qv, qNorm, cv.Embedding),
+		})
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	scored := make([]Result, 0, len(chunks))
-	for _, c := range chunks {
-		if len(c.Embedding) != len(qv) {
-			continue // inkompatible Dimensionen überspringen
-		}
-		scored = append(scored, Result{Text: c.Text, Score: cosine(qv, c.Embedding), DocumentID: c.DocumentID})
+	if len(scored) == 0 {
+		return nil, nil
 	}
 
 	sort.Slice(scored, func(i, j int) bool {
@@ -68,28 +90,46 @@ func (r *Retriever) Retrieve(ctx context.Context, chatID int64, query string, to
 	if topK <= 0 {
 		topK = 1
 	}
-	return balanceByDocument(scored, topK), nil
+	selected := balanceByDocument(scored, topK)
+
+	ids := make([]int64, len(selected))
+	for i, c := range selected {
+		ids[i] = c.ID
+	}
+	texts, err := r.store.ChunkTexts(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]Result, 0, len(selected))
+	for _, c := range selected {
+		text, ok := texts[c.ID]
+		if !ok {
+			continue // deleted concurrently
+		}
+		out = append(out, Result{Text: text, Score: c.Score, DocumentID: c.DocumentID})
+	}
+	return out, nil
 }
 
-// balanceByDocument wählt Ergebnisse so aus, dass möglichst jedes Dokument
-// vertreten ist: zuerst der beste Chunk je Dokument (nach Relevanz geordnet),
-// danach werden die verbleibenden Plätze mit den global besten Chunks gefüllt.
-// So dominiert nicht ein einzelnes Dokument den gesamten Kontext.
-func balanceByDocument(scored []Result, topK int) []Result {
+// balanceByDocument picks results so that every document is represented if
+// possible: first the best chunk per document (ordered by relevance), then the
+// remaining slots are filled with the globally best chunks. This prevents a
+// single document from dominating the whole context.
+func balanceByDocument(scored []candidate, topK int) []candidate {
 	if len(scored) == 0 {
 		return nil
 	}
 
-	// Anzahl Dokumente bestimmen, um genügend Platz für eine Repräsentation
-	// jedes Dokuments zu lassen.
-	docSeen := make(map[int64]bool)
+	// Count the documents so that every one of them can get a slot.
+	docSeen := make(map[int64]struct{})
 	for _, r := range scored {
-		docSeen[r.DocumentID] = true
+		docSeen[r.DocumentID] = struct{}{}
 	}
 	numDocs := len(docSeen)
 
-	// Budget: mindestens topK, aber so groß, dass jedes Dokument einen Platz
-	// bekommt – mit einer Obergrenze, um den Prompt nicht zu sprengen.
+	// Budget: at least topK, but large enough for one slot per document – with
+	// an upper bound so the prompt does not explode.
 	const maxChunks = 12
 	budget := topK
 	if numDocs > budget {
@@ -99,23 +139,23 @@ func balanceByDocument(scored []Result, topK int) []Result {
 		budget = maxChunks
 	}
 
-	var out []Result
+	out := make([]candidate, 0, budget)
 	used := make([]bool, len(scored))
 
-	// 1. Durchgang: bester Chunk je Dokument (scored ist bereits nach Score sortiert).
-	picked := make(map[int64]bool)
+	// Pass 1: best chunk per document (scored is already sorted by score).
+	picked := make(map[int64]struct{}, numDocs)
 	for i, r := range scored {
 		if len(out) >= budget {
 			break
 		}
-		if !picked[r.DocumentID] {
-			picked[r.DocumentID] = true
+		if _, ok := picked[r.DocumentID]; !ok {
+			picked[r.DocumentID] = struct{}{}
 			out = append(out, r)
 			used[i] = true
 		}
 	}
 
-	// 2. Durchgang: verbleibende Plätze mit den nächstbesten Chunks füllen.
+	// Pass 2: fill the remaining slots with the next best chunks.
 	for i, r := range scored {
 		if len(out) >= budget {
 			break
@@ -126,23 +166,33 @@ func balanceByDocument(scored []Result, topK int) []Result {
 		}
 	}
 
-	// Final nach Relevanz sortieren, damit die stärksten Treffer zuerst stehen.
+	// Sort by relevance so the strongest hits come first.
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].Score > out[j].Score
 	})
 	return out
 }
 
-// cosine berechnet die Kosinus-Ähnlichkeit zweier gleich langer Vektoren.
-func cosine(a, b []float32) float32 {
-	var dot, na, nb float64
-	for i := range a {
-		dot += float64(a[i]) * float64(b[i])
-		na += float64(a[i]) * float64(a[i])
-		nb += float64(b[i]) * float64(b[i])
+// norm returns the Euclidean length of a vector.
+func norm(v []float32) float64 {
+	var sum float64
+	for _, f := range v {
+		sum += float64(f) * float64(f)
 	}
-	if na == 0 || nb == 0 {
+	return math.Sqrt(sum)
+}
+
+// cosine computes the cosine similarity of two equally long vectors. The norm
+// of a is passed in because the query vector is scored against every chunk.
+func cosine(a []float32, aNorm float64, b []float32) float32 {
+	var dot, nb float64
+	for i, av := range a {
+		bv := float64(b[i])
+		dot += float64(av) * bv
+		nb += bv * bv
+	}
+	if nb == 0 {
 		return 0
 	}
-	return float32(dot / (math.Sqrt(na) * math.Sqrt(nb)))
+	return float32(dot / (aNorm * math.Sqrt(nb)))
 }

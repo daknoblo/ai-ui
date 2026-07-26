@@ -1,43 +1,45 @@
-# Copilot-Instruktionen — ai-ui
+# Copilot instructions — ai-ui
 
-Diese Datei beschreibt die verbindlichen Konventionen, Best Practices und
-Sicherheitsvorgaben für das Projekt **ai-ui**. GitHub Copilot soll sich bei
-Code, Dockerfile, GitHub Actions, Tests und Dokumentation an diese Vorgaben
-halten.
+This file describes the binding conventions, best practices and security
+requirements for the **ai-ui** project. GitHub Copilot must follow them for
+code, the Dockerfile, GitHub Actions, tests and documentation.
 
-> **Kontext:** ai-ui ist eine kleine Web-UI für Chats und Dokumente mit
-> RAG-/Websuche-Unterstützung. Die Anwendung läuft als einzelnes Go-Binary in
-> Docker und speichert Chats, Dokumente, Embeddings und Konfiguration in SQLite
-> unter `/data`.
+> **Context:** ai-ui is a small web UI for chats and documents with RAG/web
+> search support. The application runs as a single Go binary in Docker and
+> stores chats, documents, embeddings and configuration in SQLite under the
+> data path.
 
-## 1. Sprache, Runtime & Grundprinzipien
+## 1. Language, runtime & core principles
 
-- **Sprache: Go 1.26**; die Go-Version in `go.mod`, Dockerfile und Workflows
-  nicht auf eine ältere Version senken.
-- **Module-Pfad:** `github.com/daknoblo/ai-ui`.
-- **Kommentare und Dokumentation auf Deutsch**, Code-Bezeichner auf Englisch.
-  Log-Meldungen (`slog`) und ihre Feld-Keys werden auf Englisch gehalten.
-- **Ein einzelnes, statisches Binary** als Auslieferungsartefakt; immer
-  `CGO_ENABLED=0` bauen.
-- Für SQLite die reine-Go-Implementierung `modernc.org/sqlite` verwenden.
-- Standardbibliothek zuerst; neue Abhängigkeiten nur einführen, wenn sie klaren
-  Mehrwert bieten.
-- Secrets/API-Keys werden ausschließlich über Umgebungsvariablen eingelesen und
-  niemals in Konfigurationsdateien oder Quellcode committet.
+- **Language: Go 1.26**; do not lower the Go version in `go.mod`, the Dockerfile
+  or the workflows.
+- **Module path:** `github.com/daknoblo/ai-ui`.
+- **All code comments, documentation, error strings and log messages are in
+  English.** Identifiers are English as well. User-facing UI text is never
+  hard-coded; it goes through `internal/i18n`.
+- **A single, static binary** as the deliverable; always build with
+  `CGO_ENABLED=0`.
+- Use the pure-Go SQLite implementation `modernc.org/sqlite`.
+- Standard library first; add new dependencies only when they provide clear
+  value.
+- Secrets/API keys are read exclusively from environment variables and are never
+  committed to configuration files or source code.
 
-## 2. Projektstruktur
+## 2. Project structure
 
 ```
 ai-ui/
-├── main.go                       # Einstiegspunkt: Env, Wiring, Server, Shutdown
+├── main.go                       # entry point: env, wiring, server, shutdown
 ├── internal/
-│   ├── config/                   # Konfiguration aus Env und JSON-Datei
-│   ├── llm/                      # Azure/OpenAI-kompatibler Client
-│   ├── rag/                      # Dokument-Ingestion und Retrieval
-│   ├── server/                   # HTTP-Server, Routing, Handler, SSE
-│   ├── storage/                  # SQLite-Zugriff und Migrationen
-│   └── websearch/                # Optionale Websuche
-├── web/                          # eingebettete Templates und statische Assets
+│   ├── config/                   # configuration from env and JSON file
+│   ├── docparse/                 # plain text extraction from uploads
+│   ├── i18n/                     # UI message catalog (en/de)
+│   ├── llm/                      # Azure/OpenAI compatible client
+│   ├── rag/                      # document ingestion and retrieval
+│   ├── server/                   # HTTP server, routing, handlers, SSE
+│   ├── storage/                  # SQLite access and migrations
+│   └── websearch/                # optional web search
+├── web/                          # embedded templates and static assets
 ├── Dockerfile
 ├── docker-compose.example.yml
 ├── go.mod / go.sum
@@ -45,94 +47,114 @@ ai-ui/
 └── .github/workflows/            # ci.yml, release.yml, codeql.yml
 ```
 
-- `main.go` bleibt schlank: Argument-Parsing, Konfiguration, Abhängigkeiten,
-  Signal-Handling und Graceful Shutdown.
-- Nicht öffentlich wiederverwendbarer Code gehört unter `internal/`.
-- HTTP-Routen werden zentral in `internal/server.(*Server).Routes()` registriert.
+- `main.go` stays lean: argument parsing, configuration, dependencies, signal
+  handling and graceful shutdown.
+- Code that is not meant for public reuse lives under `internal/`.
+- HTTP routes are registered centrally in `internal/server.(*Server).Routes()`.
 
-## 3. Konfiguration & Env-Variablen
+## 3. Configuration & environment variables
 
-ai-ui nutzt keinen projektspezifischen Env-Präfix. Wichtige Variablen:
+ai-ui does not use a project specific env prefix. The relevant variables are:
 
-- `PORT` (Default `8080`) — HTTP-Port und Ziel des lokalen Healthchecks.
-- `DATA_DIR` (Default `/appdata`) — persistenter Datenpfad für SQLite und Appdaten.
-- `AZURE_API_KEY` — Secret für den AI-Endpoint (Chat), nur aus ENV.
-- `AZURE_EMBEDDING_API_KEY` — optional eigener Embedding-Key.
-- `SEARCH_API_KEY` — optionaler Key für Websuche-Anbieter.
-- Optionale Endpoint-Overrides (sperren das jeweilige UI-Feld). Namensschema:
-  genereller AI-Endpoint = `AZURE_*` (`AZURE_ENDPOINT`, `AZURE_DEPLOYMENT`,
-  `AZURE_MODELS`, `AZURE_API_VERSION`), Embeddings = `AZURE_EMBEDDING_*`
+- `PORT` (default `8080`) — HTTP port and target of the local health check.
+- `DATA_DIR` (default `/appdata`) — persistent data path. The SQLite database
+  lives directly in it, the UI settings in `<DATA_DIR>/appdata/config.json`.
+- `AZURE_API_KEY` — secret for the AI endpoint (chat), from env only.
+- `AZURE_EMBEDDING_API_KEY` — optional dedicated embedding key.
+- `SEARCH_API_KEY` — optional key for the web search provider.
+- Optional endpoint overrides (they lock the matching UI field). Naming scheme:
+  general AI endpoint = `AZURE_*` (`AZURE_ENDPOINT`, `AZURE_DEPLOYMENT`,
+  `AZURE_MODELS`, `AZURE_API_VERSION`), embeddings = `AZURE_EMBEDDING_*`
   (`AZURE_EMBEDDING_ENDPOINT`, `AZURE_EMBEDDING_DEPLOYMENT`,
   `AZURE_EMBEDDING_API_VERSION`).
-- `HEALTHCHECK_INTERVAL` — periodische Verbindungsprüfung (`60s`, `0`/`off`).
-- `TZ` — Zeitzone (IANA-Name); das Binary importiert `time/tzdata` für
-  distroless-Container.
+- `HEALTHCHECK_INTERVAL` — periodic connection check (`60s`, `0`/`off`).
+- `TZ` — time zone (IANA name); the binary imports `time/tzdata` for the
+  distroless container.
 
-## 4. Docker
+## 4. Internationalization
 
-- Mehrstufiges Dockerfile mit `golang:1.26-alpine` als Builder.
-- Multi-Arch per Cross-Compile mit `--platform=$BUILDPLATFORM`, `TARGETOS` und
-  `TARGETARCH`; `CGO_ENABLED=0` setzen.
-- Runtime-Basis: `gcr.io/distroless/static-debian12:nonroot`.
-- Non-root-Betrieb mit UID/GID `65532:65532`.
-- Persistenter Datenpfad ist `/data`; das Verzeichnis wird im Build vorbereitet
-  und mit `--chown=65532:65532` in das Runtime-Image kopiert.
-- Da distroless keine Shell und kein curl/wget enthält, muss das Binary den
-  Healthcheck selbst implementieren: `-healthcheck` ruft lokal
-  `http://127.0.0.1:<PORT>/healthz` auf.
-- Dockerfile enthält eine Exec-Form-Healthcheck-Zeile:
+- Every string shown to a user lives in `internal/i18n`; both `en` and `de` must
+  contain the same keys (enforced by `TestCatalogsHaveSameKeys`).
+- Templates use the `t`, `lang`, `thousands` and `chatTitle` helpers; Go code
+  uses `(*Server).t`. Both resolve the language from the configuration at call
+  time, so no language field is threaded through the data structs.
+- The default language of a fresh installation is English.
+
+## 5. Docker
+
+- Multi-stage Dockerfile with `golang:1.26-alpine` as the builder.
+- Multi-arch via cross compilation using `--platform=$BUILDPLATFORM`, `TARGETOS`
+  and `TARGETARCH`; set `CGO_ENABLED=0`.
+- Runtime base: `gcr.io/distroless/static-debian12:nonroot`.
+- Runs non-root with UID/GID `65532:65532`.
+- The persistent data path is `/appdata`; the directory is prepared during the
+  build and copied into the runtime image with `--chown=65532:65532`.
+- Because distroless has no shell and no curl/wget, the binary implements the
+  health check itself: `-healthcheck` calls
+  `http://127.0.0.1:<PORT>/healthz` locally.
+- The Dockerfile contains an exec-form health check line:
   `CMD ["/app/ai-ui", "-healthcheck"]`.
 
-## 5. HTTP & Healthcheck
+## 6. HTTP & health check
 
-- `GET /healthz` liefert HTTP 200 mit Body `ok` und darf keine externen Dienste
-  abfragen.
-- Der Container-Healthcheck verwendet ausschließlich das eigene Binary.
-- Langlebige SSE-Streams dürfen nicht durch zu enge Write-Timeouts abgebrochen
-  werden.
+- `GET /healthz` returns HTTP 200 with the body `ok` and must not query any
+  external service.
+- The container health check uses the binary only.
+- Long-lived SSE streams must not be aborted by overly tight write timeouts;
+  `IdleTimeout` is set instead of `WriteTimeout`.
+- Every response carries the security headers set in
+  `internal/server/middleware.go` (CSP, nosniff, frame options, referrer policy).
 
-## 6. GitHub Actions & Abhängigkeiten
+## 7. GitHub Actions & dependencies
 
-- Workflows sind ausschließlich auf `main` ausgerichtet (kein `develop`-Branch).
-  Jeder Push auf `main` baut und veröffentlicht direkt ein Image.
-- Genau diese Workflows gehören unter `.github/workflows/`:
-  - `ci.yml`: gofmt-Check, `go vet ./...`, `golangci-lint` v2.12.2 über
+- Workflows target `main` only (no `develop` branch). Every push to `main`
+  builds and publishes an image.
+- Exactly these workflows belong under `.github/workflows/`:
+  - `ci.yml`: gofmt check, `go vet ./...`, `golangci-lint` v2.12.2 via
     `golangci/golangci-lint-action@v9`, `govulncheck`, `go test -race ./...`,
     `CGO_ENABLED=0 go build ./...`.
-  - `release.yml`: Multi-Arch Docker Buildx, GHCR-Push, SBOM, Provenance,
-    Cosign-Keyless-Signatur und Trivy-SARIF-Upload.
-  - `codeql.yml`: CodeQL für Go mit `build-mode: autobuild`.
-- Dependabot überwacht `gomod`, `github-actions` und `docker` wöchentlich.
-- Actions immer auf stabile Major-/Version-Tags pinnen; keine `@master` oder
-  `@main` verwenden.
+  - `release.yml`: multi-arch Docker Buildx, GHCR push, SBOM, provenance,
+    keyless cosign signature and Trivy SARIF upload.
+  - `codeql.yml`: CodeQL for Go with `build-mode: autobuild`.
+- Dependabot watches `gomod`, `github-actions` and `docker` weekly.
+- Always pin actions to stable major/version tags; never use `@master` or
+  `@main`.
 
-## 7. Linting, Formatierung & Tests
+## 8. Linting, formatting & tests
 
-- Code ist immer `gofmt`-formatiert (`gofmt -l .` muss leer sein).
-- `go vet ./...`, `CGO_ENABLED=0 go build ./...` und `go test ./...` müssen
-  lokal grün sein; in CI laufen Tests bewusst mit `-race`.
-- `.golangci.yml` ist die zentrale golangci-lint-Konfiguration.
-- Fehler grundsätzlich behandeln; bewusst ignorierte `Close()`-Fehler nur
-  gezielt und nachvollziehbar ignorieren.
+- Code is always `gofmt` formatted (`gofmt -l .` must be empty).
+- `go vet ./...`, `CGO_ENABLED=0 go build ./...` and `go test ./...` must pass
+  locally; CI deliberately runs the tests with `-race`.
+- `.golangci.yml` is the central golangci-lint configuration. On top of the
+  standard set it enables `gosec`, `bodyclose`, `errorlint`, `misspell` and
+  `unconvert`.
+- Handle errors; deliberately ignored errors (e.g. `Close()`, SSE writes to a
+  disconnected client) need a short comment explaining why.
+- `#nosec` suppressions always carry a justification.
 
-## 8. Sicherheit
+## 9. Security
 
-- Minimale Angriffsfläche: statisches Binary, distroless, non-root.
-- Secrets niemals committen; `.env`-Dateien und lokale Daten bleiben außerhalb
-  des Repos.
-- SQL ausschließlich parametrisiert ausführen; keine String-Konkatenation von
-  Nutzereingaben in Queries.
-- Datei-Uploads größenbegrenzen und vor Verarbeitung validieren.
-- Die App ist für den Betrieb in einem vertrauenswürdigen Netz bzw. hinter
-  Reverse-Proxy/VPN gedacht und sollte nicht ungeschützt im Internet hängen.
-- Container-Images werden signiert und per Trivy auf CRITICAL/HIGH-Findings
-  gescannt.
+- Minimal attack surface: static binary, distroless, non-root.
+- Never commit secrets; `.env` files and local data stay out of the repository.
+- Run SQL exclusively with bound parameters; never concatenate user input into
+  queries.
+- Limit the size of file uploads and validate them before processing; document
+  parsing is bounded against decompression bombs.
+- User supplied outbound URLs (SearXNG) are validated and the dialer rejects
+  loopback and link-local destinations.
+- Render model and document content as sanitized Markdown; goldmark must stay
+  configured without `WithUnsafe`.
+- The app is meant to run inside a trusted network or behind a reverse
+  proxy/VPN and should not be exposed to the internet unprotected.
+- Container images are signed and scanned by Trivy for CRITICAL/HIGH findings.
 
-## 9. Definition of Done für Änderungen
+## 10. Definition of done for changes
 
-1. `gofmt -l .` ist leer.
-2. `go vet ./...`, `CGO_ENABLED=0 go build ./...` und `go test ./...` sind grün.
-3. CI-, Release-, CodeQL- und Dependabot-Konfiguration bleiben konsistent.
-4. Docker bleibt distroless, non-root, Multi-Arch-fähig und nutzt den Binary-
-   Healthcheck.
-5. Keine Secrets oder lokalen Daten werden committet.
+1. `gofmt -l .` is empty.
+2. `go vet ./...`, `golangci-lint run ./...`, `CGO_ENABLED=0 go build ./...` and
+   `go test -race ./...` pass.
+3. New user-facing strings exist in every language of `internal/i18n`.
+4. CI, release, CodeQL and Dependabot configuration stay consistent.
+5. Docker stays distroless, non-root, multi-arch capable and uses the binary
+   health check.
+6. No secrets or local data are committed.

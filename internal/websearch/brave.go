@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// braveProvider nutzt die Brave-Search-API (REST, Header-Auth).
+// braveProvider uses the Brave Search API (REST, header auth).
 type braveProvider struct {
 	http   *http.Client
 	apiKey string
@@ -60,13 +60,13 @@ func (p *braveProvider) Search(ctx context.Context, query string, maxResults int
 		results = append(results, Result{
 			Title:   strings.TrimSpace(r.Title),
 			URL:     r.URL,
-			Content: truncate(stripHTML(r.Description), 1500),
+			Content: truncate(stripHTML(r.Description), maxContentRunes),
 		})
 	}
 	return results, nil
 }
 
-// stripHTML entfernt einfache HTML-Tags (Brave hebt Treffer mit <strong> hervor).
+// stripHTML removes simple HTML tags (Brave highlights matches with <strong>).
 func stripHTML(s string) string {
 	var b strings.Builder
 	inTag := false

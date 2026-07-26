@@ -1,23 +1,35 @@
-// Drag-&-Drop-Upload für das Chatfenster.
-// Dateien, die über dem Chatbereich abgelegt werden, werden an den aktuellen
-// Chat hochgeladen und die Dokumentliste in der Seitenleiste aktualisiert.
+// Drag & drop upload for the chat window.
+// Files dropped on the chat area are uploaded to the current chat and the
+// document list is refreshed afterwards.
 (function () {
 	"use strict";
 
 	var dragDepth = 0;
 
+	// t looks up a localized string rendered by the server (see base.html) and
+	// substitutes {placeholders}. Falls back to the key so a missing string is
+	// visible but never breaks the upload.
+	function t(key, params) {
+		var dict = window.AIUI_I18N || {};
+		var s = dict[key] || key;
+		if (!params) return s;
+		return s.replace(/\{(\w+)\}/g, function (match, name) {
+			return Object.prototype.hasOwnProperty.call(params, name) ? params[name] : match;
+		});
+	}
+
 	function dropzone() {
 		return document.getElementById("chat-dropzone");
 	}
 
-	// Uploads sind nur erlaubt, wenn die Bereitschaft serverseitig verifiziert
-	// wurde. Das Attribut spiegelt diesen Zustand beim Seitenrendern wider.
+	// Uploads are only allowed once readiness has been verified server side.
+	// The attribute mirrors that state at render time.
 	function uploadsReady() {
 		var z = dropzone();
 		return z && z.getAttribute("data-uploads-ready") === "1";
 	}
 
-	// Nur echte Datei-Drags berücksichtigen (keine internen Element-Drags).
+	// Only react to real file drags (not to internal element drags).
 	function hasFiles(e) {
 		if (!e.dataTransfer) return false;
 		var types = e.dataTransfer.types;
@@ -67,7 +79,7 @@
 		dragDepth = 0;
 		hideOverlay();
 
-		// Nicht verifiziert: Drop ignorieren (serverseitig ohnehin gesperrt).
+		// Not verified: ignore the drop (it is blocked server side anyway).
 		if (!uploadsReady()) {
 			return;
 		}
@@ -81,9 +93,9 @@
 		uploadFiles(chatId, Array.prototype.slice.call(files));
 	});
 
-	// handleAttach wird vom Datei-Input (📎) aufgerufen. Der Upload läuft
-	// asynchron und unabhängig vom Chat-Eingabefeld, damit eine begonnene
-	// Nachricht nicht verloren geht.
+	// handleAttach is called by the file input (📎). The upload runs
+	// asynchronously and independently of the chat input so a message that is
+	// already being typed is not lost.
 	window.handleAttach = function (input) {
 		var chatId = input.getAttribute("data-chat-id");
 		var files = input.files;
@@ -92,23 +104,23 @@
 			return;
 		}
 		uploadFiles(chatId, Array.prototype.slice.call(files));
-		input.value = ""; // erlaubt erneutes Wählen derselben Datei
+		input.value = ""; // allows selecting the same file again
 	};
 
-	// uploadFiles lädt mehrere Dateien nacheinander hoch und zeigt dabei den
-	// Fortschritt an. Jede Datei wird einzeln verarbeitet, sodass der Nutzer den
-	// Verlauf sieht und die Dokumentliste fortlaufend aktualisiert wird.
+	// uploadFiles uploads several files one after another and shows the
+	// progress. Each file is processed individually so the user sees the
+	// progression and the document list is updated continuously.
 	function uploadFiles(chatId, files) {
 		var total = files.length;
 		var done = 0;
 		var failed = 0;
 
-		showProgress("Lade Dokumente hoch…", 0, total);
+		showProgress(t("uploadStart"));
 
 		function next(index) {
 			if (index >= total) {
-				var msg = done + " von " + total + " verarbeitet";
-				if (failed > 0) msg += " (" + failed + " fehlgeschlagen)";
+				var msg = t("summary", { done: done, total: total });
+				if (failed > 0) msg += " " + t("failed", { failed: failed });
 				finishProgress(msg, failed > 0);
 				return;
 			}
@@ -120,12 +132,12 @@
 			var xhr = new XMLHttpRequest();
 			xhr.open("POST", "/chat/" + encodeURIComponent(chatId) + "/documents");
 
-			// Netzwerk-Fortschritt der aktuellen Datei in die Gesamtanzeige mappen.
+			// Map the network progress of the current file onto the overall bar.
 			xhr.upload.onprogress = function (evt) {
 				var fileFrac = evt.lengthComputable ? evt.loaded / evt.total : 0;
 				var overall = (index + fileFrac) / total;
 				updateProgress(
-					"Verarbeite " + (index + 1) + " von " + total + ": " + file.name,
+					t("processing", { n: index + 1, total: total, name: file.name }),
 					overall
 				);
 			};
@@ -138,7 +150,7 @@
 					failed++;
 				}
 				updateProgress(
-					"Verarbeite " + (index + 1) + " von " + total + "…",
+					t("processingShort", { n: index + 1, total: total }),
 					(index + 1) / total
 				);
 				next(index + 1);
@@ -155,20 +167,35 @@
 		next(0);
 	}
 
-	// ---- Fortschrittsanzeige ----
+	// ---- progress display ----
 
 	function progressEl() {
 		return document.getElementById("upload-status");
 	}
 
-	function showProgress(label, current, total) {
+	// showProgress builds the progress widget from DOM nodes instead of an HTML
+	// string. That avoids both an HTML injection surface and inline style
+	// attributes, which keeps the Content-Security-Policy strict.
+	function showProgress(label) {
 		var el = progressEl();
 		if (!el) return;
 		el.hidden = false;
-		el.innerHTML =
-			'<div class="upload-progress-label">' +
-			escapeHTML(label) +
-			'</div><div class="upload-progress-bar"><div class="upload-progress-fill" style="width:0%"></div></div>';
+		el.textContent = "";
+
+		var labelEl = document.createElement("div");
+		labelEl.className = "upload-progress-label";
+		labelEl.textContent = label;
+
+		var fillEl = document.createElement("div");
+		fillEl.className = "upload-progress-fill";
+		fillEl.style.width = "0%";
+
+		var barEl = document.createElement("div");
+		barEl.className = "upload-progress-bar";
+		barEl.appendChild(fillEl);
+
+		el.appendChild(labelEl);
+		el.appendChild(barEl);
 	}
 
 	function updateProgress(label, frac) {
@@ -190,20 +217,14 @@
 		var labelEl = el.querySelector(".upload-progress-label");
 		if (labelEl) labelEl.textContent = label;
 		el.classList.toggle("error", !!isError);
-		// Anzeige nach kurzer Zeit ausblenden.
+		// Hide the display again after a short delay.
 		setTimeout(function () {
 			el.hidden = true;
 			el.classList.remove("error");
 		}, 4000);
 	}
 
-	function escapeHTML(s) {
-		var d = document.createElement("div");
-		d.textContent = s;
-		return d.innerHTML;
-	}
-
-	// Ersetzt die Dokumentliste durch das Server-Fragment.
+	// Replaces the document list with the server rendered fragment.
 	function replaceDocList(html) {
 		var current = document.getElementById("doc-list");
 		if (!current) return;

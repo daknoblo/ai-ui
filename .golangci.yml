@@ -1,15 +1,46 @@
 version: "2"
 
 run:
-  # Ziel-Go-Version für die Analyse fest vorgeben, konsistent zu go.mod.
+  # Pin the target Go version for the analysis, consistent with go.mod.
   go: "1.26"
   timeout: 5m
 
 linters:
-  # Standard-Set: errcheck, govet, ineffassign, staticcheck, unused.
+  # Standard set: errcheck, govet, ineffassign, staticcheck, unused.
   default: standard
+  enable:
+    # Security scanner (hard-coded credentials, weak crypto, file permissions).
+    - gosec
+    # Unclosed HTTP response bodies leak connections.
+    - bodyclose
+    # Error comparison/wrapping mistakes that break errors.Is/As.
+    - errorlint
+    # Typos in comments, strings and identifiers.
+    - misspell
+    # Redundant type conversions.
+    - unconvert
+  settings:
+    gosec:
+      excludes:
+        # G115 (integer conversion overflow) fires on every int -> int64 cast of
+        # token counters; the values come from our own accounting and cannot
+        # realistically overflow.
+        - G115
+    misspell:
+      locale: US
+  exclusions:
+    rules:
+      # Tests read and write files in t.TempDir(); G304 (file inclusion via a
+      # variable) has no meaning there.
+      - path: _test\.go
+        linters: [gosec]
+      # The translation catalogue contains labels such as "API key", which
+      # gosec mistakes for hard-coded credentials.
+      - path: internal/i18n/
+        linters: [gosec]
+        text: G101
 
 issues:
-  # Alle Findings melden (Defaults deckeln gleichartige Meldungen bei 3).
+  # Report every finding (the defaults cap similar messages at 3).
   max-issues-per-linter: 0
   max-same-issues: 0

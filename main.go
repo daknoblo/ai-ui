@@ -33,16 +33,17 @@ func main() {
 }
 
 func run() error {
-	// Konfiguration aus Umgebung lesen.
+	// Read the configuration from the environment.
 	port := getenv("PORT", "8080")
 	dataDir := getenv("DATA_DIR", "/appdata")
-	apiKey := os.Getenv("AZURE_API_KEY")                    // Secret ausschließlich aus ENV.
-	embeddingAPIKey := os.Getenv("AZURE_EMBEDDING_API_KEY") // optional; eigener Key für Embeddings.
-	searchAPIKey := os.Getenv("SEARCH_API_KEY")             // optional; Key für die Websuche.
+	apiKey := os.Getenv("AZURE_API_KEY")                    // secret, environment only
+	embeddingAPIKey := os.Getenv("AZURE_EMBEDDING_API_KEY") // optional; dedicated embedding key
+	searchAPIKey := os.Getenv("SEARCH_API_KEY")             // optional; web search key
 	healthCheckInterval := parseDurationEnv("HEALTHCHECK_INTERVAL", 60*time.Second)
 
-	// Optionale Endpoint-Overrides aus der Umgebung. Gesetzte Werte haben Vorrang
-	// vor der gespeicherten Konfiguration und sperren das jeweilige UI-Feld.
+	// Optional endpoint overrides from the environment. Values that are set
+	// take precedence over the stored configuration and lock the matching UI
+	// field.
 	overrides := config.Overrides{
 		Endpoint:            strings.TrimSpace(os.Getenv("AZURE_ENDPOINT")),
 		ChatDeployment:      strings.TrimSpace(os.Getenv("AZURE_DEPLOYMENT")),
@@ -53,19 +54,20 @@ func run() error {
 		EmbeddingAPIVersion: strings.TrimSpace(os.Getenv("AZURE_EMBEDDING_API_VERSION")),
 	}
 
-	// Datenverzeichnisse anlegen.
+	// Create the data directories. The application config lives in a sub
+	// directory of DATA_DIR so the database files stay separate from it.
 	appDataDir := filepath.Join(dataDir, "appdata")
-	if err := os.MkdirAll(appDataDir, 0o755); err != nil {
+	if err := os.MkdirAll(appDataDir, 0o750); err != nil {
 		return err
 	}
 
-	// Konfiguration laden (oder Default erzeugen).
+	// Load the configuration (or create the defaults).
 	cfgStore := config.NewStore(filepath.Join(appDataDir, "config.json"), apiKey, embeddingAPIKey, searchAPIKey, overrides)
 	if _, err := cfgStore.Load(); err != nil {
 		return err
 	}
 
-	// SQLite-Datenbank im Datenpfad öffnen.
+	// Open the SQLite database in the data path.
 	dbPath := filepath.Join(dataDir, "ai-ui.db")
 	store, err := storage.Open(dbPath)
 	if err != nil {
@@ -77,20 +79,24 @@ func run() error {
 		return err
 	}
 
-	// HTTP-Server starten.
+	// Start the HTTP server.
 	srv := server.New(cfgStore, store)
 	httpServer := &http.Server{
 		Addr:              ":" + port,
 		Handler:           srv.Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
-		// Kein WriteTimeout: SSE-Streams sind langlebig.
+		// No ReadTimeout/WriteTimeout: document uploads may take a while and SSE
+		// streams are long lived. IdleTimeout still reclaims idle keep-alive
+		// connections, which would otherwise be held forever.
+		IdleTimeout:    120 * time.Second,
+		MaxHeaderBytes: 1 << 20,
 	}
 
-	// Graceful Shutdown.
+	// Graceful shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Verbindung beim Start verifizieren und periodisch überwachen.
+	// Verify the connection at start-up and monitor it periodically.
 	go srv.Monitor(ctx, healthCheckInterval)
 
 	errCh := make(chan error, 1)
@@ -112,6 +118,7 @@ func run() error {
 	}
 }
 
+// getenv returns the environment variable or fallback when it is unset/empty.
 func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -119,6 +126,8 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
+// healthcheck is the container health check. Distroless images ship neither a
+// shell nor curl, so the binary probes its own /healthz endpoint.
 func healthcheck() int {
 	port := getenv("PORT", "8080")
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -133,9 +142,9 @@ func healthcheck() int {
 	return 0
 }
 
-// parseDurationEnv liest eine Dauer aus der Umgebung (z.B. "30s", "2m").
-// Bei ungültigem oder fehlendem Wert wird fallback verwendet. "0" oder "off"
-// deaktiviert den periodischen Check (nur Start-Prüfung).
+// parseDurationEnv reads a duration from the environment (e.g. "30s", "2m").
+// An invalid or missing value falls back to fallback. "0" or "off" disables the
+// periodic check (the start-up check still runs).
 func parseDurationEnv(key string, fallback time.Duration) time.Duration {
 	v := os.Getenv(key)
 	if v == "" {

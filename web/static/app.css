@@ -371,7 +371,7 @@ html, body {
 	flex: 0 0 auto;
 }
 
-/* ---------- Upload-Fortschritt ---------- */
+/* ---------- Upload progress ---------- */
 .upload-status {
 	font-size: 12px;
 	color: var(--text-dim);
@@ -393,7 +393,7 @@ html, body {
 .upload-status.error .upload-progress-fill { background: var(--danger); }
 .upload-status.error .upload-progress-label { color: var(--warn); }
 
-/* ---------- Dokument-Chips über dem Eingabefeld ---------- */
+/* ---------- Document chips above the input field ---------- */
 .doc-dock { display: flex; flex-direction: column; gap: 8px; }
 .doc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .doc-chip {
@@ -474,9 +474,9 @@ html, body {
 	background: none; border: none; color: var(--text-dim);
 	font-size: 24px; cursor: pointer; line-height: 1;
 }
-/* Zwei-Spalten-Raster; Abschnittsköpfe, Textareas, Secrets, Buttons und der
-   Verbindungsbereich spannen über beide Spalten (Klasse .config-full bzw. per
-   Selektor). Auf schmalen Viewports auf eine Spalte reduziert. */
+/* Two column grid; section headings, textareas, secrets, buttons and the
+   connection area span both columns (via the .config-full class or by
+   selector). Collapses to a single column on narrow viewports. */
 .config-form {
 	display: grid;
 	grid-template-columns: 1fr;
@@ -484,8 +484,8 @@ html, body {
 	align-items: start;
 	margin-top: 18px;
 }
-/* Zwei Spalten, sobald das Modal breit genug ist – robust gegenüber Zoom und
-   Fensterbreite (Container-Query statt Viewport-Media-Query). */
+/* Two columns as soon as the modal is wide enough - robust against zoom and
+   window width (container query instead of a viewport media query). */
 @container (min-width: 520px) {
 	.config-form { grid-template-columns: 1fr 1fr; }
 }
@@ -518,7 +518,9 @@ html, body {
 .config-secret code { background: #0d0d10; padding: 1px 5px; border-radius: 4px; }
 .config-saved { color: var(--accent); font-size: 13px; }
 .config-notice-err { color: var(--warn); font-size: 13px; }
-/* Elemente, die über beide Rasterspalten laufen. */
+/* Replaces an inline style attribute so the CSP can stay strict. */
+.config-hint-tight { margin: 0; }
+/* Elements that span both grid columns. */
 .config-form > .config-full,
 .config-section-head,
 .config-secret,
@@ -559,7 +561,7 @@ html, body {
 .drop-icon { font-size: 38px; line-height: 1; margin-bottom: 8px; }
 .drop-sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
 
-/* ---------- Verifizierung / Checks ---------- */
+/* ---------- Verification / checks ---------- */
 .verify-banner { font-size: 13px; padding: 8px 10px; border-radius: 8px; }
 .verify-banner.ok { color: var(--accent); background: rgba(16,163,127,.12); }
 .verify-banner.warn { color: var(--warn); background: rgba(224,160,48,.12); }
@@ -581,7 +583,7 @@ html, body {
 .check-name { color: var(--text); white-space: nowrap; }
 .check-detail { color: var(--text-dim); overflow-wrap: anywhere; }
 
-/* ---------- Statistikseite ---------- */
+/* ---------- Statistics page ---------- */
 .stats-page {
 	max-width: 900px;
 	margin: 0 auto;

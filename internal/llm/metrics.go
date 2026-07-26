@@ -2,29 +2,29 @@ package llm
 
 import "sync"
 
-// Metrics hält den kumulativen Token-Verbrauch seit Serverstart sowie die
-// Nutzung der jeweils letzten Chat-Anfrage. Alle Felder sind thread-sicher
-// über Snapshot/record zugänglich.
+// Metrics holds the cumulative token usage since server start plus the usage of
+// the most recent chat request. All fields are accessed in a thread-safe way
+// through Snapshot/record.
 type Metrics struct {
 	mu sync.RWMutex
 
-	// Chat (kumulativ)
+	// Chat (cumulative)
 	chatRequests  int64
 	chatPromptTok int64
 	chatComplTok  int64
 	chatTotalTok  int64
 
-	// Letzte Chat-Anfrage
+	// Most recent chat request
 	lastPromptTok int
 	lastComplTok  int
 	lastTotalTok  int
 
-	// Embeddings (kumulativ)
+	// Embeddings (cumulative)
 	embedRequests int64
 	embedTokens   int64
 }
 
-// MetricsSnapshot ist eine konsistente Kopie der Metriken für die Anzeige.
+// MetricsSnapshot is a consistent copy of the metrics for display.
 type MetricsSnapshot struct {
 	ChatRequests     int64
 	ChatPromptTokens int64
@@ -38,13 +38,13 @@ type MetricsSnapshot struct {
 	EmbedRequests int64
 	EmbedTokens   int64
 
-	TotalTokens int64 // Chat + Embedding gesamt
+	TotalTokens int64 // chat + embedding combined
 }
 
-// recordChat verbucht die Nutzung einer Chat-Anfrage.
+// recordChat books the usage of a chat request.
 func (m *Metrics) recordChat(u Usage) {
 	if u.TotalTokens == 0 && u.PromptTokens == 0 && u.CompletionTokens == 0 {
-		return // Endpoint hat keine Usage gemeldet
+		return // the endpoint did not report any usage
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -57,7 +57,7 @@ func (m *Metrics) recordChat(u Usage) {
 	m.lastTotalTok = u.TotalTokens
 }
 
-// recordEmbedding verbucht die Token einer Embedding-Anfrage.
+// recordEmbedding books the tokens of an embedding request.
 func (m *Metrics) recordEmbedding(tokens int) {
 	if tokens == 0 {
 		return
@@ -68,7 +68,7 @@ func (m *Metrics) recordEmbedding(tokens int) {
 	m.embedTokens += int64(tokens)
 }
 
-// Snapshot liefert eine konsistente Kopie der aktuellen Metriken.
+// Snapshot returns a consistent copy of the current metrics.
 func (m *Metrics) Snapshot() MetricsSnapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

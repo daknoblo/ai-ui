@@ -6,13 +6,13 @@ import (
 	"strings"
 )
 
-// sseWriter kapselt das Schreiben von Server-Sent-Events.
+// sseWriter wraps writing of server-sent events.
 type sseWriter struct {
 	w       http.ResponseWriter
 	flusher http.Flusher
 }
 
-// newSSEWriter initialisiert die SSE-Antwortheader.
+// newSSEWriter initializes the SSE response headers.
 func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -26,8 +26,8 @@ func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
 	return &sseWriter{w: w, flusher: flusher}, true
 }
 
-// send schreibt ein benanntes SSE-Event. Mehrzeilige Daten werden korrekt
-// (jede Zeile mit "data: ") kodiert.
+// send writes a named SSE event. Multi-line data is encoded correctly (each
+// line prefixed with "data: ").
 func (s *sseWriter) send(event, data string) error {
 	var b strings.Builder
 	b.WriteString("event: ")

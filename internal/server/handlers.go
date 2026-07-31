@@ -962,7 +962,17 @@ func readMultipartFile(header *multipart.FileHeader) ([]byte, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	buf := bytes.NewBuffer(make([]byte, 0, header.Size))
+	// header.Size is attacker controlled, so it is only used as a hint and
+	// capped at the upload limit; otherwise a forged size would let a client
+	// trigger an arbitrarily large allocation before a single byte is read.
+	capacity := header.Size
+	if capacity < 0 {
+		capacity = 0
+	}
+	if capacity > maxUploadBytes {
+		capacity = maxUploadBytes
+	}
+	buf := bytes.NewBuffer(make([]byte, 0, capacity))
 	if _, err := io.Copy(buf, io.LimitReader(f, maxUploadBytes)); err != nil {
 		return nil, err
 	}

@@ -214,3 +214,7 @@ CGO_ENABLED=0 go build ./...
 
 User interface strings live in [internal/i18n](internal/i18n/i18n.go). Every key
 must exist in all supported languages; a test enforces that.
+
+## License
+
+Released under the [MIT License](LICENSE).

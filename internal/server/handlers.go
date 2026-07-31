@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -962,21 +961,11 @@ func readMultipartFile(header *multipart.FileHeader) ([]byte, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	// header.Size is attacker controlled, so it is only used as a hint and
-	// capped at the upload limit; otherwise a forged size would let a client
-	// trigger an arbitrarily large allocation before a single byte is read.
-	capacity := header.Size
-	if capacity < 0 {
-		capacity = 0
-	}
-	if capacity > maxUploadBytes {
-		capacity = maxUploadBytes
-	}
-	buf := bytes.NewBuffer(make([]byte, 0, capacity))
-	if _, err := io.Copy(buf, io.LimitReader(f, maxUploadBytes)); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	// The buffer is deliberately not pre-sized from header.Size: that value is
+	// supplied by the client, so a forged size would trigger a large allocation
+	// before a single byte is read. Growing the buffer while copying is bounded
+	// by maxUploadBytes and costs little for the file sizes involved here.
+	return io.ReadAll(io.LimitReader(f, maxUploadBytes))
 }
 
 // uploadSummary builds the status message for a (multi-file) upload.

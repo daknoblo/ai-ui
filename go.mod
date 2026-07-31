@@ -3,7 +3,7 @@ module github.com/daknoblo/ai-ui
 go 1.26
 
 require (
-	github.com/go-chi/chi/v5 v5.1.0
+	github.com/go-chi/chi/v5 v5.3.1
 	github.com/ledongthuc/pdf v0.0.0-20240201131950-da5b75280b06
 	github.com/yuin/goldmark v1.7.17
 	modernc.org/sqlite v1.34.4

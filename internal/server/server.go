@@ -102,7 +102,10 @@ func (u usageRecorder) RecordUsage(kind, model string, usage llm.Usage) {
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// middleware.RealIP is deliberately not used: it trusts X-Forwarded-For and
+	// friends unconditionally, which allows a client to spoof its address
+	// (GHSA-3fxj-6jh8-hvhx). Nothing here reads r.RemoteAddr, and the reverse
+	// proxy in front of the app already logs the real client IP.
 	r.Use(middleware.Recoverer)
 	r.Use(securityHeaders)
 	r.Use(requestLogger)

@@ -1,5 +1,10 @@
 # ai-ui
 
+[![CI](https://github.com/daknoblo/ai-ui/actions/workflows/ci.yml/badge.svg)](https://github.com/daknoblo/ai-ui/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/daknoblo/ai-ui)](https://goreportcard.com/report/github.com/daknoblo/ai-ui)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![GHCR](https://img.shields.io/badge/ghcr.io-ai--ui-blue?logo=docker)](https://github.com/daknoblo/ai-ui/pkgs/container/ai-ui)
+
 A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to an Azure Foundry model router (Azure OpenAI
 compatible).

@@ -96,7 +96,7 @@ General AI endpoint:
 | --------------- | --------------------------------------------- |
 | `AZURE_ENDPOINT` | Endpoint URL of the AI endpoint.             |
 | `AZURE_DEPLOYMENT` | Deployment name of the chat model.         |
-| `AZURE_MODELS` | Selectable models (comma or newline separated), e.g. `gpt-5.5,claude-opus-4-7,claude-sonnet-4-5`. The only source of the list; the settings dialog shows it read-only. |
+| `AZURE_MODELS` | Selectable models (comma or newline separated), e.g. `gpt-5.5,claude-opus-4-7,claude-sonnet-4-5`. The only source of the list; the settings dialog shows it read-only. The names are deployment names, and the first entry is the default for new chats. |
 | `AZURE_API_VERSION` | API version of the AI endpoint.           |
 
 Embeddings (fall back to the AI endpoint when empty):

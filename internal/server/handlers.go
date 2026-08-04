@@ -144,6 +144,20 @@ func (s *Server) chatTitle(title string) string {
 	return title
 }
 
+// defaultChatModel is the model a new chat starts with: the one last chosen,
+// otherwise the first entry of AZURE_MODELS. Only an empty list leaves the
+// choice to the router.
+func (s *Server) defaultChatModel() string {
+	cfg := s.cfg.Get()
+	if cfg.ChatModel != "" {
+		return cfg.ChatModel
+	}
+	if len(cfg.ChatModels) > 0 {
+		return cfg.ChatModels[0]
+	}
+	return ""
+}
+
 // handleIndex always opens a fresh chat and cleans up orphaned empty ones.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -151,7 +165,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
 		slog.Warn("clean up empty chats", "err", err)
 	}
-	id, err := s.store.CreateChat(ctx, untitled, s.cfg.Get().ChatModel)
+	id, err := s.store.CreateChat(ctx, untitled, s.defaultChatModel())
 	if err != nil {
 		s.httpError(w, err)
 		return
@@ -191,7 +205,7 @@ func (s *Server) handleCreateChat(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
 		slog.Warn("clean up empty chats", "err", err)
 	}
-	id, err := s.store.CreateChat(ctx, untitled, s.cfg.Get().ChatModel)
+	id, err := s.store.CreateChat(ctx, untitled, s.defaultChatModel())
 	if err != nil {
 		s.httpError(w, err)
 		return
@@ -307,7 +321,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	idParam := chi.URLParam(r, "id")
 	var chatID int64
 	if idParam == "new" {
-		newID, err := s.store.CreateChat(ctx, untitled, s.cfg.Get().ChatModel)
+		newID, err := s.store.CreateChat(ctx, untitled, s.defaultChatModel())
 		if err != nil {
 			s.httpError(w, err)
 			return

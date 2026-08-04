@@ -26,7 +26,7 @@ func newTestServer(t *testing.T, language string) (*Server, http.Handler) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	cfgStore := config.NewStore(filepath.Join(dir, "config.json"), "", "", "", config.Overrides{})
+	cfgStore := config.NewStore(filepath.Join(dir, "config.json"), config.Keys{}, config.Overrides{})
 	if _, err := cfgStore.Load(); err != nil {
 		t.Fatalf("load config: %v", err)
 	}

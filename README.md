@@ -23,6 +23,9 @@ compatible).
   chat window; attached documents are shown as chips above the input
 - Optional web search (🌐) per request: pulls in current online results as
   context - provider agnostic (Tavily, Brave Search, SearXNG)
+- Optional image generation (🖼): the toggle switches the next message from a
+  chat answer to a generated image (Azure image models such as `gpt-image-2`);
+  images are stored in the database and shown inline
 - Documents are bound to their chat and are removed together with it
   (including their embeddings)
 - Settings dialog in the UI (language, endpoints, deployments, API version,
@@ -102,6 +105,17 @@ Embeddings (fall back to the AI endpoint when empty):
 | `AZURE_EMBEDDING_ENDPOINT` | Embedding endpoint URL.               |
 | `AZURE_EMBEDDING_DEPLOYMENT` | Deployment name of the embedding model. |
 | `AZURE_EMBEDDING_API_VERSION` | Embedding API version.              |
+
+Image generation (fall back to the AI endpoint when empty):
+
+| Variable        | Setting                                       |
+| --------------- | --------------------------------------------- |
+| `AZURE_IMAGE_ENDPOINT` | Image endpoint URL, e.g. `https://my-resource.services.ai.azure.com/openai/v1`. |
+| `AZURE_IMAGE_DEPLOYMENT` | Deployment name of the image model, e.g. `gpt-image-2`. |
+| `AZURE_IMAGE_API_VERSION` | Image API version.                    |
+
+The key is `AZURE_IMAGE_API_KEY`; when it is empty `AZURE_API_KEY` is used.
+Size, quality and file format are chosen in the settings dialog.
 
 The matching secrets are `AZURE_API_KEY` and `AZURE_EMBEDDING_API_KEY`
 respectively (see the table above).

@@ -36,9 +36,12 @@ func run() error {
 	// Read the configuration from the environment.
 	port := getenv("PORT", "8080")
 	dataDir := getenv("DATA_DIR", "/appdata")
-	apiKey := os.Getenv("AZURE_API_KEY")                    // secret, environment only
-	embeddingAPIKey := os.Getenv("AZURE_EMBEDDING_API_KEY") // optional; dedicated embedding key
-	searchAPIKey := os.Getenv("SEARCH_API_KEY")             // optional; web search key
+	keys := config.Keys{
+		API:       os.Getenv("AZURE_API_KEY"),           // secret, environment only
+		Embedding: os.Getenv("AZURE_EMBEDDING_API_KEY"), // optional; dedicated embedding key
+		Image:     os.Getenv("AZURE_IMAGE_API_KEY"),     // optional; dedicated image key
+		Search:    os.Getenv("SEARCH_API_KEY"),          // optional; web search key
+	}
 	healthCheckInterval := parseDurationEnv("HEALTHCHECK_INTERVAL", 60*time.Second)
 
 	// Optional endpoint overrides from the environment. Values that are set
@@ -52,6 +55,9 @@ func run() error {
 		EmbeddingEndpoint:   strings.TrimSpace(os.Getenv("AZURE_EMBEDDING_ENDPOINT")),
 		EmbeddingDeployment: strings.TrimSpace(os.Getenv("AZURE_EMBEDDING_DEPLOYMENT")),
 		EmbeddingAPIVersion: strings.TrimSpace(os.Getenv("AZURE_EMBEDDING_API_VERSION")),
+		ImageEndpoint:       strings.TrimSpace(os.Getenv("AZURE_IMAGE_ENDPOINT")),
+		ImageDeployment:     strings.TrimSpace(os.Getenv("AZURE_IMAGE_DEPLOYMENT")),
+		ImageAPIVersion:     strings.TrimSpace(os.Getenv("AZURE_IMAGE_API_VERSION")),
 	}
 
 	// Create the data directories. The application config lives in a sub
@@ -62,7 +68,7 @@ func run() error {
 	}
 
 	// Load the configuration (or create the defaults).
-	cfgStore := config.NewStore(filepath.Join(appDataDir, "config.json"), apiKey, embeddingAPIKey, searchAPIKey, overrides)
+	cfgStore := config.NewStore(filepath.Join(appDataDir, "config.json"), keys, overrides)
 	if _, err := cfgStore.Load(); err != nil {
 		return err
 	}

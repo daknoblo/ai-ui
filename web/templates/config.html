@@ -63,6 +63,47 @@
 					placeholder="text-embedding-3-large"{{if .Locks.EmbeddingDeployment}} disabled{{end}}>
 			</label>
 
+			<div class="config-section-head">{{t "config.section_images"}}</div>
+			<label>
+				{{t "config.image_endpoint"}} <span class="hint">{{if .Locks.ImageEndpoint}}{{t "config.set_via" "AZURE_IMAGE_ENDPOINT"}}{{else}}{{t "config.optional_same_as_chat"}}{{end}}</span>
+				<input type="url" name="image_endpoint" value="{{.Config.ImageEndpoint}}"
+					placeholder="https://my-resource.services.ai.azure.com/openai/v1"{{if .Locks.ImageEndpoint}} disabled{{end}}>
+			</label>
+			<label>
+				{{t "config.image_deployment"}} <span class="hint">{{if .Locks.ImageDeployment}}{{t "config.set_via" "AZURE_IMAGE_DEPLOYMENT"}}{{else}}{{t "config.image_optional"}}{{end}}</span>
+				<input type="text" name="image_deployment" value="{{.Config.ImageDeployment}}"
+					placeholder="gpt-image-2"{{if .Locks.ImageDeployment}} disabled{{end}}>
+			</label>
+			<label>
+				{{t "config.image_api_version"}} <span class="hint">{{if .Locks.ImageAPIVersion}}{{t "config.set_via" "AZURE_IMAGE_API_VERSION"}}{{else}}{{t "config.optional_same_as_chat"}}{{end}}</span>
+				<input type="text" name="image_api_version" value="{{.Config.ImageAPIVersion}}"
+					placeholder="2025-04-01-preview"{{if .Locks.ImageAPIVersion}} disabled{{end}}>
+			</label>
+			<label>
+				{{t "config.image_size"}}
+				<select name="image_size">
+					{{range $.ImageSizes}}<option value="{{.}}" {{if eq . $.Config.ImageSize}}selected{{end}}>{{.}}</option>{{end}}
+				</select>
+			</label>
+			<label>
+				{{t "config.image_quality"}}
+				<select name="image_quality">
+					{{range $.ImageQualities}}<option value="{{.}}" {{if eq . $.Config.ImageQuality}}selected{{end}}>{{.}}</option>{{end}}
+				</select>
+			</label>
+			<label>
+				{{t "config.image_format"}}
+				<select name="image_format">
+					{{range $.ImageFormats}}<option value="{{.}}" {{if eq . $.Config.ImageFormat}}selected{{end}}>{{.}}</option>{{end}}
+				</select>
+			</label>
+			<div class="config-secret {{if .HasImageKey}}ok{{else}}warn{{end}}">
+				{{t "config.image_key"}}
+				{{if .HasOwnImageKey}}{{t "config.image_key_own"}}
+				{{else if .HasImageKey}}{{t "config.image_key_inherit"}}
+				{{else}}{{t "config.image_key_missing"}}{{end}}
+			</div>
+
 			<div class="config-section-head">{{t "config.section_search"}}</div>
 			<label>
 				{{t "config.search_provider"}}

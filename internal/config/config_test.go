@@ -65,7 +65,7 @@ func TestModelListIsEnvOnly(t *testing.T) {
 	}
 
 	path := filepath.Join(t.TempDir(), "config.json")
-	s := NewStore(path, "key", "", "", Overrides{ChatModels: []string{"gpt-4o"}})
+	s := NewStore(path, Keys{API: "key"}, Overrides{ChatModels: []string{"gpt-4o"}})
 	if _, err := s.Load(); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestModelListIsEnvOnly(t *testing.T) {
 // configuration (stored values plus overrides).
 func TestStoreGetAppliesOverrides(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	s := NewStore(path, "key", "", "", Overrides{Endpoint: "https://env.example"})
+	s := NewStore(path, Keys{API: "key"}, Overrides{Endpoint: "https://env.example"})
 	if _, err := s.Load(); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestStoreGetAppliesOverrides(t *testing.T) {
 // fields are stored normally.
 func TestSaveKeepsLockedFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	s := NewStore(path, "key", "", "", Overrides{Endpoint: "https://env.example"})
+	s := NewStore(path, Keys{API: "key"}, Overrides{Endpoint: "https://env.example"})
 	if _, err := s.Load(); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestSaveKeepsLockedFields(t *testing.T) {
 // reaches the templates.
 func TestLanguageIsNormalized(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	s := NewStore(path, "key", "", "", Overrides{})
+	s := NewStore(path, Keys{API: "key"}, Overrides{})
 	if _, err := s.Load(); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestLanguageIsNormalized(t *testing.T) {
 // provides.
 func TestSetChatModelUsesEnvList(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	s := NewStore(path, "key", "", "", Overrides{ChatModels: []string{"gpt-4o", "o3"}})
+	s := NewStore(path, Keys{API: "key"}, Overrides{ChatModels: []string{"gpt-4o", "o3"}})
 	if _, err := s.Load(); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestSetChatModelUsesEnvList(t *testing.T) {
 // towards the "configured" detection.
 func TestIsConfiguredWithOverrides(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	s := NewStore(path, "key", "", "", Overrides{
+	s := NewStore(path, Keys{API: "key"}, Overrides{
 		Endpoint:       "https://env.example",
 		ChatDeployment: "gpt-4o",
 	})
@@ -206,7 +206,7 @@ func TestIsConfiguredWithOverrides(t *testing.T) {
 	}
 
 	// Without an API key it must not count as configured.
-	s2 := NewStore(filepath.Join(t.TempDir(), "config.json"), "", "", "", Overrides{
+	s2 := NewStore(filepath.Join(t.TempDir(), "config.json"), Keys{}, Overrides{
 		Endpoint:       "https://env.example",
 		ChatDeployment: "gpt-4o",
 	})

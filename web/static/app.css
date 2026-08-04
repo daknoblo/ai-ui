@@ -303,6 +303,8 @@ html, body {
 	font-size: 13px;
 }
 .bubble pre code { background: none; padding: 0; }
+/* Generated images are inserted as Markdown images. */
+.bubble img { max-width: 100%; height: auto; border-radius: 10px; display: block; }
 .cursor { animation: blink 1s step-start infinite; color: var(--accent); }
 @keyframes blink { 50% { opacity: 0; } }
 
@@ -362,6 +364,13 @@ html, body {
 	border-color: var(--accent);
 	color: var(--accent);
 }
+.image-toggle.active {
+	background: rgba(16,163,127,.18);
+	border-color: var(--accent);
+	color: var(--accent);
+}
+/* In image mode the input frame signals that no chat answer follows. */
+.composer.image-mode textarea { border-color: var(--accent); }
 .btn-send {
 	width: 42px;
 	height: 42px;

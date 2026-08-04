@@ -67,6 +67,7 @@ type pageData struct {
 	CurrentModel  string
 	UploadsReady  bool
 	SearchEnabled bool
+	ImageEnabled  bool
 	StatusBadge   statusBadge
 }
 
@@ -88,6 +89,7 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		CurrentModel:  cfg.ChatModel,
 		UploadsReady:  s.ready.uploadsAllowed(),
 		SearchEnabled: s.search.Enabled(),
+		ImageEnabled:  s.cfg.ImagesConfigured(),
 		StatusBadge:   s.statusData(),
 	}
 	if current != nil {
@@ -260,6 +262,11 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 
 	// Only honor web search when it was requested AND is configured.
 	web := r.FormValue("web") == "1" && s.search.Enabled()
+	// Image mode replaces the chat answer with a generated image.
+	image := r.FormValue("mode") == "image" && s.cfg.ImagesConfigured()
+	if image {
+		web = false
+	}
 
 	if _, err := s.store.AddMessage(ctx, chatID, "user", message); err != nil {
 		s.httpError(w, err)
@@ -283,7 +290,8 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "assistant-stream", struct {
 		ChatID int64
 		Web    bool
-	}{ChatID: chatID, Web: web})
+		Image  bool
+	}{ChatID: chatID, Web: web, Image: image})
 	if titleChanged {
 		s.render(w, "title-oob", struct{ Title string }{Title: chat.Title})
 	}
@@ -329,6 +337,16 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 			query = history[i].Content
 			break
 		}
+	}
+
+	// Image mode: no streamed answer, the endpoint returns a finished image.
+	if r.URL.Query().Get("image") == "1" {
+		if !s.cfg.ImagesConfigured() {
+			fail(s.t("stream.image_not_configured"))
+			return
+		}
+		s.generateImage(ctx, sse, id, query, fail)
+		return
 	}
 
 	// Web search: forced via the toggle (?web=1) or automatic via tool calling.
@@ -686,6 +704,18 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	if !locks.EmbeddingAPIVersion {
 		cfg.EmbeddingAPIVersion = strings.TrimSpace(r.FormValue("embedding_api_version"))
 	}
+	if !locks.ImageEndpoint {
+		cfg.ImageEndpoint = strings.TrimSpace(r.FormValue("image_endpoint"))
+	}
+	if !locks.ImageDeployment {
+		cfg.ImageDeployment = strings.TrimSpace(r.FormValue("image_deployment"))
+	}
+	if !locks.ImageAPIVersion {
+		cfg.ImageAPIVersion = strings.TrimSpace(r.FormValue("image_api_version"))
+	}
+	cfg.ImageSize = imageParam(r.FormValue("image_size"), imageSizes)
+	cfg.ImageQuality = imageParam(r.FormValue("image_quality"), imageQualities)
+	cfg.ImageFormat = imageParam(r.FormValue("image_format"), imageFormats)
 	cfg.Language = i18n.Normalize(r.FormValue("language"))
 	cfg.SearchProvider = strings.ToLower(strings.TrimSpace(r.FormValue("search_provider")))
 
@@ -986,8 +1016,13 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 		HasKey             bool
 		HasEmbeddingKey    bool
 		HasOwnEmbeddingKey bool
+		HasImageKey        bool
+		HasOwnImageKey     bool
 		HasSearchKey       bool
 		SearchEnabled      bool
+		ImageSizes         []string
+		ImageQualities     []string
+		ImageFormats       []string
 		Saved              bool
 		Verified           bool
 		UploadsAllowed     bool
@@ -1000,8 +1035,13 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 		HasKey:             s.cfg.HasAPIKey(),
 		HasEmbeddingKey:    s.cfg.HasEmbeddingAPIKey(),
 		HasOwnEmbeddingKey: s.cfg.HasOwnEmbeddingAPIKey(),
+		HasImageKey:        s.cfg.HasImageAPIKey(),
+		HasOwnImageKey:     s.cfg.HasOwnImageAPIKey(),
 		HasSearchKey:       s.cfg.HasSearchAPIKey(),
 		SearchEnabled:      s.search.Enabled(),
+		ImageSizes:         imageSizes,
+		ImageQualities:     imageQualities,
+		ImageFormats:       imageFormats,
 		Saved:              saved,
 		Verified:           s.ready.verified(),
 		UploadsAllowed:     s.ready.uploadsAllowed(),

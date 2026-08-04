@@ -26,6 +26,12 @@ type Config struct {
 	EmbeddingEndpoint   string   `json:"embedding_endpoint"`    // optional; falls back to Endpoint
 	EmbeddingDeployment string   `json:"embedding_deployment"`  // deployment name of the embedding model
 	EmbeddingAPIVersion string   `json:"embedding_api_version"` // optional; falls back to APIVersion
+	ImageEndpoint       string   `json:"image_endpoint"`        // optional; falls back to Endpoint
+	ImageDeployment     string   `json:"image_deployment"`      // deployment name of the image model
+	ImageAPIVersion     string   `json:"image_api_version"`     // optional; falls back to APIVersion
+	ImageSize           string   `json:"image_size"`            // e.g. 1024x1024 or "auto"
+	ImageQuality        string   `json:"image_quality"`         // low | medium | high | auto
+	ImageFormat         string   `json:"image_format"`          // png | jpeg | webp
 	SearchProvider      string   `json:"search_provider"`       // "", "tavily", "brave", "searxng"
 	SearchEndpoint      string   `json:"search_endpoint"`       // base URL of the SearXNG instance
 	SearchMaxResults    int      `json:"search_max_results"`    // number of results (default 5)
@@ -52,6 +58,22 @@ func (c Config) EmbeddingHost() string {
 	return c.Endpoint
 }
 
+// ImageVersion returns the API version to use for image generation.
+func (c Config) ImageVersion() string {
+	if c.ImageAPIVersion != "" {
+		return c.ImageAPIVersion
+	}
+	return c.APIVersion
+}
+
+// ImageHost returns the endpoint to use for image generation.
+func (c Config) ImageHost() string {
+	if c.ImageEndpoint != "" {
+		return c.ImageEndpoint
+	}
+	return c.Endpoint
+}
+
 // Overrides bundles the endpoint values pinned via environment variables. Every
 // non-empty field takes precedence over the stored configuration and is shown
 // read-only in the UI (the input field is disabled).
@@ -63,6 +85,9 @@ type Overrides struct {
 	EmbeddingEndpoint   string   // AZURE_EMBEDDING_ENDPOINT
 	EmbeddingDeployment string   // AZURE_EMBEDDING_DEPLOYMENT
 	EmbeddingAPIVersion string   // AZURE_EMBEDDING_API_VERSION
+	ImageEndpoint       string   // AZURE_IMAGE_ENDPOINT
+	ImageDeployment     string   // AZURE_IMAGE_DEPLOYMENT
+	ImageAPIVersion     string   // AZURE_IMAGE_API_VERSION
 }
 
 // apply layers the configured overrides on top of c and returns the effective
@@ -91,6 +116,15 @@ func (o Overrides) apply(c Config) Config {
 	if o.EmbeddingAPIVersion != "" {
 		c.EmbeddingAPIVersion = o.EmbeddingAPIVersion
 	}
+	if o.ImageEndpoint != "" {
+		c.ImageEndpoint = o.ImageEndpoint
+	}
+	if o.ImageDeployment != "" {
+		c.ImageDeployment = o.ImageDeployment
+	}
+	if o.ImageAPIVersion != "" {
+		c.ImageAPIVersion = o.ImageAPIVersion
+	}
 	return c
 }
 
@@ -103,6 +137,9 @@ func (o Overrides) locks() Locks {
 		EmbeddingEndpoint:   o.EmbeddingEndpoint != "",
 		EmbeddingDeployment: o.EmbeddingDeployment != "",
 		EmbeddingAPIVersion: o.EmbeddingAPIVersion != "",
+		ImageEndpoint:       o.ImageEndpoint != "",
+		ImageDeployment:     o.ImageDeployment != "",
+		ImageAPIVersion:     o.ImageAPIVersion != "",
 	}
 }
 
@@ -115,12 +152,16 @@ type Locks struct {
 	EmbeddingEndpoint   bool
 	EmbeddingDeployment bool
 	EmbeddingAPIVersion bool
+	ImageEndpoint       bool
+	ImageDeployment     bool
+	ImageAPIVersion     bool
 }
 
 // Any reports whether at least one endpoint field is locked via the environment.
 func (l Locks) Any() bool {
 	return l.Endpoint || l.ChatDeployment || l.APIVersion ||
-		l.EmbeddingEndpoint || l.EmbeddingDeployment || l.EmbeddingAPIVersion
+		l.EmbeddingEndpoint || l.EmbeddingDeployment || l.EmbeddingAPIVersion ||
+		l.ImageEndpoint || l.ImageDeployment || l.ImageAPIVersion
 }
 
 // ParseModelList splits a newline or comma separated list into trimmed, unique
@@ -157,6 +198,12 @@ func Defaults() Config {
 		EmbeddingEndpoint:   "",
 		EmbeddingDeployment: "",
 		EmbeddingAPIVersion: "",
+		ImageEndpoint:       "",
+		ImageDeployment:     "",
+		ImageAPIVersion:     "",
+		ImageSize:           "1024x1024",
+		ImageQuality:        "high",
+		ImageFormat:         "png",
 		SearchProvider:      "",
 		SearchEndpoint:      "",
 		SearchMaxResults:    5,
@@ -171,6 +218,7 @@ type Store struct {
 	path            string
 	apiKey          string
 	embeddingAPIKey string
+	imageAPIKey     string
 	searchAPIKey    string
 	overrides       Overrides // endpoint values pinned via environment variables
 	locks           Locks     // derived from overrides: which fields are read-only
@@ -179,16 +227,25 @@ type Store struct {
 	cur Config // stored raw configuration (without overrides applied)
 }
 
+// Keys bundles the secrets read from the environment. Empty dedicated keys fall
+// back to API.
+type Keys struct {
+	API       string // AZURE_API_KEY
+	Embedding string // AZURE_EMBEDDING_API_KEY
+	Image     string // AZURE_IMAGE_API_KEY
+	Search    string // SEARCH_API_KEY
+}
+
 // NewStore creates a configuration store for the given path. The API keys come
-// from the environment and are never persisted. An empty embeddingAPIKey makes
-// embeddings reuse apiKey. Configured overrides replace the stored endpoint
-// values and lock the corresponding fields in the UI.
-func NewStore(path, apiKey, embeddingAPIKey, searchAPIKey string, overrides Overrides) *Store {
+// from the environment and are never persisted. Configured overrides replace the
+// stored endpoint values and lock the corresponding fields in the UI.
+func NewStore(path string, keys Keys, overrides Overrides) *Store {
 	return &Store{
 		path:            path,
-		apiKey:          apiKey,
-		embeddingAPIKey: embeddingAPIKey,
-		searchAPIKey:    searchAPIKey,
+		apiKey:          keys.API,
+		embeddingAPIKey: keys.Embedding,
+		imageAPIKey:     keys.Image,
+		searchAPIKey:    keys.Search,
 		overrides:       overrides,
 		locks:           overrides.locks(),
 		cur:             Defaults(),
@@ -280,6 +337,15 @@ func (s *Store) keepLockedLocked(cfg *Config) {
 	if s.locks.EmbeddingAPIVersion {
 		cfg.EmbeddingAPIVersion = s.cur.EmbeddingAPIVersion
 	}
+	if s.locks.ImageEndpoint {
+		cfg.ImageEndpoint = s.cur.ImageEndpoint
+	}
+	if s.locks.ImageDeployment {
+		cfg.ImageDeployment = s.cur.ImageDeployment
+	}
+	if s.locks.ImageAPIVersion {
+		cfg.ImageAPIVersion = s.cur.ImageAPIVersion
+	}
 }
 
 // SetChatModel changes only the pinned model and persists the configuration.
@@ -332,6 +398,31 @@ func (s *Store) HasEmbeddingAPIKey() bool {
 // HasOwnEmbeddingAPIKey reports whether a dedicated embedding key was provided.
 func (s *Store) HasOwnEmbeddingAPIKey() bool {
 	return s.embeddingAPIKey != ""
+}
+
+// ImageAPIKey returns the key used for image generation. When no dedicated key
+// is set the general API key is returned.
+func (s *Store) ImageAPIKey() string {
+	if s.imageAPIKey != "" {
+		return s.imageAPIKey
+	}
+	return s.apiKey
+}
+
+// HasImageAPIKey reports whether a (dedicated or inherited) image key exists.
+func (s *Store) HasImageAPIKey() bool {
+	return s.ImageAPIKey() != ""
+}
+
+// HasOwnImageAPIKey reports whether a dedicated image key was provided.
+func (s *Store) HasOwnImageAPIKey() bool {
+	return s.imageAPIKey != ""
+}
+
+// ImagesConfigured reports whether image generation can be used.
+func (s *Store) ImagesConfigured() bool {
+	c := s.Get()
+	return c.ImageDeployment != "" && c.ImageHost() != "" && s.HasImageAPIKey()
 }
 
 // SearchAPIKey returns the web search API key loaded from the environment.

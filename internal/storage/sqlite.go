@@ -120,6 +120,15 @@ CREATE TABLE IF NOT EXISTS chunks (
 	embedding   BLOB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(document_id);
+CREATE TABLE IF NOT EXISTS images (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	chat_id    INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+	prompt     TEXT NOT NULL,
+	mime       TEXT NOT NULL,
+	data       BLOB NOT NULL,
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_images_chat ON images(chat_id);
 CREATE TABLE IF NOT EXISTS usage_daily (
 	day               TEXT NOT NULL,
 	kind              TEXT NOT NULL,
@@ -501,6 +510,38 @@ func (s *Store) CountDocuments(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// ---- Generated images ----
+
+// AddImage stores a generated image and returns its ID.
+func (s *Store) AddImage(ctx context.Context, chatID int64, prompt, mime string, data []byte) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO images (chat_id, prompt, mime, data, created_at) VALUES (?, ?, ?, ?, ?)`,
+		chatID, prompt, mime, data, nowStr())
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// GetImage loads a generated image by ID.
+func (s *Store) GetImage(ctx context.Context, id int64) (Image, error) {
+	var (
+		img     Image
+		created string
+	)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, chat_id, prompt, mime, data, created_at FROM images WHERE id = ?`, id).
+		Scan(&img.ID, &img.ChatID, &img.Prompt, &img.MIME, &img.Data, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Image{}, ErrNotFound
+	}
+	if err != nil {
+		return Image{}, err
+	}
+	img.CreatedAt = parseTime(created)
+	return img, nil
+}
+
 // ---- Token usage (persistent statistics) ----
 
 // RecordUsage books the token usage of a request, aggregated per day.
@@ -527,6 +568,8 @@ type UsageSummary struct {
 	ChatTotalTokens  int64
 	EmbedRequests    int64
 	EmbedTotalTokens int64
+	ImageRequests    int64
+	ImageTotalTokens int64
 	TotalTokens      int64
 }
 
@@ -567,6 +610,8 @@ func (s *Store) UsageSummaryTotals(ctx context.Context) (UsageSummary, error) {
 			u.ChatRequests, u.ChatPromptTokens, u.ChatComplTokens, u.ChatTotalTokens = req, pt, ct, tt
 		case "embedding":
 			u.EmbedRequests, u.EmbedTotalTokens = req, tt
+		case "image":
+			u.ImageRequests, u.ImageTotalTokens = req, tt
 		}
 		u.TotalTokens += tt
 	}

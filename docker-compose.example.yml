@@ -16,6 +16,8 @@ services:
       - AZURE_API_KEY=${AZURE_API_KEY}
       # Optional: dedicated key if embeddings live on a separate Azure resource.
       - AZURE_EMBEDDING_API_KEY=${AZURE_EMBEDDING_API_KEY:-}
+      # Optional: dedicated key for the image endpoint (falls back to AZURE_API_KEY).
+      - AZURE_IMAGE_API_KEY=${AZURE_IMAGE_API_KEY:-}
       # Optional: API key for web search (Tavily/Brave). Not needed for SearXNG.
       - SEARCH_API_KEY=${SEARCH_API_KEY:-}
       - PORT=8080
@@ -27,6 +29,10 @@ services:
       # Models offered in the chat header. The model router does not expose
       # which models it serves, so the list is curated here (comma separated).
       - AZURE_MODELS=${AZURE_MODELS}
+      # Image generation (optional). Empty values keep the fields editable in
+      # the settings dialog; the size/quality/format are chosen there.
+      - AZURE_IMAGE_ENDPOINT=${AZURE_IMAGE_ENDPOINT:-}
+      - AZURE_IMAGE_DEPLOYMENT=${AZURE_IMAGE_DEPLOYMENT:-}
       # Optional: pin the endpoint settings via environment variables.
       # Values that are set take precedence over config.json and are disabled
       # in the UI.
@@ -36,6 +42,7 @@ services:
       # - AZURE_EMBEDDING_ENDPOINT=${AZURE_EMBEDDING_ENDPOINT:-}
       # - AZURE_EMBEDDING_DEPLOYMENT=${AZURE_EMBEDDING_DEPLOYMENT:-}
       # - AZURE_EMBEDDING_API_VERSION=${AZURE_EMBEDDING_API_VERSION:-}
+      # - AZURE_IMAGE_API_VERSION=${AZURE_IMAGE_API_VERSION:-}
     ports:
       - "8080:8080"
     volumes:

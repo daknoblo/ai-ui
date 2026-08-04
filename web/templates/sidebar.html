@@ -77,7 +77,7 @@
 	<span class="storage-docs">· {{.DocCount}} {{if eq .DocCount 1}}{{t "doc.count_one"}}{{else}}{{t "doc.count_many"}}{{end}}</span>
 </div>
 {{if .HasUsage}}
-<div class="usage-line" title="{{t "usage.tooltip_head"}}&#10;{{t "usage.tooltip_chat" (thousands .Metrics.ChatTotalTokens) (thousands .Metrics.ChatPromptTokens) (thousands .Metrics.ChatComplTokens) (thousands .Metrics.ChatRequests)}}&#10;{{t "usage.tooltip_embed" (thousands .Metrics.EmbedTokens) (thousands .Metrics.EmbedRequests)}}&#10;{{t "usage.tooltip_last" (thousands .Metrics.LastTotalTokens) (thousands .Metrics.LastPromptTokens) (thousands .Metrics.LastComplTokens)}}">
+<div class="usage-line" title="{{t "usage.tooltip_head"}}&#10;{{t "usage.tooltip_chat" (thousands .Metrics.ChatTotalTokens) (thousands .Metrics.ChatPromptTokens) (thousands .Metrics.ChatComplTokens) (thousands .Metrics.ChatRequests)}}&#10;{{t "usage.tooltip_embed" (thousands .Metrics.EmbedTokens) (thousands .Metrics.EmbedRequests)}}&#10;{{if .Metrics.ImageRequests}}{{t "usage.tooltip_image" (thousands .Metrics.ImageTokens) (thousands .Metrics.ImageRequests)}}&#10;{{end}}{{t "usage.tooltip_last" (thousands .Metrics.LastTotalTokens) (thousands .Metrics.LastPromptTokens) (thousands .Metrics.LastComplTokens)}}">
 	<span class="usage-icon">🪙</span>{{thousands .Metrics.TotalTokens}} {{t "usage.tokens"}}
 	{{if gt .Metrics.LastTotalTokens 0}}<span class="usage-last">· {{t "usage.last" (thousands .Metrics.LastTotalTokens)}}</span>{{end}}
 </div>

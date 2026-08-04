@@ -26,6 +26,12 @@
 				<div class="stat-value">{{thousands .Summary.EmbedTotalTokens}}</div>
 				<div class="stat-label">{{t "stats.embedding_tokens"}}</div>
 			</div>
+			{{if .Summary.ImageRequests}}
+			<div class="stat-card">
+				<div class="stat-value">{{thousands .Summary.ImageTotalTokens}}</div>
+				<div class="stat-label">{{t "stats.image_tokens"}}<br><span class="stat-sub">{{t "stats.image_sub" (thousands .Summary.ImageRequests)}}</span></div>
+			</div>
+			{{end}}
 			<div class="stat-card">
 				<div class="stat-value">{{thousands .Summary.ChatRequests}}</div>
 				<div class="stat-label">{{t "stats.chat_requests"}}</div>

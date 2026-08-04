@@ -22,6 +22,10 @@ type Metrics struct {
 	// Embeddings (cumulative)
 	embedRequests int64
 	embedTokens   int64
+
+	// Image generation (cumulative)
+	imageRequests int64
+	imageTokens   int64
 }
 
 // MetricsSnapshot is a consistent copy of the metrics for display.
@@ -38,7 +42,10 @@ type MetricsSnapshot struct {
 	EmbedRequests int64
 	EmbedTokens   int64
 
-	TotalTokens int64 // chat + embedding combined
+	ImageRequests int64
+	ImageTokens   int64
+
+	TotalTokens int64 // chat + embedding + image combined
 }
 
 // recordChat books the usage of a chat request.
@@ -68,6 +75,14 @@ func (m *Metrics) recordEmbedding(tokens int) {
 	m.embedTokens += int64(tokens)
 }
 
+// recordImage books the tokens of an image request.
+func (m *Metrics) recordImage(u Usage) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.imageRequests++
+	m.imageTokens += int64(u.TotalTokens)
+}
+
 // Snapshot returns a consistent copy of the current metrics.
 func (m *Metrics) Snapshot() MetricsSnapshot {
 	m.mu.RLock()
@@ -82,6 +97,8 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 		LastTotalTokens:  int64(m.lastTotalTok),
 		EmbedRequests:    m.embedRequests,
 		EmbedTokens:      m.embedTokens,
-		TotalTokens:      m.chatTotalTok + m.embedTokens,
+		ImageRequests:    m.imageRequests,
+		ImageTokens:      m.imageTokens,
+		TotalTokens:      m.chatTotalTok + m.embedTokens + m.imageTokens,
 	}
 }

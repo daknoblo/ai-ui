@@ -148,6 +148,7 @@ func (s *Server) Routes() http.Handler {
 
 	r.Post("/chat/{id}/documents", s.handleUpload)
 	r.Delete("/chat/{cid}/documents/{did}", s.handleDeleteDocument)
+	r.Get("/images/{id}", s.handleImage)
 
 	return r
 }

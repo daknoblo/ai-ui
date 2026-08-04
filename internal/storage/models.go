@@ -29,6 +29,16 @@ type Document struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Image is an image generated in a chat.
+type Image struct {
+	ID        int64     `json:"id"`
+	ChatID    int64     `json:"chat_id"`
+	Prompt    string    `json:"prompt"`
+	MIME      string    `json:"mime"`
+	Data      []byte    `json:"-"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // ChunkVector is a chunk reduced to the fields needed for similarity scoring.
 type ChunkVector struct {
 	ID         int64

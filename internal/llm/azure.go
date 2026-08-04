@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -172,11 +173,24 @@ func isV1Endpoint(endpoint string) bool {
 	return strings.Contains(strings.TrimRight(endpoint, "/"), "/openai/v1")
 }
 
+// apiVersionFor resolves the api-version of a request. On the v1 surface the
+// dated versions of the classic schema are meaningless, and only the preview
+// moniker exposes the full Foundry model catalog, so that is the default there.
+func apiVersionFor(endpoint, configured string) string {
+	if !isV1Endpoint(endpoint) {
+		return configured
+	}
+	if configured == "preview" || configured == "v1" {
+		return configured
+	}
+	return previewAPIVersion
+}
+
 // chatCompletionsURL builds the chat completions URL for the endpoint schema.
 func chatCompletionsURL(endpoint, deployment, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
 	if isV1Endpoint(base) {
-		return base + "/chat/completions"
+		return base + "/chat/completions?api-version=" + url.QueryEscape(apiVersionFor(base, apiVersion))
 	}
 	return fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s", base, deployment, apiVersion)
 }
@@ -185,7 +199,7 @@ func chatCompletionsURL(endpoint, deployment, apiVersion string) string {
 func embeddingsURL(endpoint, deployment, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
 	if isV1Endpoint(base) {
-		return base + "/embeddings"
+		return base + "/embeddings?api-version=" + url.QueryEscape(apiVersionFor(base, apiVersion))
 	}
 	return fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=%s", base, deployment, apiVersion)
 }

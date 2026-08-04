@@ -21,14 +21,14 @@ func TestChatCompletionsURL(t *testing.T) {
 			endpoint:   "https://x.services.ai.azure.com/openai/v1",
 			deployment: "model-router",
 			apiVersion: "2025-01-01-preview",
-			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions",
+			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions?api-version=preview",
 		},
 		{
 			name:       "v1 with trailing slash",
 			endpoint:   "https://x.services.ai.azure.com/openai/v1/",
 			deployment: "model-router",
 			apiVersion: "preview",
-			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions",
+			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions?api-version=preview",
 		},
 		{
 			name:       "classic",
@@ -49,11 +49,26 @@ func TestChatCompletionsURL(t *testing.T) {
 
 // TestEmbeddingsURL checks the embeddings URL per schema.
 func TestEmbeddingsURL(t *testing.T) {
-	if got := embeddingsURL("https://x.services.ai.azure.com/openai/v1", "text-embedding-3-large", "v"); got != "https://x.services.ai.azure.com/openai/v1/embeddings" {
+	if got := embeddingsURL("https://x.services.ai.azure.com/openai/v1", "text-embedding-3-large", "2024-02-01"); got != "https://x.services.ai.azure.com/openai/v1/embeddings?api-version=preview" {
 		t.Errorf("embeddingsURL v1 is wrong: %q", got)
 	}
 	if got := embeddingsURL("https://x.cognitiveservices.azure.com", "text-embedding-3-large", "2024-02-01"); got != "https://x.cognitiveservices.azure.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-02-01" {
 		t.Errorf("embeddingsURL classic is wrong: %q", got)
+	}
+}
+
+// TestAPIVersionFor keeps dated versions on the classic schema and switches the
+// v1 surface to the preview moniker, which is the one that exposes the full
+// model catalog.
+func TestAPIVersionFor(t *testing.T) {
+	if got := apiVersionFor("https://x.services.ai.azure.com/openai/v1", "2024-08-01-preview"); got != "preview" {
+		t.Errorf("v1 with a dated version: got %q, want preview", got)
+	}
+	if got := apiVersionFor("https://x.services.ai.azure.com/openai/v1", "v1"); got != "v1" {
+		t.Errorf("an explicit v1 moniker must be kept: %q", got)
+	}
+	if got := apiVersionFor("https://x.openai.azure.com", "2024-08-01-preview"); got != "2024-08-01-preview" {
+		t.Errorf("classic must keep the configured version: %q", got)
 	}
 }
 

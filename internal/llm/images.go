@@ -52,10 +52,7 @@ func imageAPIVersion(cfg config.Config) string {
 	if cfg.ImageAPIVersion != "" {
 		return cfg.ImageAPIVersion
 	}
-	if isV1Endpoint(cfg.ImageHost()) {
-		return previewAPIVersion
-	}
-	return cfg.APIVersion
+	return apiVersionFor(cfg.ImageHost(), cfg.APIVersion)
 }
 
 // ImageOptions are the generation parameters offered in the settings dialog.

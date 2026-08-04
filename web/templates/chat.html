@@ -35,14 +35,13 @@
 		<div id="upload-status" class="upload-status" hidden></div>
 		{{template "doclist" .}}
 
-		{{if or .ImageEnabled .SearchEnabled}}
 		<div class="composer-tools">
-			{{if .ImageEnabled}}
-			<div class="mode-switch" id="mode-switch" role="group" aria-label="{{t "chat.mode_label"}}">
-				<button type="button" class="mode-opt" data-mode="chat" onclick="setMode('chat')">💬 {{t "chat.mode_chat"}}</button>
-				<button type="button" class="mode-opt" data-mode="image" onclick="setMode('image')">🖼 {{t "chat.mode_image"}}</button>
-			</div>
-			{{end}}
+			<label class="tool-opt attach-opt" title="{{t "chat.attach_title"}}">
+				<input type="file" id="attach-input" accept=".txt,.md,.markdown,.json,.pdf,.docx,.png,.jpg,.jpeg,.webp" multiple
+					data-chat-id="{{.ChatID}}"
+					onchange="handleAttach(this)">
+				<span>📎 {{t "chat.attach_option"}}</span>
+			</label>
 			{{if .SearchEnabled}}
 			<label class="tool-opt" id="web-option" title="{{t "chat.web_toggle_title"}}">
 				<input type="checkbox" id="web-check" onchange="setWeb(this.checked)">
@@ -50,6 +49,10 @@
 			</label>
 			{{end}}
 			{{if .ImageEnabled}}
+			<label class="tool-opt" id="edit-option" title="{{t "chat.image_edit_title"}}" hidden>
+				<input type="checkbox" id="edit-check" onchange="setEdit(this.checked)">
+				<span>🖌 {{t "chat.image_edit"}}</span>
+			</label>
 			<form class="image-params" id="image-params" hx-post="/image/params" hx-trigger="change" hx-swap="none" hidden>
 				<label>{{t "config.image_size"}}
 					<select name="image_size">
@@ -69,15 +72,16 @@
 			</form>
 			{{end}}
 		</div>
-		{{end}}
 
-		<div class="composer">
-			<label class="composer-btn attach-btn" title="{{t "chat.attach_title"}}">
-				📎
-				<input type="file" id="attach-input" accept=".txt,.md,.markdown,.json,.pdf,.docx,.png,.jpg,.jpeg,.webp" multiple
-					data-chat-id="{{.ChatID}}"
-					onchange="handleAttach(this)">
-			</label>
+		<div class="composer" data-has-image="{{if .HasImage}}1{{else}}0{{end}}">
+			{{if .ImageEnabled}}
+			<div class="mode-switch" id="mode-switch" role="group" aria-label="{{t "chat.mode_label"}}">
+				<button type="button" class="mode-opt" data-mode="chat" onclick="setMode('chat')"
+					title="{{t "chat.mode_chat"}}" aria-label="{{t "chat.mode_chat"}}">💬</button>
+				<button type="button" class="mode-opt" data-mode="image" onclick="setMode('image')"
+					title="{{t "chat.mode_image"}}" aria-label="{{t "chat.mode_image"}}">🖼</button>
+			</div>
+			{{end}}
 			<form id="chat-form" class="composer-form"
 				hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
 				hx-target="#messages"
@@ -85,6 +89,7 @@
 				hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';applyComposerState();}">
 				<input type="hidden" name="web" id="web-flag" value="0">
 				<input type="hidden" name="mode" id="mode-flag" value="chat">
+				<input type="hidden" name="edit" id="edit-flag" value="0">
 				<textarea name="message" rows="1" placeholder="{{t "chat.input_placeholder"}}"
 					data-placeholder-chat="{{t "chat.input_placeholder"}}"
 					data-placeholder-image="{{t "chat.image_placeholder"}}"
@@ -122,7 +127,7 @@
 {{define "assistant-stream"}}
 <div class="msg assistant"
 	hx-ext="sse"
-	sse-connect="/chat/{{.ChatID}}/generate{{if .Image}}?image=1{{else if .Web}}?web=1{{end}}"
+	sse-connect="/chat/{{.ChatID}}/generate{{if .Image}}?image=1{{if .Edit}}&amp;edit=1{{end}}{{else if .Web}}?web=1{{end}}"
 	sse-close="done">
 	<div class="msg-role">{{t "role.assistant"}}<span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span>{{if .Web}} <span class="web-tag">🌐 {{t "chat.web_tag"}}</span>{{end}}{{if .Image}} <span class="web-tag">🖼 {{t "chat.image_tag"}}</span>{{end}}</div>
 	<div class="msg-tools" sse-swap="tool" hx-swap="beforeend"></div>

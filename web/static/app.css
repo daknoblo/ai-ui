@@ -369,19 +369,22 @@ html, body {
 	border: 1px solid var(--border);
 	border-radius: 999px;
 	background: var(--bg-elev);
+	flex: 0 0 auto;
+	align-self: flex-end;
 }
 .mode-opt {
 	border: none;
 	background: none;
 	color: var(--text-dim);
 	font: inherit;
-	font-size: 12px;
-	padding: 5px 12px;
+	font-size: 16px;
+	line-height: 1;
+	padding: 8px 12px;
 	border-radius: 999px;
 	cursor: pointer;
 	white-space: nowrap;
 }
-.mode-opt.active { background: var(--accent); color: #fff; font-weight: 600; }
+.mode-opt.active { background: var(--accent); color: #fff; }
 .tool-opt {
 	display: inline-flex;
 	align-items: center;
@@ -392,6 +395,8 @@ html, body {
 }
 .tool-opt input { accent-color: var(--accent); margin: 0; }
 .tool-opt[hidden] { display: none; }
+.tool-opt:hover { color: var(--text); }
+.attach-opt input[type="file"] { display: none; }
 /* Image mode has to be unmistakable: accent frame plus the parameter row. */
 .composer.image-mode textarea {
 	border-color: var(--accent);

@@ -46,6 +46,10 @@
 		function imageEnabled() {
 			return localStorage.getItem('ai-ui-image') === '1';
 		}
+		// Editing the latest image of the chat is the default in image mode.
+		function editEnabled() {
+			return localStorage.getItem('ai-ui-edit') !== '0';
+		}
 		function setWeb(on) {
 			localStorage.setItem('ai-ui-web', on ? '1' : '0');
 			applyComposerState();
@@ -54,9 +58,16 @@
 			localStorage.setItem('ai-ui-image', mode === 'image' ? '1' : '0');
 			applyComposerState();
 		}
+		function setEdit(on) {
+			localStorage.setItem('ai-ui-edit', on ? '1' : '0');
+			applyComposerState();
+		}
 		function applyComposerState() {
 			var image = imageEnabled();
 			var web = webEnabled() && !image;
+			var box = document.querySelector('.composer');
+			var hasImage = box && box.dataset.hasImage === '1';
+			var edit = image && hasImage && editEnabled();
 
 			document.querySelectorAll('.mode-opt').forEach(function (btn) {
 				var on = (btn.dataset.mode === 'image') === image;
@@ -68,6 +79,10 @@
 			if (webCheck) webCheck.checked = web;
 			var webOption = document.getElementById('web-option');
 			if (webOption) webOption.hidden = image;
+			var editCheck = document.getElementById('edit-check');
+			if (editCheck) editCheck.checked = edit;
+			var editOption = document.getElementById('edit-option');
+			if (editOption) editOption.hidden = !(image && hasImage);
 			var params = document.getElementById('image-params');
 			if (params) params.hidden = !image;
 
@@ -75,8 +90,9 @@
 			if (webFlag) webFlag.value = web ? '1' : '0';
 			var modeFlag = document.getElementById('mode-flag');
 			if (modeFlag) modeFlag.value = image ? 'image' : 'chat';
+			var editFlag = document.getElementById('edit-flag');
+			if (editFlag) editFlag.value = edit ? '1' : '0';
 
-			var box = document.querySelector('.composer');
 			if (box) box.classList.toggle('image-mode', image);
 			var ta = document.querySelector('#chat-form textarea');
 			if (ta && ta.dataset.placeholderImage) {

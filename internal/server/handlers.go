@@ -69,6 +69,7 @@ type pageData struct {
 	UploadsReady   bool
 	SearchEnabled  bool
 	ImageEnabled   bool
+	HasImage       bool
 	ImageSize      string
 	ImageQuality   string
 	ImageFormat    string
@@ -118,9 +119,14 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		if err != nil {
 			return pageData{}, err
 		}
+		n, err := s.store.CountImages(ctx, current.ID)
+		if err != nil {
+			return pageData{}, err
+		}
 		pd.Messages = msgs
 		pd.Documents = docs
 		pd.SourceImages = imgs
+		pd.HasImage = n > 0
 		pd.Title = s.chatTitle(current.Title)
 		pd.ChatID = current.ID
 		pd.CurrentModel = current.Model
@@ -334,6 +340,8 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	if image {
 		web = false
 	}
+	// In image mode the latest image of the chat is edited unless switched off.
+	edit := image && r.FormValue("edit") == "1"
 
 	if _, err := s.store.AddMessage(ctx, chatID, "user", message); err != nil {
 		s.httpError(w, err)
@@ -358,7 +366,8 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		ChatID int64
 		Web    bool
 		Image  bool
-	}{ChatID: chatID, Web: web, Image: image})
+		Edit   bool
+	}{ChatID: chatID, Web: web, Image: image, Edit: edit})
 	if titleChanged {
 		s.render(w, "title-oob", struct{ Title string }{Title: chat.Title})
 	}
@@ -412,7 +421,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 			fail(s.t("stream.image_not_configured"))
 			return
 		}
-		s.generateImage(ctx, sse, id, query, fail)
+		s.generateImage(ctx, sse, id, query, r.URL.Query().Get("edit") == "1", fail)
 		return
 	}
 

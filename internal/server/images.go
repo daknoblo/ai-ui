@@ -106,9 +106,9 @@ func (s *Server) handleSetImageParams(w http.ResponseWriter, r *http.Request) {
 }
 
 // generateImage renders the prompt into an image, stores it and pushes it into
-// the open SSE stream. When the chat has an uploaded source image, that image is
-// edited instead of creating a new one.
-func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64, prompt string, fail func(string)) {
+// the open SSE stream. With edit the latest image of the chat is modified
+// instead of creating a new one, which allows refining step by step.
+func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64, prompt string, edit bool, fail func(string)) {
 	cfg := s.cfg.Get()
 	opts := llm.ImageOptions{
 		Size:    cfg.ImageSize,
@@ -116,14 +116,19 @@ func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64
 		Format:  cfg.ImageFormat,
 	}
 
+	// Editing continues from the latest image, so refinements build on each other.
+	var src *storage.Image
+	if edit {
+		if img, lookupErr := s.store.LatestImage(ctx, chatID); lookupErr == nil {
+			src = &img
+		}
+	}
+
 	var (
-		res  llm.ImageResult
-		err  error
-		src  storage.Image
-		edit bool
+		res llm.ImageResult
+		err error
 	)
-	if src, err = s.store.LatestImageByKind(ctx, chatID, storage.ImageUpload); err == nil {
-		edit = true
+	if src != nil {
 		res, err = s.llm.EditImage(ctx, prompt, llm.ImageSource{
 			Name: src.Name,
 			MIME: src.MIME,
@@ -133,7 +138,7 @@ func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64
 		res, err = s.llm.GenerateImage(ctx, prompt, opts)
 	}
 	if err != nil {
-		slog.Error("image generation", "edit", edit, "err", err)
+		slog.Error("image generation", "edit", src != nil, "err", err)
 		fail(s.t("stream.image_failed", err.Error()))
 		return
 	}

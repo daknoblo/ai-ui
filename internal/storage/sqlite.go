@@ -585,6 +585,33 @@ func (s *Store) LatestImageByKind(ctx context.Context, chatID int64, kind string
 	return img, nil
 }
 
+// LatestImage returns the most recent image of a chat including its data.
+func (s *Store) LatestImage(ctx context.Context, chatID int64) (Image, error) {
+	var (
+		img     Image
+		created string
+	)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, chat_id, kind, name, prompt, mime, data, created_at
+		 FROM images WHERE chat_id = ? ORDER BY id DESC LIMIT 1`, chatID).
+		Scan(&img.ID, &img.ChatID, &img.Kind, &img.Name, &img.Prompt, &img.MIME, &img.Data, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Image{}, ErrNotFound
+	}
+	if err != nil {
+		return Image{}, err
+	}
+	img.CreatedAt = parseTime(created)
+	return img, nil
+}
+
+// CountImages returns how many images a chat holds.
+func (s *Store) CountImages(ctx context.Context, chatID int64) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM images WHERE chat_id = ?`, chatID).Scan(&n)
+	return n, err
+}
+
 // ListImagesByKind returns the images of a chat without their payload.
 func (s *Store) ListImagesByKind(ctx context.Context, chatID int64, kind string) ([]Image, error) {
 	rows, err := s.db.QueryContext(ctx,

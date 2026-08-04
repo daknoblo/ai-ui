@@ -9,6 +9,7 @@ import (
 
 	"github.com/daknoblo/ai-ui/internal/config"
 	"github.com/daknoblo/ai-ui/internal/i18n"
+	"github.com/daknoblo/ai-ui/internal/logbuf"
 	"github.com/daknoblo/ai-ui/internal/storage"
 )
 
@@ -36,7 +37,7 @@ func newTestServer(t *testing.T, language string) (*Server, http.Handler) {
 		t.Fatalf("save config: %v", err)
 	}
 
-	srv := New(cfgStore, store)
+	srv := New(cfgStore, store, logbuf.New(50))
 	return srv, srv.Routes()
 }
 
@@ -60,6 +61,8 @@ func TestRoutesRenderInEveryLanguage(t *testing.T) {
 				"/chat/1",
 				"/config",
 				"/stats",
+				"/logs",
+				"/logs/tail",
 				"/status",
 				"/static/app.css",
 			}

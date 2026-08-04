@@ -1,0 +1,54 @@
+{{define "logs"}}<!DOCTYPE html>
+<html lang="{{lang}}">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{{.Title}} · AI UI</title>
+	<link rel="stylesheet" href="/static/app.css">
+	<script src="/static/htmx.min.js"></script>
+</head>
+<body>
+	<div class="stats-page">
+		<div class="stats-head">
+			<a href="/" class="btn btn-ghost btn-small">{{t "stats.back"}}</a>
+			<h1>{{t "logs.heading"}}</h1>
+		</div>
+
+		<div class="log-actions">
+			<span class="log-level">{{t "logs.level" .Level}}</span>
+			<button type="button" class="btn btn-ghost btn-small" onclick="copyLogs(this)">{{t "logs.copy"}}</button>
+			<button type="button" class="btn btn-ghost btn-small"
+				hx-post="/logs/clear" hx-target="#log-output" hx-swap="innerHTML">{{t "logs.clear"}}</button>
+			<label class="tool-opt">
+				<input type="checkbox" id="log-follow" checked>
+				<span>{{t "logs.follow"}}</span>
+			</label>
+		</div>
+
+		<pre id="log-output" class="log-output"
+			hx-get="/logs/tail" hx-trigger="every 5s" hx-swap="innerHTML">{{template "log-lines" .}}</pre>
+		<p class="stats-note">{{t "logs.hint"}}</p>
+	</div>
+	<script>
+		function copyLogs(btn) {
+			var text = document.getElementById('log-output').textContent;
+			navigator.clipboard.writeText(text).then(function () {
+				var old = btn.textContent;
+				btn.textContent = "{{t `logs.copied`}}";
+				setTimeout(function () { btn.textContent = old; }, 1500);
+			});
+		}
+		function scrollLogs() {
+			var box = document.getElementById('log-output');
+			var follow = document.getElementById('log-follow');
+			if (box && follow && follow.checked) { box.scrollTop = box.scrollHeight; }
+		}
+		window.addEventListener('load', scrollLogs);
+		document.body.addEventListener('htmx:afterSwap', scrollLogs);
+	</script>
+</body>
+</html>
+{{end}}
+
+{{define "log-lines"}}{{if .Lines}}{{range .Lines}}{{.}}
+{{end}}{{else}}{{t "logs.empty"}}{{end}}{{end}}

@@ -144,6 +144,19 @@ html, body {
 	gap: 8px;
 }
 .btn-config { width: 100%; background: transparent; border: 1px solid var(--border); }
+/* Settings and logs share one row, each half the width. */
+.sidebar-actions { display: flex; gap: 8px; }
+.sidebar-actions > * {
+	flex: 1 1 0;
+	min-width: 0;
+	font-size: 12px;
+	padding: 9px 6px;
+	text-align: center;
+	text-decoration: none;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
 .status {
 	font-size: 12px;
 	text-align: center;
@@ -740,6 +753,22 @@ html, body {
 .stats-table td.num, .stats-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .stats-table tbody tr:hover { background: var(--bg-elev); }
 .stats-note { font-size: 12px; color: var(--text-dim); margin-top: 24px; }
+/* ---------- Log page ---------- */
+.log-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.log-level { font-size: 12px; color: var(--text-dim); }
+.log-output {
+	background: #0d0d10;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 14px;
+	max-height: 65vh;
+	overflow: auto;
+	font-size: 12px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	margin: 0;
+}
 
 /* ---------- Scrollbars ---------- */
 ::-webkit-scrollbar { width: 9px; height: 9px; }

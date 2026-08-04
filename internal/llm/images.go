@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -233,6 +234,7 @@ func sourceFileName(src ImageSource) string {
 
 // sendImageRequest performs an image request and decodes the base64 result.
 func (c *Client) sendImageRequest(req *http.Request, url, deployment, format string) (ImageResult, error) {
+	slog.Debug("image request", "url", url, "deployment", deployment, "content_type", req.Header.Get("Content-Type"))
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return ImageResult{}, err

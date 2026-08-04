@@ -37,6 +37,7 @@ type Config struct {
 	SearchMaxResults    int      `json:"search_max_results"`    // number of results (default 5)
 	SearchAuto          bool     `json:"search_auto"`           // allow the model to trigger a web search via tool calling
 	SystemPrompt        string   `json:"system_prompt"`         // empty means "use the localized default"
+	LogLevel            string   `json:"log_level"`             // debug | info | warn | error
 	Temperature         float64  `json:"temperature"`
 }
 
@@ -201,6 +202,7 @@ func Defaults() Config {
 		SearchMaxResults:    5,
 		SearchAuto:          false,
 		SystemPrompt:        "",
+		LogLevel:            "info",
 		Temperature:         0.7,
 	}
 }

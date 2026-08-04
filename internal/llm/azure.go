@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -244,6 +245,7 @@ func (c *Client) streamTurn(ctx context.Context, model string, messages []Messag
 		reqBody.Tools = tools
 		reqBody.ToolChoice = "auto"
 	}
+	slog.Debug("chat request", "url", url, "model", reqBody.Model, "messages", len(messages), "tools", len(tools))
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return result, err

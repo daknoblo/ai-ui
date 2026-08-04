@@ -15,10 +15,13 @@
 			hx-swap="innerHTML">
 			{{template "status-badge" .StatusBadge}}
 		</div>
-		<button class="btn btn-config"
-			hx-get="/config"
-			hx-target="#modal-root"
-			hx-swap="innerHTML">⚙ {{t "nav.settings"}}</button>
+		<div class="sidebar-actions">
+			<button class="btn btn-config"
+				hx-get="/config"
+				hx-target="#modal-root"
+				hx-swap="innerHTML">⚙ {{t "nav.settings"}}</button>
+			<a class="btn btn-config" href="/logs">📄 {{t "nav.logs"}}</a>
+		</div>
 	</div>
 </aside>
 <div id="modal-root"></div>

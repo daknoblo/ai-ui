@@ -15,6 +15,7 @@ import (
 	"github.com/daknoblo/ai-ui/internal/config"
 	"github.com/daknoblo/ai-ui/internal/i18n"
 	"github.com/daknoblo/ai-ui/internal/llm"
+	"github.com/daknoblo/ai-ui/internal/logbuf"
 	"github.com/daknoblo/ai-ui/internal/rag"
 	"github.com/daknoblo/ai-ui/internal/storage"
 	"github.com/daknoblo/ai-ui/internal/websearch"
@@ -31,10 +32,11 @@ type Server struct {
 	search    *websearch.Client
 	tmpl      *template.Template
 	ready     *readiness
+	logs      *logbuf.Buffer
 }
 
 // New creates a server and parses the templates.
-func New(cfg *config.Store, store *storage.Store) *Server {
+func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 	client := llm.New(cfg)
 	// Persist token usage in the database.
 	client.SetUsageRecorder(usageRecorder{store: store})
@@ -72,6 +74,7 @@ func New(cfg *config.Store, store *storage.Store) *Server {
 		search:    websearch.New(cfg),
 		tmpl:      tmpl,
 		ready:     &readiness{},
+		logs:      logs,
 	}
 }
 
@@ -136,6 +139,9 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/chats", s.handleCreateChat)
 	r.Delete("/chats/{id}", s.handleDeleteChat)
 	r.Get("/stats", s.handleStats)
+	r.Get("/logs", s.handleLogs)
+	r.Get("/logs/tail", s.handleLogTail)
+	r.Post("/logs/clear", s.handleLogClear)
 
 	r.Post("/chat/{id}/send", s.handleSend)
 	r.Get("/chat/{id}/generate", s.handleGenerate)

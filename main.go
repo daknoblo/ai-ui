@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,16 +15,22 @@ import (
 	_ "time/tzdata"
 
 	"github.com/daknoblo/ai-ui/internal/config"
+	"github.com/daknoblo/ai-ui/internal/logbuf"
 	"github.com/daknoblo/ai-ui/internal/server"
 	"github.com/daknoblo/ai-ui/internal/storage"
 )
+
+// logs keeps the recent log lines in memory for the log page and owns the
+// runtime log level.
+var logs = logbuf.New(2000)
 
 func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "-healthcheck" || os.Args[1] == "healthcheck") {
 		os.Exit(healthcheck())
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stdout, logs),
+		&slog.HandlerOptions{Level: logs.LevelVar()}))
 	slog.SetDefault(logger)
 
 	if err := run(); err != nil {
@@ -69,9 +76,11 @@ func run() error {
 
 	// Load the configuration (or create the defaults).
 	cfgStore := config.NewStore(filepath.Join(appDataDir, "config.json"), keys, overrides)
-	if _, err := cfgStore.Load(); err != nil {
+	cfg, err := cfgStore.Load()
+	if err != nil {
 		return err
 	}
+	logs.SetLevel(logbuf.ParseLevel(cfg.LogLevel))
 
 	// Open the SQLite database in the data path.
 	dbPath := filepath.Join(dataDir, "ai-ui.db")
@@ -86,7 +95,7 @@ func run() error {
 	}
 
 	// Start the HTTP server.
-	srv := server.New(cfgStore, store)
+	srv := server.New(cfgStore, store, logs)
 	httpServer := &http.Server{
 		Addr:              ":" + port,
 		Handler:           srv.Routes(),

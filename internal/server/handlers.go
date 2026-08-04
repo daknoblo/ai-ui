@@ -16,6 +16,7 @@ import (
 	"github.com/daknoblo/ai-ui/internal/config"
 	"github.com/daknoblo/ai-ui/internal/i18n"
 	"github.com/daknoblo/ai-ui/internal/llm"
+	"github.com/daknoblo/ai-ui/internal/logbuf"
 	"github.com/daknoblo/ai-ui/internal/storage"
 	"github.com/daknoblo/ai-ui/internal/websearch"
 )
@@ -812,6 +813,7 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.SearchAuto = r.FormValue("search_auto") == "on"
 	cfg.SystemPrompt = r.FormValue("system_prompt")
+	cfg.LogLevel = logbuf.NormalizeLevel(r.FormValue("log_level"))
 	if t, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("temperature")), 64); err == nil {
 		cfg.Temperature = t
 	}
@@ -820,6 +822,7 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 		s.httpError(w, err)
 		return
 	}
+	s.applyLogLevel(cfg.LogLevel)
 	// Configuration changed: verification has to run again.
 	s.ready.invalidate()
 
@@ -1138,6 +1141,7 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 		HasOwnImageKey     bool
 		HasSearchKey       bool
 		SearchEnabled      bool
+		LogLevels          []string
 		Saved              bool
 		Verified           bool
 		UploadsAllowed     bool
@@ -1154,6 +1158,7 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 		HasOwnImageKey:     s.cfg.HasOwnImageAPIKey(),
 		HasSearchKey:       s.cfg.HasSearchAPIKey(),
 		SearchEnabled:      s.search.Enabled(),
+		LogLevels:          logbuf.Levels,
 		Saved:              saved,
 		Verified:           s.ready.verified(),
 		UploadsAllowed:     s.ready.uploadsAllowed(),

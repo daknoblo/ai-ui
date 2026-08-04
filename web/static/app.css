@@ -24,7 +24,9 @@ html, body {
 	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-.app { display: flex; height: 100vh; }
+/* dvh keeps the layout inside the visible area while mobile browsers show or
+   hide their address bar; vh stays as the fallback for older engines. */
+.app { display: flex; height: 100vh; height: 100dvh; }
 
 /* ---------- Sidebar ---------- */
 .sidebar {
@@ -774,3 +776,43 @@ html, body {
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- Narrow viewports (phones, small windows) ---------- */
+/* The layout stays CSS only: the sidebar moves above the chat and shrinks to a
+   scrollable strip, everything else gets tighter spacing and may wrap. */
+@media (max-width: 720px) {
+	.app { flex-direction: column; }
+
+	.sidebar {
+		width: 100%;
+		min-width: 0;
+		max-height: 45dvh;
+		border-right: none;
+		border-bottom: 1px solid var(--border);
+		padding: 8px;
+		gap: 8px;
+	}
+	.chat-list { max-height: 22dvh; min-height: 0; }
+	.sidebar-section { max-height: 30dvh; }
+	/* Touch devices have no hover, so the delete buttons stay visible. */
+	.chat-del, .doc-del { opacity: 1; }
+
+	.main { flex: 1 1 auto; min-height: 0; }
+
+	.chat-header { flex-wrap: wrap; gap: 8px 12px; padding: 10px 14px; }
+	.chat-header h1 { flex: 1 1 100%; }
+	.model-picker { flex: 1 1 auto; }
+	.model-picker select { flex: 1 1 auto; max-width: none; }
+
+	.messages { padding: 14px; gap: 16px; }
+	.composer-dock { padding: 8px 14px 12px; }
+	.doc-chip { max-width: 100%; }
+
+	.modal { width: 100%; max-height: 100dvh; border-radius: 0; padding: 16px; }
+	.modal-overlay { padding: 0; }
+
+	.stats-page { padding: 18px 14px 32px; }
+	.stats-cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+	/* Wide tables scroll horizontally instead of pushing the page out. */
+	.stats-table { display: block; overflow-x: auto; white-space: nowrap; }
+}

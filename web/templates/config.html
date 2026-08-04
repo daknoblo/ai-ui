@@ -36,7 +36,7 @@
 			</label>
 			<label class="config-full">
 				{{t "config.models"}} <span class="hint">{{if .Locks.ChatModels}}{{t "config.set_via" "AZURE_MODELS"}}{{else}}{{t "config.models_hint"}}{{end}}</span>
-				<textarea name="chat_models" rows="3" placeholder="gpt-4o&#10;gpt-4o-mini&#10;o3"{{if .Locks.ChatModels}} disabled{{end}}>{{range $i, $m := .Config.ChatModels}}{{if $i}}&#10;{{end}}{{$m}}{{end}}</textarea>
+				<textarea name="chat_models" rows="3" placeholder="gpt-5.5&#10;claude-opus-4-7&#10;claude-sonnet-4-5"{{if .Locks.ChatModels}} disabled{{end}}>{{range $i, $m := .Config.ChatModels}}{{if $i}}&#10;{{end}}{{$m}}{{end}}</textarea>
 			</label>
 			{{if .Notice}}<div class="config-{{if .NoticeErr}}notice-err{{else}}saved{{end}}">{{.Notice}}</div>{{end}}
 

@@ -119,7 +119,7 @@ type chatRequest struct {
 	Temperature   float64        `json:"temperature"`
 	Stream        bool           `json:"stream"`
 	StreamOptions *streamOptions `json:"stream_options,omitempty"`
-	MaxTokens     int            `json:"max_tokens,omitempty"`
+	MaxTokens     int            `json:"max_completion_tokens,omitempty"`
 	Tools         []Tool         `json:"tools,omitempty"`
 	ToolChoice    string         `json:"tool_choice,omitempty"`
 }
@@ -408,13 +408,16 @@ func (c *Client) VerifyChat(ctx context.Context) error {
 	return nil
 }
 
-// responseMentionsMaxTokens reports whether an error response hints at an
-// exhausted token limit (in which case the endpoint itself is reachable).
+// responseMentionsMaxTokens reports whether an error response hints at the
+// token limit (in which case the endpoint itself is reachable). Model families
+// disagree on the field name, so both spellings count.
 func responseMentionsMaxTokens(resp *http.Response) bool {
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(io.LimitReader(resp.Body, maxErrorBodyBytes))
 	msg := strings.ToLower(buf.String())
-	return strings.Contains(msg, "max_tokens") || strings.Contains(msg, "output limit")
+	return strings.Contains(msg, "max_tokens") ||
+		strings.Contains(msg, "max_completion_tokens") ||
+		strings.Contains(msg, "output limit")
 }
 
 // VerifyEmbedding performs a minimal request to check that the embedding

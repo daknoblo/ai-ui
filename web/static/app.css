@@ -269,7 +269,7 @@ html, body {
 .welcome-hint { font-size: 13px; opacity: .8; }
 .warn-text { color: var(--warn); }
 
-.msg { max-width: 760px; width: 100%; margin: 0 auto; }
+.msg { max-width: 874px; width: 100%; margin: 0 auto; }
 .msg-role { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
 .bubble {
 	background: var(--bg-elev);
@@ -301,7 +301,7 @@ html, body {
 
 .composer-dock {
 	border-top: 1px solid var(--border);
-	max-width: 808px;
+	max-width: 929px;
 	width: 100%;
 	margin: 0 auto;
 	padding: 10px 24px 18px;
@@ -362,7 +362,9 @@ html, body {
 	align-items: center;
 	gap: 8px 16px;
 	margin-bottom: 8px;
+	min-height: 30px;
 }
+.composer-tools > * { align-self: center; }
 .mode-switch {
 	display: inline-flex;
 	padding: 2px;
@@ -390,6 +392,7 @@ html, body {
 	align-items: center;
 	gap: 6px;
 	font-size: 12px;
+	line-height: 1;
 	color: var(--text-dim);
 	cursor: pointer;
 }
@@ -410,6 +413,7 @@ html, body {
 	align-items: center;
 	gap: 6px;
 	font-size: 12px;
+	line-height: 1;
 	color: var(--text-dim);
 }
 .image-params select {
@@ -455,7 +459,9 @@ html, body {
 
 /* ---------- Document chips above the input field ---------- */
 .doc-dock { display: flex; flex-direction: column; gap: 8px; }
-.doc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Keeps the chips from touching the tool row below them. */
+/* The bottom margin keeps the chips from touching the tool row below them. */
+.doc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .doc-chip {
 	display: inline-flex;
 	align-items: center;

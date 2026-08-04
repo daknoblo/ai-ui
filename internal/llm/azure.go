@@ -10,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -190,7 +189,7 @@ func apiVersionFor(endpoint, configured string) string {
 func chatCompletionsURL(endpoint, deployment, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
 	if isV1Endpoint(base) {
-		return base + "/chat/completions?api-version=" + url.QueryEscape(apiVersionFor(base, apiVersion))
+		return base + "/chat/completions"
 	}
 	return fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s", base, deployment, apiVersion)
 }
@@ -199,7 +198,7 @@ func chatCompletionsURL(endpoint, deployment, apiVersion string) string {
 func embeddingsURL(endpoint, deployment, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
 	if isV1Endpoint(base) {
-		return base + "/embeddings?api-version=" + url.QueryEscape(apiVersionFor(base, apiVersion))
+		return base + "/embeddings"
 	}
 	return fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=%s", base, deployment, apiVersion)
 }
@@ -280,7 +279,9 @@ func (c *Client) streamTurn(ctx context.Context, model string, messages []Messag
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return result, readError(resp)
+		// The requested model is part of the message: with the v1 schema it has
+		// to be a deployment name, which is the usual cause of a 404 here.
+		return result, fmt.Errorf("model %q: %w", reqBody.Model, readError(resp))
 	}
 
 	// Tool calls are accumulated per index (arguments arrive fragmented).

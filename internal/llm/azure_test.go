@@ -21,14 +21,14 @@ func TestChatCompletionsURL(t *testing.T) {
 			endpoint:   "https://x.services.ai.azure.com/openai/v1",
 			deployment: "model-router",
 			apiVersion: "2025-01-01-preview",
-			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions?api-version=preview",
+			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions",
 		},
 		{
 			name:       "v1 with trailing slash",
 			endpoint:   "https://x.services.ai.azure.com/openai/v1/",
 			deployment: "model-router",
 			apiVersion: "preview",
-			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions?api-version=preview",
+			want:       "https://x.services.ai.azure.com/openai/v1/chat/completions",
 		},
 		{
 			name:       "classic",
@@ -49,7 +49,7 @@ func TestChatCompletionsURL(t *testing.T) {
 
 // TestEmbeddingsURL checks the embeddings URL per schema.
 func TestEmbeddingsURL(t *testing.T) {
-	if got := embeddingsURL("https://x.services.ai.azure.com/openai/v1", "text-embedding-3-large", "2024-02-01"); got != "https://x.services.ai.azure.com/openai/v1/embeddings?api-version=preview" {
+	if got := embeddingsURL("https://x.services.ai.azure.com/openai/v1", "text-embedding-3-large", "2024-02-01"); got != "https://x.services.ai.azure.com/openai/v1/embeddings" {
 		t.Errorf("embeddingsURL v1 is wrong: %q", got)
 	}
 	if got := embeddingsURL("https://x.cognitiveservices.azure.com", "text-embedding-3-large", "2024-02-01"); got != "https://x.cognitiveservices.azure.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-02-01" {

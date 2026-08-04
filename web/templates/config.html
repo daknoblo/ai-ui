@@ -34,10 +34,16 @@
 				<input type="text" name="chat_deployment" value="{{.Config.ChatDeployment}}"
 					placeholder="gpt-4o" required{{if .Locks.ChatDeployment}} disabled{{end}}>
 			</label>
-			<label class="config-full">
-				{{t "config.models"}} <span class="hint">{{if .Locks.ChatModels}}{{t "config.set_via" "AZURE_MODELS"}}{{else}}{{t "config.models_hint"}}{{end}}</span>
-				<textarea name="chat_models" rows="3" placeholder="gpt-5.5&#10;claude-opus-4-7&#10;claude-sonnet-4-5"{{if .Locks.ChatModels}} disabled{{end}}>{{range $i, $m := .Config.ChatModels}}{{if $i}}&#10;{{end}}{{$m}}{{end}}</textarea>
-			</label>
+			<div class="config-full">
+				<span class="config-label">{{t "config.models"}} <span class="hint">{{t "config.models_hint"}}</span></span>
+				{{if .Config.ChatModels}}
+				<ul class="model-list">
+					{{range .Config.ChatModels}}<li>{{.}}</li>{{end}}
+				</ul>
+				{{else}}
+				<p class="hint config-hint-tight">{{t "config.models_empty"}}</p>
+				{{end}}
+			</div>
 			{{if .Notice}}<div class="config-{{if .NoticeErr}}notice-err{{else}}saved{{end}}">{{.Notice}}</div>{{end}}
 
 			<div class="config-section-head">{{t "config.section_embeddings"}}</div>

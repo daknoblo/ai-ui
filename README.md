@@ -15,8 +15,8 @@ compatible).
 - Chat interface with a sidebar, multiple conversations and history
 - Answer streaming (token by token) via server-sent events
 - Model picker in the top right of the chat window ("Auto" lets the router
-  decide). The list is curated via the settings dialog or `AZURE_MODELS`; the
-  selection is global and survives switching chats
+  decide). The list comes from `AZURE_MODELS`; the selection is global and
+  survives switching chats
 - Document upload (text/Markdown, PDF, DOCX) as RAG context
   (embeddings + brute-force cosine search)
 - Attach documents next to the input field (📎) or drag and drop them into the
@@ -26,7 +26,7 @@ compatible).
 - Documents are bound to their chat and are removed together with it
   (including their embeddings)
 - Settings dialog in the UI (language, endpoints, deployments, API version,
-  system prompt, temperature, model list)
+  system prompt, temperature); the configured models are listed read-only
 - User interface available in **English and German**, switchable in the settings
 - Readiness/connection check: uploads are only possible once storage and the
   embedding endpoint are verified; checked at start-up and periodically in the
@@ -92,7 +92,7 @@ General AI endpoint:
 | --------------- | --------------------------------------------- |
 | `AZURE_ENDPOINT` | Endpoint URL of the AI endpoint.             |
 | `AZURE_DEPLOYMENT` | Deployment name of the chat model.         |
-| `AZURE_MODELS` | Selectable models (comma or newline separated), e.g. `gpt-5.5,claude-opus-4-7,claude-sonnet-4-5`. |
+| `AZURE_MODELS` | Selectable models (comma or newline separated), e.g. `gpt-5.5,claude-opus-4-7,claude-sonnet-4-5`. The only source of the list; the settings dialog shows it read-only. |
 | `AZURE_API_VERSION` | API version of the AI endpoint.           |
 
 Embeddings (fall back to the AI endpoint when empty):

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -20,7 +21,7 @@ type Config struct {
 	Endpoint            string   `json:"endpoint"`              // chat, e.g. https://my-router.openai.azure.com
 	ChatDeployment      string   `json:"chat_deployment"`       // deployment name of the chat model (or router)
 	ChatModel           string   `json:"chat_model"`            // optional; pins a model instead of letting the router choose
-	ChatModels          []string `json:"chat_models"`           // models offered in the header menu
+	ChatModels          []string `json:"-"`                     // offered in the header menu; comes from AZURE_MODELS only
 	APIVersion          string   `json:"api_version"`           // e.g. 2024-08-01-preview
 	EmbeddingEndpoint   string   `json:"embedding_endpoint"`    // optional; falls back to Endpoint
 	EmbeddingDeployment string   `json:"embedding_deployment"`  // deployment name of the embedding model
@@ -73,8 +74,10 @@ func (o Overrides) apply(c Config) Config {
 	if o.ChatDeployment != "" {
 		c.ChatDeployment = o.ChatDeployment
 	}
-	if len(o.ChatModels) > 0 {
-		c.ChatModels = o.ChatModels
+	// The model list has no stored counterpart: AZURE_MODELS is its only source.
+	c.ChatModels = o.ChatModels
+	if c.ChatModel != "" && !slices.Contains(c.ChatModels, c.ChatModel) {
+		c.ChatModel = ""
 	}
 	if o.APIVersion != "" {
 		c.APIVersion = o.APIVersion
@@ -96,7 +99,6 @@ func (o Overrides) locks() Locks {
 	return Locks{
 		Endpoint:            o.Endpoint != "",
 		ChatDeployment:      o.ChatDeployment != "",
-		ChatModels:          len(o.ChatModels) > 0,
 		APIVersion:          o.APIVersion != "",
 		EmbeddingEndpoint:   o.EmbeddingEndpoint != "",
 		EmbeddingDeployment: o.EmbeddingDeployment != "",
@@ -109,7 +111,6 @@ func (o Overrides) locks() Locks {
 type Locks struct {
 	Endpoint            bool
 	ChatDeployment      bool
-	ChatModels          bool
 	APIVersion          bool
 	EmbeddingEndpoint   bool
 	EmbeddingDeployment bool
@@ -118,7 +119,7 @@ type Locks struct {
 
 // Any reports whether at least one endpoint field is locked via the environment.
 func (l Locks) Any() bool {
-	return l.Endpoint || l.ChatDeployment || l.ChatModels || l.APIVersion ||
+	return l.Endpoint || l.ChatDeployment || l.APIVersion ||
 		l.EmbeddingEndpoint || l.EmbeddingDeployment || l.EmbeddingAPIVersion
 }
 
@@ -152,7 +153,6 @@ func Defaults() Config {
 		Endpoint:            "",
 		ChatDeployment:      "",
 		ChatModel:           "",
-		ChatModels:          nil,
 		APIVersion:          "2024-08-01-preview",
 		EmbeddingEndpoint:   "",
 		EmbeddingDeployment: "",
@@ -268,9 +268,6 @@ func (s *Store) keepLockedLocked(cfg *Config) {
 	if s.locks.ChatDeployment {
 		cfg.ChatDeployment = s.cur.ChatDeployment
 	}
-	if s.locks.ChatModels {
-		cfg.ChatModels = s.cur.ChatModels
-	}
 	if s.locks.APIVersion {
 		cfg.APIVersion = s.cur.APIVersion
 	}
@@ -293,16 +290,8 @@ func (s *Store) SetChatModel(model string) error {
 	defer s.mu.Unlock()
 
 	if model != "" {
-		// Validate against the effective model list (including the ENV override).
-		eff := s.overrides.apply(s.cur)
-		allowed := false
-		for _, m := range eff.ChatModels {
-			if m == model {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
+		// Only models provided through AZURE_MODELS can be pinned.
+		if !slices.Contains(s.overrides.ChatModels, model) {
 			return fmt.Errorf("unknown model: %s", model)
 		}
 	}

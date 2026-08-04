@@ -26,7 +26,7 @@ services:
       - HEALTHCHECK_INTERVAL=${HEALTHCHECK_INTERVAL:-60s}
       # Models offered in the chat header. The model router does not expose
       # which models it serves, so the list is curated here (comma separated).
-      - AZURE_MODELS=${AZURE_MODELS:-gpt-5.5,claude-opus-4-7,claude-sonnet-4-5,claude-haiku-4-5,gpt-oss-120b,grok-4-1-fast-reasoning}
+      - AZURE_MODELS=${AZURE_MODELS}
       # Optional: pin the endpoint settings via environment variables.
       # Values that are set take precedence over config.json and are disabled
       # in the UI.

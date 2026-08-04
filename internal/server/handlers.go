@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -675,9 +674,6 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	if !locks.ChatDeployment {
 		cfg.ChatDeployment = strings.TrimSpace(r.FormValue("chat_deployment"))
 	}
-	if !locks.ChatModels {
-		cfg.ChatModels = parseModels(r.FormValue("chat_models"))
-	}
 	if !locks.APIVersion {
 		cfg.APIVersion = strings.TrimSpace(r.FormValue("api_version"))
 	}
@@ -709,11 +705,6 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	cfg.SystemPrompt = r.FormValue("system_prompt")
 	if t, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("temperature")), 64); err == nil {
 		cfg.Temperature = t
-	}
-
-	// Drop the pinned model if it is no longer part of the list.
-	if cfg.ChatModel != "" && !slices.Contains(cfg.ChatModels, cfg.ChatModel) {
-		cfg.ChatModel = ""
 	}
 
 	if err := s.cfg.Save(cfg); err != nil {
@@ -830,12 +821,6 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// parseModels splits a newline or comma separated list into trimmed, unique
-// model names.
-func parseModels(raw string) []string {
-	return config.ParseModelList(raw)
 }
 
 // handleUpload accepts a document and processes it (RAG ingestion).

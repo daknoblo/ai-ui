@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/daknoblo/ai-ui/internal/i18n"
@@ -32,7 +33,7 @@ func TestOverridesApplyAndLocks(t *testing.T) {
 		EmbeddingDeployment: "emb-env",
 	}
 	locks := o.locks()
-	if !locks.Endpoint || !locks.ChatModels || !locks.EmbeddingDeployment {
+	if !locks.Endpoint || !locks.EmbeddingDeployment {
 		t.Fatalf("configured fields must be locked: %+v", locks)
 	}
 	if locks.ChatDeployment || locks.APIVersion || locks.EmbeddingEndpoint || locks.EmbeddingAPIVersion {
@@ -52,6 +53,31 @@ func TestOverridesApplyAndLocks(t *testing.T) {
 	}
 	if !reflect.DeepEqual(eff.ChatModels, []string{"gpt-4o"}) {
 		t.Errorf("ChatModels override was not applied: %#v", eff.ChatModels)
+	}
+}
+
+// TestModelListIsEnvOnly makes sure the model list never comes from the stored
+// configuration and that a pinned model disappears with it.
+func TestModelListIsEnvOnly(t *testing.T) {
+	stored := Config{ChatModel: "gpt-4o", ChatModels: []string{"gpt-4o", "o3"}}
+	if eff := (Overrides{}).apply(stored); eff.ChatModels != nil || eff.ChatModel != "" {
+		t.Errorf("without AZURE_MODELS the list and the pinned model must be empty: %#v", eff)
+	}
+
+	path := filepath.Join(t.TempDir(), "config.json")
+	s := NewStore(path, "key", "", "", Overrides{ChatModels: []string{"gpt-4o"}})
+	if _, err := s.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := s.Save(s.Get()); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(data), "chat_models") {
+		t.Errorf("the model list must not be persisted: %s", data)
 	}
 }
 
@@ -144,9 +170,9 @@ func TestLanguageIsNormalized(t *testing.T) {
 	}
 }
 
-// TestSetChatModelUsesEffectiveList allows selecting a model that is only
-// provided through the ENV override of the model list.
-func TestSetChatModelUsesEffectiveList(t *testing.T) {
+// TestSetChatModelUsesEnvList only allows pinning a model that AZURE_MODELS
+// provides.
+func TestSetChatModelUsesEnvList(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	s := NewStore(path, "key", "", "", Overrides{ChatModels: []string{"gpt-4o", "o3"}})
 	if _, err := s.Load(); err != nil {

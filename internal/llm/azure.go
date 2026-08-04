@@ -190,10 +190,12 @@ func embeddingsURL(endpoint, deployment, apiVersion string) string {
 }
 
 // chatModelField returns the value for the "model" field of the request body.
-// With the v1 schema this must be the deployment identifier (required); a pinned
-// model (ChatModel) takes precedence. With the classic schema an empty value
-// means "let the router decide".
-func chatModelField(cfg config.Config) string {
+// override wins over the configured model; with the v1 schema the deployment is
+// required, while the classic schema treats an empty value as "router decides".
+func chatModelField(cfg config.Config, override string) string {
+	if override != "" {
+		return override
+	}
 	if cfg.ChatModel != "" {
 		return cfg.ChatModel
 	}
@@ -203,22 +205,23 @@ func chatModelField(cfg config.Config) string {
 	return ""
 }
 
-// ChatStream sends the messages and calls onDelta for every text token. When
-// finished it returns the token usage and the model that was actually used.
-func (c *Client) ChatStream(ctx context.Context, messages []Message, onDelta func(string) error) (ChatResult, error) {
-	turn, err := c.streamTurn(ctx, messages, nil, onDelta)
+// ChatStream sends the messages and calls onDelta for every text token. An empty
+// model falls back to the configured one. When finished it returns the token
+// usage and the model that was actually used.
+func (c *Client) ChatStream(ctx context.Context, model string, messages []Message, onDelta func(string) error) (ChatResult, error) {
+	turn, err := c.streamTurn(ctx, model, messages, nil, onDelta)
 	return ChatResult{Usage: turn.Usage, Model: turn.Model}, err
 }
 
 // ChatStreamWithTools behaves like ChatStream but offers the given tools to the
 // model and returns the tool calls it requested, if any.
-func (c *Client) ChatStreamWithTools(ctx context.Context, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
-	return c.streamTurn(ctx, messages, tools, onDelta)
+func (c *Client) ChatStreamWithTools(ctx context.Context, model string, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
+	return c.streamTurn(ctx, model, messages, tools, onDelta)
 }
 
 // streamTurn runs one streaming pass, streams text through onDelta and collects
 // optional tool calls (whose arguments arrive across several chunks).
-func (c *Client) streamTurn(ctx context.Context, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
+func (c *Client) streamTurn(ctx context.Context, model string, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
 	var result TurnResult
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || cfg.APIVersion == "" {
@@ -231,7 +234,7 @@ func (c *Client) streamTurn(ctx context.Context, messages []Message, tools []Too
 	url := chatCompletionsURL(cfg.Endpoint, cfg.ChatDeployment, cfg.APIVersion)
 
 	reqBody := chatRequest{
-		Model:         chatModelField(cfg),
+		Model:         chatModelField(cfg, model),
 		Messages:      messages,
 		Temperature:   cfg.Temperature,
 		Stream:        true,
@@ -352,7 +355,7 @@ func (c *Client) VerifyChat(ctx context.Context) error {
 	url := chatCompletionsURL(cfg.Endpoint, cfg.ChatDeployment, cfg.APIVersion)
 
 	body, err := json.Marshal(chatRequest{
-		Model:     chatModelField(cfg),
+		Model:     chatModelField(cfg, ""),
 		Messages:  []Message{{Role: "user", Content: "ping"}},
 		Stream:    false,
 		MaxTokens: 16,

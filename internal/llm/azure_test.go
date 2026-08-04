@@ -62,15 +62,18 @@ func TestEmbeddingsURL(t *testing.T) {
 // leaves the field empty (router decides).
 func TestChatModelField(t *testing.T) {
 	v1 := config.Config{Endpoint: "https://x.services.ai.azure.com/openai/v1", ChatDeployment: "model-router"}
-	if got := chatModelField(v1); got != "model-router" {
+	if got := chatModelField(v1, ""); got != "model-router" {
 		t.Errorf("v1 without a pinned model: got %q, want model-router", got)
 	}
 	v1.ChatModel = "gpt-4o"
-	if got := chatModelField(v1); got != "gpt-4o" {
+	if got := chatModelField(v1, ""); got != "gpt-4o" {
 		t.Errorf("v1 with a pinned model: got %q, want gpt-4o", got)
 	}
+	if got := chatModelField(v1, "o3"); got != "o3" {
+		t.Errorf("the per-chat model must win: got %q, want o3", got)
+	}
 	classic := config.Config{Endpoint: "https://x.openai.azure.com", ChatDeployment: "model-router"}
-	if got := chatModelField(classic); got != "" {
+	if got := chatModelField(classic, ""); got != "" {
 		t.Errorf("classic without a pinned model: got %q, want empty", got)
 	}
 }

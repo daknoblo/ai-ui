@@ -117,6 +117,7 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		pd.Documents = docs
 		pd.Title = s.chatTitle(current.Title)
 		pd.ChatID = current.ID
+		pd.CurrentModel = current.Model
 	}
 	return pd, nil
 }
@@ -137,7 +138,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
 		slog.Warn("clean up empty chats", "err", err)
 	}
-	id, err := s.store.CreateChat(ctx, untitled)
+	id, err := s.store.CreateChat(ctx, untitled, s.cfg.Get().ChatModel)
 	if err != nil {
 		s.httpError(w, err)
 		return
@@ -177,7 +178,7 @@ func (s *Server) handleCreateChat(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
 		slog.Warn("clean up empty chats", "err", err)
 	}
-	id, err := s.store.CreateChat(ctx, untitled)
+	id, err := s.store.CreateChat(ctx, untitled, s.cfg.Get().ChatModel)
 	if err != nil {
 		s.httpError(w, err)
 		return
@@ -223,18 +224,66 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 			models[i].Model = s.t("stats.auto_router")
 		}
 	}
+	docs, err := s.store.CountDocuments(ctx)
+	if err != nil {
+		s.httpError(w, err)
+		return
+	}
+	diskBytes := s.store.DiskUsage()
 	data := struct {
-		Title   string
-		Summary storage.UsageSummary
-		Days    []storage.UsageDay
-		Models  []storage.UsageModel
+		Title     string
+		Summary   storage.UsageSummary
+		Days      []storage.UsageDay
+		Models    []storage.UsageModel
+		Chart     []chartBar
+		DiskHuman string
+		DocCount  int64
 	}{
-		Title:   s.t("stats.title"),
-		Summary: summary,
-		Days:    days,
-		Models:  models,
+		Title:     s.t("stats.title"),
+		Summary:   summary,
+		Days:      days,
+		Models:    models,
+		Chart:     buildChart(days, 14),
+		DiskHuman: humanBytes(diskBytes),
+		DocCount:  int64(docs),
 	}
 	s.render(w, "stats", data)
+}
+
+// chartBar is one column of the usage chart.
+type chartBar struct {
+	Label   string
+	Tokens  int64
+	Percent int
+}
+
+// buildChart turns the most recent days into chronologically ordered bars whose
+// height is relative to the busiest day.
+func buildChart(days []storage.UsageDay, limit int) []chartBar {
+	if len(days) > limit {
+		days = days[:limit]
+	}
+	var max int64
+	for _, d := range days {
+		if d.TotalTokens > max {
+			max = d.TotalTokens
+		}
+	}
+	bars := make([]chartBar, 0, len(days))
+	// UsageByDay returns the newest first; the chart reads left to right.
+	for i := len(days) - 1; i >= 0; i-- {
+		d := days[i]
+		percent := 0
+		if max > 0 {
+			percent = int(d.TotalTokens * 100 / max)
+		}
+		label := d.Day
+		if len(label) == 10 { // YYYY-MM-DD -> DD.MM.
+			label = label[8:10] + "." + label[5:7] + "."
+		}
+		bars = append(bars, chartBar{Label: label, Tokens: d.TotalTokens, Percent: percent})
+	}
+	return bars
 }
 
 // handleSend stores the user message and returns the streaming shell.
@@ -245,7 +294,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	idParam := chi.URLParam(r, "id")
 	var chatID int64
 	if idParam == "new" {
-		newID, err := s.store.CreateChat(ctx, untitled)
+		newID, err := s.store.CreateChat(ctx, untitled, s.cfg.Get().ChatModel)
 		if err != nil {
 			s.httpError(w, err)
 			return
@@ -366,6 +415,12 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	forceWeb := r.URL.Query().Get("web") == "1" && s.search.Enabled()
 	autoWeb := cfg.SearchAuto && s.search.Enabled() && !forceWeb
 
+	// The chat keeps its own model choice; an empty value lets the router decide.
+	model := ""
+	if chat, err := s.store.GetChat(ctx, id); err == nil {
+		model = chat.Model
+	}
+
 	messages := s.buildLLMMessages(ctx, id, cfg, history, query, forceWeb)
 
 	var acc strings.Builder
@@ -379,14 +434,14 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		streamErr error
 	)
 	if autoWeb {
-		result, streamErr = s.streamWithSearch(ctx, sse, messages, onDelta)
+		result, streamErr = s.streamWithSearch(ctx, sse, model, messages, onDelta)
 		// Fall back without tools if the router does not support tool calling.
 		if streamErr != nil && acc.Len() == 0 {
 			slog.Warn("tool-calling failed, falling back without tools", "err", streamErr)
-			result, streamErr = s.llm.ChatStream(ctx, messages, onDelta)
+			result, streamErr = s.llm.ChatStream(ctx, model, messages, onDelta)
 		}
 	} else {
-		result, streamErr = s.llm.ChatStream(ctx, messages, onDelta)
+		result, streamErr = s.llm.ChatStream(ctx, model, messages, onDelta)
 	}
 
 	if streamErr != nil {
@@ -460,7 +515,7 @@ func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID 
 	}
 
 	var sb strings.Builder
-	if _, err := s.llm.ChatStream(ctx, titleMessages, func(delta string) error {
+	if _, err := s.llm.ChatStream(ctx, "", titleMessages, func(delta string) error {
 		sb.WriteString(delta)
 		return nil
 	}); err != nil {
@@ -590,12 +645,12 @@ func (s *Server) webSearchTool() llm.Tool {
 // streamWithSearch runs the tool loop: the model may call the web_search tool
 // itself, results are fed back until a final answer (without a tool call) is
 // streamed.
-func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, messages []llm.Message, onDelta func(string) error) (llm.ChatResult, error) {
+func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, model string, messages []llm.Message, onDelta func(string) error) (llm.ChatResult, error) {
 	tools := []llm.Tool{s.webSearchTool()}
 	var final llm.ChatResult
 
 	for range maxToolIterations {
-		turn, err := s.llm.ChatStreamWithTools(ctx, messages, tools, onDelta)
+		turn, err := s.llm.ChatStreamWithTools(ctx, model, messages, tools, onDelta)
 		if err != nil {
 			return final, err
 		}
@@ -630,7 +685,7 @@ func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, messages 
 	}
 
 	// Iteration limit reached: force a last answer without tools.
-	turn, err := s.llm.ChatStream(ctx, messages, onDelta)
+	turn, err := s.llm.ChatStream(ctx, model, messages, onDelta)
 	if err != nil {
 		return final, err
 	}
@@ -802,7 +857,6 @@ func (s *Server) statusData() statusBadge {
 		DiskBytes:  s.store.DiskUsage(),
 		DocCount:   docs,
 		Metrics:    m,
-		HasUsage:   m.TotalTokens > 0,
 	}
 	b.DiskHuman = humanBytes(b.DiskBytes)
 	switch {
@@ -841,22 +895,30 @@ type statusBadge struct {
 	DiskHuman  string
 	DocCount   int
 	Metrics    llm.MetricsSnapshot
-	HasUsage   bool
 	Label      string
 	Level      string // ok | warn | err
 }
 
 // handleSetModel applies the model selection from the header menu. The choice
-// is global and therefore survives switching between chats.
+// belongs to the chat and is also kept as the default for new chats.
 func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.httpError(w, err)
+		return
+	}
+	chatID, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
 		return
 	}
 	model := strings.TrimSpace(r.FormValue("model"))
 	if err := s.cfg.SetChatModel(model); err != nil {
 		slog.Warn("model selection rejected", "model", model, "err", err)
 		http.Error(w, s.t("error.invalid_model"), http.StatusBadRequest)
+		return
+	}
+	if err := s.store.UpdateChatModel(r.Context(), chatID, model); err != nil {
+		s.httpError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

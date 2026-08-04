@@ -36,7 +36,27 @@
 				<div class="stat-value">{{thousands .Summary.ChatRequests}}</div>
 				<div class="stat-label">{{t "stats.chat_requests"}}</div>
 			</div>
+			<div class="stat-card">
+				<div class="stat-value">{{.DiskHuman}}</div>
+				<div class="stat-label">{{t "stats.storage"}}</div>
+			</div>
+			<div class="stat-card">
+				<div class="stat-value">{{thousands .DocCount}}</div>
+				<div class="stat-label">{{t "stats.documents"}}</div>
+			</div>
 		</div>
+
+		{{if .Chart}}
+		<h2>{{t "stats.chart"}}</h2>
+		<div class="chart">
+			{{range .Chart}}
+			<div class="chart-col" title="{{.Label}} {{thousands .Tokens}}">
+				<div class="chart-bar" style="height:{{.Percent}}%"></div>
+				<span class="chart-label">{{.Label}}</span>
+			</div>
+			{{end}}
+		</div>
+		{{end}}
 
 		<h2>{{t "stats.history"}}</h2>
 		{{if .Days}}

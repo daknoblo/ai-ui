@@ -3,7 +3,7 @@
 	<div class="chat-header">
 		<h1 id="chat-title">{{if .CurrentChat}}{{chatTitle .CurrentChat.Title}}{{else}}{{t "chat.default_title"}}{{end}}</h1>
 		{{if .Models}}
-		<form class="model-picker" hx-post="/model" hx-trigger="change" hx-swap="none">
+		<form class="model-picker" hx-post="/chat/{{.ChatID}}/model" hx-trigger="change" hx-swap="none">
 			<label class="model-label" for="model-select">{{t "chat.model_label"}}</label>
 			<select id="model-select" name="model">
 				<option value="" {{if eq .CurrentModel ""}}selected{{end}}>{{t "chat.model_auto"}}</option>
@@ -35,10 +35,22 @@
 		<div id="upload-status" class="upload-status" hidden></div>
 		{{template "doclist" .}}
 
-		{{if .ImageEnabled}}
-		<div class="image-bar" id="image-bar" hidden>
-			<span class="image-bar-title">🖼 {{t "chat.image_mode"}}</span>
-			<form class="image-params" hx-post="/image/params" hx-trigger="change" hx-swap="none">
+		{{if or .ImageEnabled .SearchEnabled}}
+		<div class="composer-tools">
+			{{if .ImageEnabled}}
+			<div class="mode-switch" id="mode-switch" role="group" aria-label="{{t "chat.mode_label"}}">
+				<button type="button" class="mode-opt" data-mode="chat" onclick="setMode('chat')">💬 {{t "chat.mode_chat"}}</button>
+				<button type="button" class="mode-opt" data-mode="image" onclick="setMode('image')">🖼 {{t "chat.mode_image"}}</button>
+			</div>
+			{{end}}
+			{{if .SearchEnabled}}
+			<label class="tool-opt" id="web-option" title="{{t "chat.web_toggle_title"}}">
+				<input type="checkbox" id="web-check" onchange="setWeb(this.checked)">
+				<span>🌐 {{t "chat.web_option"}}</span>
+			</label>
+			{{end}}
+			{{if .ImageEnabled}}
+			<form class="image-params" id="image-params" hx-post="/image/params" hx-trigger="change" hx-swap="none" hidden>
 				<label>{{t "config.image_size"}}
 					<select name="image_size">
 						{{range $.ImageSizes}}<option value="{{.}}" {{if eq . $.ImageSize}}selected{{end}}>{{.}}</option>{{end}}
@@ -55,6 +67,7 @@
 					</select>
 				</label>
 			</form>
+			{{end}}
 		</div>
 		{{end}}
 
@@ -65,17 +78,11 @@
 					data-chat-id="{{.ChatID}}"
 					onchange="handleAttach(this)">
 			</label>
-			<button type="button" class="composer-btn web-toggle" id="web-toggle"
-				aria-pressed="false" title="{{t "chat.web_toggle_title"}}"
-				onclick="toggleWeb(this)" {{if not .SearchEnabled}}hidden{{end}}>🌐</button>
-			<button type="button" class="composer-btn image-toggle" id="image-toggle"
-				aria-pressed="false" title="{{t "chat.image_toggle_title"}}"
-				onclick="toggleImage(this)" {{if not .ImageEnabled}}hidden{{end}}>🖼</button>
 			<form id="chat-form" class="composer-form"
 				hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
 				hx-target="#messages"
 				hx-swap="beforeend"
-				hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';syncWebToggle();syncImageToggle();}">
+				hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';applyComposerState();}">
 				<input type="hidden" name="web" id="web-flag" value="0">
 				<input type="hidden" name="mode" id="mode-flag" value="chat">
 				<textarea name="message" rows="1" placeholder="{{t "chat.input_placeholder"}}"

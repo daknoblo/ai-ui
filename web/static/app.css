@@ -169,29 +169,20 @@ html, body {
 	border-radius: 6px;
 }
 .stats-link:hover { color: var(--text); background: var(--bg-elev); }
-.storage-line {
+/* One line with storage, documents and tokens; links to the statistics page. */
+.usage-row {
 	display: flex;
 	align-items: center;
-	justify-content: center;
-	gap: 5px;
+	justify-content: space-between;
+	gap: 6px;
 	font-size: 11px;
 	color: var(--text-dim);
-	margin-top: 4px;
+	text-decoration: none;
+	padding: 4px 6px;
+	border-radius: 6px;
 }
-.storage-icon { flex: 0 0 auto; opacity: .8; }
-.storage-docs { opacity: .8; }
-.usage-line {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 5px;
-	font-size: 11px;
-	color: var(--text-dim);
-	margin-top: 3px;
-	cursor: default;
-}
-.usage-icon { flex: 0 0 auto; opacity: .8; }
-.usage-last { opacity: .8; }
+.usage-row:hover { color: var(--text); background: var(--bg-elev); }
+.usage-cell { white-space: nowrap; }
 .msg-usage:empty { display: none; }
 .msg-usage {
 	font-size: 11px;
@@ -364,37 +355,51 @@ html, body {
 	border-color: var(--accent);
 	color: var(--accent);
 }
-.image-toggle.active {
-	background: var(--accent);
-	border-color: var(--accent);
-	color: #fff;
+/* Tool row above the input: mode switch, web search option, image parameters. */
+.composer-tools {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 16px;
+	margin-bottom: 8px;
 }
-/* Image mode has to be unmistakable: accent frame plus a parameter bar. */
+.mode-switch {
+	display: inline-flex;
+	padding: 2px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--bg-elev);
+}
+.mode-opt {
+	border: none;
+	background: none;
+	color: var(--text-dim);
+	font: inherit;
+	font-size: 12px;
+	padding: 5px 12px;
+	border-radius: 999px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+.mode-opt.active { background: var(--accent); color: #fff; font-weight: 600; }
+.tool-opt {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+.tool-opt input { accent-color: var(--accent); margin: 0; }
+.tool-opt[hidden] { display: none; }
+/* Image mode has to be unmistakable: accent frame plus the parameter row. */
 .composer.image-mode textarea {
 	border-color: var(--accent);
 	box-shadow: 0 0 0 2px rgba(16,163,127,.35);
 }
-.image-bar {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 8px 14px;
-	margin-bottom: 8px;
-	padding: 8px 12px;
-	border: 1px solid var(--accent);
-	border-radius: 12px;
-	background: rgba(16,163,127,.10);
-}
-/* The class sets display, so the hidden attribute needs to win explicitly. */
-.image-bar[hidden] { display: none; }
-.image-bar-title {
-	font-size: 12px;
-	font-weight: 600;
-	letter-spacing: .03em;
-	text-transform: uppercase;
-	color: var(--accent);
-}
 .image-params { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+/* The class sets display, so the hidden attribute needs to win explicitly. */
+.image-params[hidden] { display: none; }
 .image-params label {
 	display: flex;
 	align-items: center;
@@ -668,6 +673,40 @@ html, body {
 .stat-label { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
 .stat-sub { font-size: 11px; opacity: .8; }
 .stats-page h2 { font-size: 16px; margin: 26px 0 10px; }
+/* Bar chart of the daily token usage; the bar height comes from the handler. */
+.chart {
+	display: flex;
+	align-items: flex-end;
+	gap: 6px;
+	height: 160px;
+	padding: 10px 12px 0;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+}
+.chart-col {
+	flex: 1 1 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end;
+	align-items: center;
+	height: 100%;
+	min-width: 0;
+}
+.chart-bar {
+	width: 100%;
+	min-height: 2px;
+	background: var(--accent);
+	border-radius: 4px 4px 0 0;
+	opacity: .85;
+}
+.chart-col:hover .chart-bar { opacity: 1; }
+.chart-label {
+	font-size: 10px;
+	color: var(--text-dim);
+	margin-top: 6px;
+	white-space: nowrap;
+}
 .stats-table {
 	width: 100%;
 	border-collapse: collapse;

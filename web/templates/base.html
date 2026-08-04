@@ -37,65 +37,54 @@
 		document.body.addEventListener('htmx:sseMessage', scrollMessages);
 		window.addEventListener('load', scrollMessages);
 
-		// Web search toggle: the state is kept per browser (localStorage) so it
-		// survives switching chats. The value is submitted as the form field
-		// "web" when a message is sent.
+		// Composer state: web search and chat/image mode are kept per browser
+		// (localStorage) so they survive switching chats. Both are submitted as
+		// hidden form fields ("web" and "mode") when a message is sent.
 		function webEnabled() {
 			return localStorage.getItem('ai-ui-web') === '1';
 		}
-		function applyWebState(btn) {
-			if (!btn) return;
-			var on = webEnabled();
-			btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-			btn.classList.toggle('active', on);
-			var flag = document.getElementById('web-flag');
-			if (flag) flag.value = on ? '1' : '0';
-		}
-		function toggleWeb(btn) {
-			localStorage.setItem('ai-ui-web', webEnabled() ? '0' : '1');
-			applyWebState(btn);
-		}
-		// Restore the hidden flag value after the form was reset on submit.
-		function syncWebToggle() {
-			applyWebState(document.getElementById('web-toggle'));
-		}
-		function initWebToggle() {
-			applyWebState(document.getElementById('web-toggle'));
-		}
-		window.addEventListener('load', initWebToggle);
-		document.body.addEventListener('htmx:afterSwap', initWebToggle);
-
-		// Image mode toggle: switches the request from a chat answer to a
-		// generated image. The state is kept per browser as well and submitted
-		// as the form field "mode".
 		function imageEnabled() {
 			return localStorage.getItem('ai-ui-image') === '1';
 		}
-		function applyImageState(btn) {
-			if (!btn) return;
-			var on = imageEnabled();
-			btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-			btn.classList.toggle('active', on);
-			var flag = document.getElementById('mode-flag');
-			if (flag) flag.value = on ? 'image' : 'chat';
+		function setWeb(on) {
+			localStorage.setItem('ai-ui-web', on ? '1' : '0');
+			applyComposerState();
+		}
+		function setMode(mode) {
+			localStorage.setItem('ai-ui-image', mode === 'image' ? '1' : '0');
+			applyComposerState();
+		}
+		function applyComposerState() {
+			var image = imageEnabled();
+			var web = webEnabled() && !image;
+
+			document.querySelectorAll('.mode-opt').forEach(function (btn) {
+				var on = (btn.dataset.mode === 'image') === image;
+				btn.classList.toggle('active', on);
+				btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+			});
+
+			var webCheck = document.getElementById('web-check');
+			if (webCheck) webCheck.checked = web;
+			var webOption = document.getElementById('web-option');
+			if (webOption) webOption.hidden = image;
+			var params = document.getElementById('image-params');
+			if (params) params.hidden = !image;
+
+			var webFlag = document.getElementById('web-flag');
+			if (webFlag) webFlag.value = web ? '1' : '0';
+			var modeFlag = document.getElementById('mode-flag');
+			if (modeFlag) modeFlag.value = image ? 'image' : 'chat';
+
 			var box = document.querySelector('.composer');
-			if (box) box.classList.toggle('image-mode', on);
-			var bar = document.getElementById('image-bar');
-			if (bar) bar.hidden = !on;
+			if (box) box.classList.toggle('image-mode', image);
 			var ta = document.querySelector('#chat-form textarea');
 			if (ta && ta.dataset.placeholderImage) {
-				ta.placeholder = on ? ta.dataset.placeholderImage : ta.dataset.placeholderChat;
+				ta.placeholder = image ? ta.dataset.placeholderImage : ta.dataset.placeholderChat;
 			}
 		}
-		function toggleImage(btn) {
-			localStorage.setItem('ai-ui-image', imageEnabled() ? '0' : '1');
-			applyImageState(btn);
-		}
-		function syncImageToggle() {
-			applyImageState(document.getElementById('image-toggle'));
-		}
-		window.addEventListener('load', syncImageToggle);
-		document.body.addEventListener('htmx:afterSwap', syncImageToggle);
+		window.addEventListener('load', applyComposerState);
+		document.body.addEventListener('htmx:afterSwap', applyComposerState);
 	</script>
 </body>
 </html>

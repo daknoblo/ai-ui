@@ -9,17 +9,16 @@
 	{{template "chatnav" .}}
 
 	<div class="sidebar-bottom">
-		<button class="btn btn-config"
-			hx-get="/config"
-			hx-target="#modal-root"
-			hx-swap="innerHTML">⚙ {{t "nav.settings"}}</button>
-		<a href="/stats" class="stats-link">📊 {{t "nav.stats"}}</a>
 		<div id="conn-status"
 			hx-get="/status"
 			hx-trigger="load, every 30s"
 			hx-swap="innerHTML">
 			{{template "status-badge" .StatusBadge}}
 		</div>
+		<button class="btn btn-config"
+			hx-get="/config"
+			hx-target="#modal-root"
+			hx-swap="innerHTML">⚙ {{t "nav.settings"}}</button>
 	</div>
 </aside>
 <div id="modal-root"></div>
@@ -69,17 +68,12 @@
 {{end}}
 
 {{define "status-badge"}}
+<a href="/stats" class="usage-row" title="{{t "nav.stats_hint"}}&#10;{{t "usage.tooltip_head"}}&#10;{{t "usage.tooltip_chat" (thousands .Metrics.ChatTotalTokens) (thousands .Metrics.ChatPromptTokens) (thousands .Metrics.ChatComplTokens) (thousands .Metrics.ChatRequests)}}&#10;{{t "usage.tooltip_embed" (thousands .Metrics.EmbedTokens) (thousands .Metrics.EmbedRequests)}}{{if .Metrics.ImageRequests}}&#10;{{t "usage.tooltip_image" (thousands .Metrics.ImageTokens) (thousands .Metrics.ImageRequests)}}{{end}}">
+	<span class="usage-cell">💾 {{.DiskHuman}}</span>
+	<span class="usage-cell">📄 {{.DocCount}}</span>
+	<span class="usage-cell">🪙 {{thousands .Metrics.TotalTokens}}</span>
+</a>
 <div class="status {{.Level}}" title="{{if .Uploads}}{{t "uploads.allowed_hint"}}{{else}}{{t "uploads.blocked_hint"}}{{end}}">
 	<span class="status-dot"></span>{{.Label}}
 </div>
-<div class="storage-line" title="{{t "storage.title"}}">
-	<span class="storage-icon">💾</span>{{.DiskHuman}}
-	<span class="storage-docs">· {{.DocCount}} {{if eq .DocCount 1}}{{t "doc.count_one"}}{{else}}{{t "doc.count_many"}}{{end}}</span>
-</div>
-{{if .HasUsage}}
-<div class="usage-line" title="{{t "usage.tooltip_head"}}&#10;{{t "usage.tooltip_chat" (thousands .Metrics.ChatTotalTokens) (thousands .Metrics.ChatPromptTokens) (thousands .Metrics.ChatComplTokens) (thousands .Metrics.ChatRequests)}}&#10;{{t "usage.tooltip_embed" (thousands .Metrics.EmbedTokens) (thousands .Metrics.EmbedRequests)}}&#10;{{if .Metrics.ImageRequests}}{{t "usage.tooltip_image" (thousands .Metrics.ImageTokens) (thousands .Metrics.ImageRequests)}}&#10;{{end}}{{t "usage.tooltip_last" (thousands .Metrics.LastTotalTokens) (thousands .Metrics.LastPromptTokens) (thousands .Metrics.LastComplTokens)}}">
-	<span class="usage-icon">🪙</span>{{thousands .Metrics.TotalTokens}} {{t "usage.tokens"}}
-	{{if gt .Metrics.LastTotalTokens 0}}<span class="usage-last">· {{t "usage.last" (thousands .Metrics.LastTotalTokens)}}</span>{{end}}
-</div>
-{{end}}
 {{end}}

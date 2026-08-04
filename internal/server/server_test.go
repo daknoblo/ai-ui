@@ -47,7 +47,7 @@ func TestRoutesRenderInEveryLanguage(t *testing.T) {
 		t.Run(opt.Code, func(t *testing.T) {
 			srv, handler := newTestServer(t, opt.Code)
 
-			chatID, err := srv.store.CreateChat(t.Context(), untitled)
+			chatID, err := srv.store.CreateChat(t.Context(), untitled, "")
 			if err != nil {
 				t.Fatalf("create chat: %v", err)
 			}

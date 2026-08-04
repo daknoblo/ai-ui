@@ -1,88 +1,10 @@
 package llm
 
 import (
-	"context"
-	"net/http"
-	"net/http/httptest"
-	"path/filepath"
-	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/daknoblo/ai-ui/internal/config"
 )
-
-// TestIsChatModelName verifies that non-chat models (embeddings, image, audio)
-// are reliably filtered out of the picker.
-func TestIsChatModelName(t *testing.T) {
-	chat := []string{"gpt-4o", "gpt-4o-mini", "o3", "o4-mini", "gpt-4.1"}
-	for _, name := range chat {
-		if !isChatModelName(name) {
-			t.Errorf("expected a chat model but it was filtered out: %s", name)
-		}
-	}
-
-	nonChat := []string{
-		"text-embedding-3-large", "text-embedding-ada-002",
-		"dall-e-3", "whisper", "tts-1", "gpt-4o-transcribe",
-		"text-moderation-latest", "sora",
-	}
-	for _, name := range nonChat {
-		if isChatModelName(name) {
-			t.Errorf("expected filtering but it was accepted as a chat model: %s", name)
-		}
-	}
-}
-
-// TestListModelsUsesDeployments makes sure ListModels queries the deployments
-// endpoint and returns only unique, sorted chat model names of successfully
-// provisioned deployments.
-func TestListModelsUsesDeployments(t *testing.T) {
-	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		if r.Header.Get("api-key") != "test-key" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"data": [
-				{"id": "chat-prod", "model": "gpt-4o", "status": "succeeded"},
-				{"id": "chat-mini", "model": "gpt-4o-mini", "status": "succeeded"},
-				{"id": "second-gpt4o", "model": "gpt-4o", "status": "succeeded"},
-				{"id": "emb", "model": "text-embedding-3-large", "status": "succeeded"},
-				{"id": "half-baked", "model": "o3", "status": "creating"}
-			],
-			"object": "list"
-		}`))
-	}))
-	defer srv.Close()
-
-	store := config.NewStore(filepath.Join(t.TempDir(), "config.json"), "test-key", "", "", config.Overrides{})
-	cfg := config.Defaults()
-	cfg.Endpoint = srv.URL
-	cfg.APIVersion = "2024-08-01-preview"
-	if err := store.Save(cfg); err != nil {
-		t.Fatalf("save configuration: %v", err)
-	}
-
-	models, err := New(store).ListModels(context.Background())
-	if err != nil {
-		t.Fatalf("ListModels: %v", err)
-	}
-
-	if !strings.HasSuffix(gotPath, "/openai/deployments") {
-		t.Errorf("expected a request to /openai/deployments, got %q", gotPath)
-	}
-
-	// Expected: embeddings filtered out, the not-yet-provisioned "o3"
-	// (creating) ignored, the duplicate gpt-4o deduplicated, result sorted.
-	want := []string{"gpt-4o", "gpt-4o-mini"}
-	if !reflect.DeepEqual(models, want) {
-		t.Errorf("unexpected models: got %v, want %v", models, want)
-	}
-}
 
 // TestChatCompletionsURL checks the schema detection (classic vs. v1) for the
 // chat completions URL.
@@ -125,19 +47,13 @@ func TestChatCompletionsURL(t *testing.T) {
 	}
 }
 
-// TestEmbeddingsAndModelsURL checks the embeddings and models URLs per schema.
-func TestEmbeddingsAndModelsURL(t *testing.T) {
+// TestEmbeddingsURL checks the embeddings URL per schema.
+func TestEmbeddingsURL(t *testing.T) {
 	if got := embeddingsURL("https://x.services.ai.azure.com/openai/v1", "text-embedding-3-large", "v"); got != "https://x.services.ai.azure.com/openai/v1/embeddings" {
 		t.Errorf("embeddingsURL v1 is wrong: %q", got)
 	}
 	if got := embeddingsURL("https://x.cognitiveservices.azure.com", "text-embedding-3-large", "2024-02-01"); got != "https://x.cognitiveservices.azure.com/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-02-01" {
 		t.Errorf("embeddingsURL classic is wrong: %q", got)
-	}
-	if got := modelsURL("https://x.services.ai.azure.com/openai/v1", "v"); got != "https://x.services.ai.azure.com/openai/v1/models" {
-		t.Errorf("modelsURL v1 is wrong: %q", got)
-	}
-	if got := modelsURL("https://x.openai.azure.com", "2024-08-01-preview"); got != "https://x.openai.azure.com/openai/deployments?api-version=2024-08-01-preview" {
-		t.Errorf("modelsURL classic is wrong: %q", got)
 	}
 }
 

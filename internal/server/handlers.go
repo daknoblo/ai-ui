@@ -832,42 +832,6 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// refreshModels queries the models available at the endpoint and stores them in
-// the configuration. It returns the number of models found.
-func (s *Server) refreshModels(ctx context.Context) (int, error) {
-	models, err := s.llm.ListModels(ctx)
-	if err != nil {
-		return 0, err
-	}
-	cfg := s.cfg.Get()
-	cfg.ChatModels = models
-	// Drop the pinned model if it is no longer offered.
-	if cfg.ChatModel != "" && !slices.Contains(models, cfg.ChatModel) {
-		cfg.ChatModel = ""
-	}
-	if err := s.cfg.Save(cfg); err != nil {
-		return 0, err
-	}
-	return len(models), nil
-}
-
-// handleRefreshModels queries the models from the endpoint (button in the
-// settings dialog) and re-renders the dialog with the result.
-func (s *Server) handleRefreshModels(w http.ResponseWriter, r *http.Request) {
-	// If the model list is pinned via an environment variable it is read-only.
-	if s.cfg.Locks().ChatModels {
-		s.renderConfigNotice(w, s.t("models.locked"), true)
-		return
-	}
-	n, err := s.refreshModels(r.Context())
-	if err != nil {
-		slog.Warn("fetch models", "err", err)
-		s.renderConfigNotice(w, s.t("models.fetch_failed", err.Error()), true)
-		return
-	}
-	s.renderConfigNotice(w, s.t("models.fetched", n), false)
-}
-
 // parseModels splits a newline or comma separated list into trimmed, unique
 // model names.
 func parseModels(raw string) []string {

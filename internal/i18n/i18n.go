@@ -179,8 +179,6 @@ var catalog = map[string]map[string]string{
 		"config.chat_deployment":       "Deployment name (chat model)",
 		"config.models":                "Available models",
 		"config.models_hint":           "(one per line or comma separated; selectable in the chat header)",
-		"config.fetch_models":          "⟳ Fetch deployed models",
-		"config.fetch_models_title":    "Imports the deployments provisioned in the resource (chat models only) instead of the full model catalog. Endpoint and API version must be saved first.",
 		"config.section_embeddings":    "Embeddings (document context)",
 		"config.embedding_endpoint":    "Embedding endpoint URL",
 		"config.optional_same_as_chat": "(optional, defaults to chat)",
@@ -239,9 +237,6 @@ var catalog = map[string]map[string]string{
 		"upload.added_many":        "%d documents added.",
 		"upload.partial":           "%d added. Failed: %s",
 		"upload.failed":            "Processing failed: %s",
-		"models.locked":            "Models are pinned via the AZURE_MODELS environment variable and cannot be fetched here.",
-		"models.fetch_failed":      "Could not fetch models: %s",
-		"models.fetched":           "Imported %d deployed models.",
 
 		// ---- statistics page ----
 		"stats.title":            "Statistics",
@@ -369,8 +364,6 @@ var catalog = map[string]map[string]string{
 		"config.chat_deployment":       "Deployment-Name (Chat-Modell)",
 		"config.models":                "Verfügbare Modelle",
 		"config.models_hint":           "(eines pro Zeile oder per Komma; im Chat-Header wählbar)",
-		"config.fetch_models":          "⟳ Bereitgestellte Modelle abrufen",
-		"config.fetch_models_title":    "Übernimmt die in der Ressource bereitgestellten Deployments (nur Chat-Modelle) statt des kompletten Modellkatalogs. Endpoint und API-Version müssen gespeichert sein.",
 		"config.section_embeddings":    "Embeddings (Dokument-Kontext)",
 		"config.embedding_endpoint":    "Embedding-Endpoint-URL",
 		"config.optional_same_as_chat": "(optional, sonst wie Chat)",
@@ -429,9 +422,6 @@ var catalog = map[string]map[string]string{
 		"upload.added_many":        "%d Dokumente hinzugefügt.",
 		"upload.partial":           "%d hinzugefügt. Fehlgeschlagen: %s",
 		"upload.failed":            "Verarbeitung fehlgeschlagen: %s",
-		"models.locked":            "Modelle sind über die Umgebungsvariable AZURE_MODELS festgelegt und können hier nicht abgerufen werden.",
-		"models.fetch_failed":      "Modelle konnten nicht abgerufen werden: %s",
-		"models.fetched":           "%d bereitgestellte Modelle übernommen.",
 
 		// ---- statistics page ----
 		"stats.title":            "Statistik",

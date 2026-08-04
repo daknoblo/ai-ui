@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -188,15 +187,6 @@ func embeddingsURL(endpoint, deployment, apiVersion string) string {
 		return base + "/embeddings"
 	}
 	return fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=%s", base, deployment, apiVersion)
-}
-
-// modelsURL builds the URL for querying the available models/deployments.
-func modelsURL(endpoint, apiVersion string) string {
-	base := strings.TrimRight(endpoint, "/")
-	if isV1Endpoint(base) {
-		return base + "/models"
-	}
-	return fmt.Sprintf("%s/openai/deployments?api-version=%s", base, apiVersion)
 }
 
 // chatModelField returns the value for the "model" field of the request body.
@@ -405,104 +395,6 @@ func responseMentionsMaxTokens(resp *http.Response) bool {
 	_, _ = buf.ReadFrom(io.LimitReader(resp.Body, maxErrorBodyBytes))
 	msg := strings.ToLower(buf.String())
 	return strings.Contains(msg, "max_tokens") || strings.Contains(msg, "output limit")
-}
-
-// deploymentsResponse is the response of the deployment list (data plane).
-// It only contains the deployments actually provisioned in the resource, unlike
-// /openai/models which returns the full model catalog of the resource
-// (including everything that is not deployed).
-type deploymentsResponse struct {
-	Data []struct {
-		ID     string `json:"id"`     // name of the deployment
-		Model  string `json:"model"`  // underlying base model
-		Status string `json:"status"` // e.g. "succeeded"
-	} `json:"data"`
-}
-
-// ListModels queries the deployments provisioned in the resource and returns
-// their chat model names. Unlike the full model catalog (/openai/models) this
-// only contains models that are actually available. The names are suitable as
-// values for the model picker in the header (body field "model"), which pins a
-// specific model instead of letting the router choose.
-func (c *Client) ListModels(ctx context.Context) ([]string, error) {
-	cfg := c.store.Get()
-	if cfg.Endpoint == "" || cfg.APIVersion == "" {
-		return nil, fmt.Errorf("endpoint and api version are required")
-	}
-	if !c.store.HasAPIKey() {
-		return nil, fmt.Errorf("no API key set (AZURE_API_KEY)")
-	}
-
-	url := modelsURL(cfg.Endpoint, cfg.APIVersion)
-
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("api-key", c.store.APIKey())
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, readError(resp)
-	}
-
-	var out deploymentsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
-	}
-
-	// Collect the chat-capable model names of successfully provisioned
-	// deployments. Embedding, image and audio deployments do not belong in the
-	// chat picker; base models used more than once are deduplicated.
-	seen := make(map[string]struct{}, len(out.Data))
-	var models []string
-	for _, d := range out.Data {
-		if d.Status != "" && !strings.EqualFold(d.Status, "succeeded") {
-			continue
-		}
-		// Prefer the underlying model; fall back to the deployment name only
-		// when none is reported.
-		name := strings.TrimSpace(d.Model)
-		if name == "" {
-			name = strings.TrimSpace(d.ID)
-		}
-		if name == "" || !isChatModelName(name) {
-			continue
-		}
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		models = append(models, name)
-	}
-	sort.Strings(models)
-	return models, nil
-}
-
-// isChatModelName filters out models that are obviously not chat capable (e.g.
-// embeddings, image generators, audio/transcription models) by name, so the
-// model picker only offers sensible chat models.
-func isChatModelName(name string) bool {
-	lower := strings.ToLower(name)
-	excluded := []string{
-		"embedding", "embed", "dall", "whisper", "tts",
-		"moderation", "sora", "transcribe", "text-similarity",
-	}
-	for _, kw := range excluded {
-		if strings.Contains(lower, kw) {
-			return false
-		}
-	}
-	return true
 }
 
 // VerifyEmbedding performs a minimal request to check that the embedding

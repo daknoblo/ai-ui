@@ -38,15 +38,6 @@
 				{{t "config.models"}} <span class="hint">{{if .Locks.ChatModels}}{{t "config.set_via" "AZURE_MODELS"}}{{else}}{{t "config.models_hint"}}{{end}}</span>
 				<textarea name="chat_models" rows="3" placeholder="gpt-4o&#10;gpt-4o-mini&#10;o3"{{if .Locks.ChatModels}} disabled{{end}}>{{range $i, $m := .Config.ChatModels}}{{if $i}}&#10;{{end}}{{$m}}{{end}}</textarea>
 			</label>
-			<button type="button" class="btn btn-ghost btn-small"
-				hx-post="/models/refresh"
-				hx-target="#modal-root"
-				hx-swap="innerHTML"
-				hx-disabled-elt="this"
-				{{if .Locks.ChatModels}}disabled{{end}}
-				title="{{t "config.fetch_models_title"}}">
-				{{t "config.fetch_models"}}
-			</button>
 			{{if .Notice}}<div class="config-{{if .NoticeErr}}notice-err{{else}}saved{{end}}">{{.Notice}}</div>{{end}}
 
 			<div class="config-section-head">{{t "config.section_embeddings"}}</div>

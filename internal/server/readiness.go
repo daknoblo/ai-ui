@@ -162,16 +162,6 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 				}
 			}
 		}
-
-		// Fetch the models from the endpoint automatically when the chat
-		// endpoint is reachable and no list has been curated yet.
-		if cur.ChatOK && len(s.cfg.Get().ChatModels) == 0 {
-			if n, err := s.refreshModels(ctx); err != nil {
-				slog.Warn("auto-fetch models", "reason", reason, "err", err)
-			} else if n > 0 {
-				slog.Info("models loaded from endpoint", "count", n)
-			}
-		}
 	}
 
 	// Check immediately at start-up.

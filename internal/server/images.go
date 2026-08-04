@@ -194,7 +194,7 @@ func imageParam(value string, allowed []string) string {
 
 // Selectable generation parameters (the first entry is the fallback).
 var (
-	imageSizes     = []string{"1024x1024", "1024x1536", "1536x1024", "auto"}
-	imageQualities = []string{"high", "medium", "low", "auto"}
+	imageSizes     = []string{"auto", "1024x1024", "1024x1536", "1536x1024"}
+	imageQualities = []string{"auto", "high", "medium", "low"}
 	imageFormats   = []string{"png", "jpeg"}
 )

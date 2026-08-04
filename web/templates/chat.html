@@ -73,12 +73,14 @@
 			{{end}}
 		</div>
 
-		<div class="composer" data-has-image="{{if .HasImage}}1{{else}}0{{end}}">
+		<div class="composer" data-has-image="{{if .HasImage}}1{{else}}0{{end}}" data-mode="{{if eq .ChatMode "image"}}image{{else}}chat{{end}}">
 			{{if .ImageEnabled}}
 			<div class="mode-switch" id="mode-switch" role="group" aria-label="{{t "chat.mode_label"}}">
 				<button type="button" class="mode-opt" data-mode="chat" onclick="setMode('chat')"
+					hx-post="/chat/{{.ChatID}}/mode" hx-vals='{"mode":"chat"}' hx-swap="none"
 					title="{{t "chat.mode_chat"}}" aria-label="{{t "chat.mode_chat"}}">💬</button>
 				<button type="button" class="mode-opt" data-mode="image" onclick="setMode('image')"
+					hx-post="/chat/{{.ChatID}}/mode" hx-vals='{"mode":"image"}' hx-swap="none"
 					title="{{t "chat.mode_image"}}" aria-label="{{t "chat.mode_image"}}">🖼</button>
 			</div>
 			{{end}}

@@ -37,14 +37,11 @@
 		document.body.addEventListener('htmx:sseMessage', scrollMessages);
 		window.addEventListener('load', scrollMessages);
 
-		// Composer state: web search and chat/image mode are kept per browser
-		// (localStorage) so they survive switching chats. Both are submitted as
-		// hidden form fields ("web" and "mode") when a message is sent.
+		// Composer state: the answer mode belongs to the chat (the buttons post it
+		// as well), while web search and image editing are kept per browser. All
+		// three travel with the message as hidden form fields.
 		function webEnabled() {
 			return localStorage.getItem('ai-ui-web') === '1';
-		}
-		function imageEnabled() {
-			return localStorage.getItem('ai-ui-image') === '1';
 		}
 		// Editing the latest image of the chat is the default in image mode.
 		function editEnabled() {
@@ -55,7 +52,8 @@
 			applyComposerState();
 		}
 		function setMode(mode) {
-			localStorage.setItem('ai-ui-image', mode === 'image' ? '1' : '0');
+			var box = document.querySelector('.composer');
+			if (box) box.dataset.mode = mode;
 			applyComposerState();
 		}
 		function setEdit(on) {
@@ -63,9 +61,9 @@
 			applyComposerState();
 		}
 		function applyComposerState() {
-			var image = imageEnabled();
-			var web = webEnabled() && !image;
 			var box = document.querySelector('.composer');
+			var image = !!box && box.dataset.mode === 'image';
+			var web = webEnabled() && !image;
 			var hasImage = box && box.dataset.hasImage === '1';
 			var edit = image && hasImage && editEnabled();
 

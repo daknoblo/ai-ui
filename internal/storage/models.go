@@ -7,9 +7,16 @@ type Chat struct {
 	ID        int64     `json:"id"`
 	Title     string    `json:"title"`
 	Model     string    `json:"model"` // pinned model of this chat (empty = router decides)
+	Mode      string    `json:"mode"`  // ChatModeChat or ChatModeImage
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// Answer modes of a chat.
+const (
+	ChatModeChat  = "chat"
+	ChatModeImage = "image"
+)
 
 // Message is a single message within a chat.
 type Message struct {

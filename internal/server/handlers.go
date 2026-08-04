@@ -67,6 +67,7 @@ type pageData struct {
 	NoticeErr      bool
 	Models         []string
 	CurrentModel   string
+	ChatMode       string
 	UploadsReady   bool
 	SearchEnabled  bool
 	ImageEnabled   bool
@@ -131,6 +132,7 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		pd.Title = s.chatTitle(current.Title)
 		pd.ChatID = current.ID
 		pd.CurrentModel = current.Model
+		pd.ChatMode = current.Mode
 	}
 	return pd, nil
 }
@@ -950,6 +952,29 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.UpdateChatModel(r.Context(), chatID, model); err != nil {
+		s.httpError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSetMode stores the answer mode of a chat so switching chats restores
+// what that conversation was last used for.
+func (s *Server) handleSetMode(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.httpError(w, err)
+		return
+	}
+	chatID, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	mode := storage.ChatModeChat
+	if r.FormValue("mode") == storage.ChatModeImage {
+		mode = storage.ChatModeImage
+	}
+	if err := s.store.UpdateChatMode(r.Context(), chatID, mode); err != nil {
 		s.httpError(w, err)
 		return
 	}

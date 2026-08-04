@@ -149,6 +149,7 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/config", s.handleConfigGet)
 	r.Post("/config", s.handleConfigPost)
 	r.Post("/chat/{id}/model", s.handleSetModel)
+	r.Post("/chat/{id}/mode", s.handleSetMode)
 	r.Post("/image/params", s.handleSetImageParams)
 	r.Post("/verify", s.handleVerify)
 	r.Get("/status", s.handleStatus)

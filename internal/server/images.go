@@ -16,7 +16,6 @@ import (
 var allowedImageMIME = map[string]bool{
 	"image/png":  true,
 	"image/jpeg": true,
-	"image/webp": true,
 }
 
 // handleImage serves a generated image from the database.
@@ -111,5 +110,5 @@ func imageParam(value string, allowed []string) string {
 var (
 	imageSizes     = []string{"1024x1024", "1024x1536", "1536x1024", "auto"}
 	imageQualities = []string{"high", "medium", "low", "auto"}
-	imageFormats   = []string{"png", "jpeg", "webp"}
+	imageFormats   = []string{"png", "jpeg"}
 )

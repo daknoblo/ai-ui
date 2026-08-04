@@ -8,21 +8,41 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+
+	"github.com/daknoblo/ai-ui/internal/config"
 )
 
 // maxImageBodyBytes caps the response of an image request. A base64 encoded
 // image of the supported sizes stays far below this limit.
 const maxImageBodyBytes = 32 << 20
 
-// imagesURL builds the image generation URL for the endpoint schema.
+// previewAPIVersion is the api-version the image models are served under on the
+// v1 surface. Without it the endpoint rejects them with "unknown_model".
+const previewAPIVersion = "preview"
+
+// imagesURL builds the image generation URL for the endpoint schema. Unlike
+// chat completions, the v1 surface requires an api-version here as well.
 func imagesURL(endpoint, deployment, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
 	if isV1Endpoint(base) {
-		return base + "/images/generations"
+		return base + "/images/generations?api-version=" + url.QueryEscape(apiVersion)
 	}
 	return fmt.Sprintf("%s/openai/deployments/%s/images/generations?api-version=%s", base, deployment, apiVersion)
+}
+
+// imageAPIVersion resolves the api-version of an image request. A v1 endpoint
+// defaults to the preview surface instead of inheriting the dated chat version.
+func imageAPIVersion(cfg config.Config) string {
+	if cfg.ImageAPIVersion != "" {
+		return cfg.ImageAPIVersion
+	}
+	if isV1Endpoint(cfg.ImageHost()) {
+		return previewAPIVersion
+	}
+	return cfg.APIVersion
 }
 
 // ImageOptions are the generation parameters offered in the settings dialog.
@@ -30,7 +50,7 @@ func imagesURL(endpoint, deployment, apiVersion string) string {
 type ImageOptions struct {
 	Size    string // e.g. 1024x1024
 	Quality string // low | medium | high
-	Format  string // png | jpeg | webp
+	Format  string // png | jpeg
 }
 
 // ImageResult is a generated image including its token usage.
@@ -98,7 +118,7 @@ func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOpt
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 
-	url := imagesURL(endpoint, cfg.ImageDeployment, cfg.ImageVersion())
+	url := imagesURL(endpoint, cfg.ImageDeployment, imageAPIVersion(cfg))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return ImageResult{}, err
@@ -113,7 +133,9 @@ func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOpt
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return ImageResult{}, readError(resp)
+		// The URL is part of the message: a wrong endpoint or deployment is by
+		// far the most common cause here.
+		return ImageResult{}, fmt.Errorf("%s: %w", url, readError(resp))
 	}
 
 	var out imageResponse
@@ -150,13 +172,12 @@ func optionValue(v string) string {
 	return v
 }
 
-// imageMIME maps the requested output format to a content type.
+// imageMIME maps the requested output format to a content type. WEBP is not
+// supported by the Azure image models.
 func imageMIME(format string) string {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "jpeg", "jpg":
 		return "image/jpeg"
-	case "webp":
-		return "image/webp"
 	default:
 		return "image/png"
 	}

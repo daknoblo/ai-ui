@@ -58,14 +58,6 @@ func (c Config) EmbeddingHost() string {
 	return c.Endpoint
 }
 
-// ImageVersion returns the API version to use for image generation.
-func (c Config) ImageVersion() string {
-	if c.ImageAPIVersion != "" {
-		return c.ImageAPIVersion
-	}
-	return c.APIVersion
-}
-
 // ImageHost returns the endpoint to use for image generation.
 func (c Config) ImageHost() string {
 	if c.ImageEndpoint != "" {

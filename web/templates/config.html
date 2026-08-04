@@ -75,9 +75,9 @@
 					placeholder="gpt-image-2"{{if .Locks.ImageDeployment}} disabled{{end}}>
 			</label>
 			<label>
-				{{t "config.image_api_version"}} <span class="hint">{{if .Locks.ImageAPIVersion}}{{t "config.set_via" "AZURE_IMAGE_API_VERSION"}}{{else}}{{t "config.optional_same_as_chat"}}{{end}}</span>
+				{{t "config.image_api_version"}} <span class="hint">{{if .Locks.ImageAPIVersion}}{{t "config.set_via" "AZURE_IMAGE_API_VERSION"}}{{else}}{{t "config.image_version_hint"}}{{end}}</span>
 				<input type="text" name="image_api_version" value="{{.Config.ImageAPIVersion}}"
-					placeholder="2025-04-01-preview"{{if .Locks.ImageAPIVersion}} disabled{{end}}>
+					placeholder="preview"{{if .Locks.ImageAPIVersion}} disabled{{end}}>
 			</label>
 			<label>
 				{{t "config.image_size"}}

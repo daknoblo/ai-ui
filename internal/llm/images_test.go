@@ -15,11 +15,32 @@ import (
 
 // TestImagesURL checks the schema detection (classic vs. v1) for the image URL.
 func TestImagesURL(t *testing.T) {
-	if got := imagesURL("https://x.services.ai.azure.com/openai/v1", "gpt-image-2", "v"); got != "https://x.services.ai.azure.com/openai/v1/images/generations" {
+	if got := imagesURL("https://x.services.ai.azure.com/openai/v1", "gpt-image-2", "preview"); got != "https://x.services.ai.azure.com/openai/v1/images/generations?api-version=preview" {
 		t.Errorf("imagesURL v1 is wrong: %q", got)
 	}
 	if got := imagesURL("https://x.openai.azure.com", "gpt-image-2", "2025-04-01-preview"); got != "https://x.openai.azure.com/openai/deployments/gpt-image-2/images/generations?api-version=2025-04-01-preview" {
 		t.Errorf("imagesURL classic is wrong: %q", got)
+	}
+}
+
+// TestImageAPIVersion checks that a v1 endpoint defaults to the preview surface
+// instead of inheriting the dated chat version.
+func TestImageAPIVersion(t *testing.T) {
+	v1 := config.Config{
+		Endpoint:      "https://x.openai.azure.com",
+		APIVersion:    "2024-08-01-preview",
+		ImageEndpoint: "https://x.services.ai.azure.com/openai/v1",
+	}
+	if got := imageAPIVersion(v1); got != "preview" {
+		t.Errorf("v1 without its own version: got %q, want preview", got)
+	}
+	v1.ImageAPIVersion = "2025-04-01-preview"
+	if got := imageAPIVersion(v1); got != "2025-04-01-preview" {
+		t.Errorf("an explicit version must win: %q", got)
+	}
+	classic := config.Config{Endpoint: "https://x.openai.azure.com", APIVersion: "2024-08-01-preview"}
+	if got := imageAPIVersion(classic); got != "2024-08-01-preview" {
+		t.Errorf("classic must inherit the chat version: %q", got)
 	}
 }
 
@@ -28,12 +49,14 @@ func TestImagesURL(t *testing.T) {
 func TestGenerateImage(t *testing.T) {
 	want := []byte("fake-image-bytes")
 	var body map[string]any
+	var gotQuery string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("api-key") != "img-key" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		gotQuery = r.URL.RawQuery
 		raw, _ := io.ReadAll(r.Body)
 		if err := json.Unmarshal(raw, &body); err != nil {
 			t.Errorf("request body: %v", err)
@@ -57,11 +80,14 @@ func TestGenerateImage(t *testing.T) {
 	}
 
 	res, err := New(store).GenerateImage(context.Background(), "a cat",
-		ImageOptions{Size: "1024x1024", Quality: "auto", Format: "webp"})
+		ImageOptions{Size: "1024x1024", Quality: "auto", Format: "jpeg"})
 	if err != nil {
 		t.Fatalf("GenerateImage: %v", err)
 	}
 
+	if gotQuery != "api-version=preview" {
+		t.Errorf("the v1 request must carry the preview api-version, got %q", gotQuery)
+	}
 	if body["model"] != "gpt-image-2" {
 		t.Errorf("the v1 schema must send the deployment as model: %v", body["model"])
 	}
@@ -71,14 +97,14 @@ func TestGenerateImage(t *testing.T) {
 	if _, ok := body["quality"]; ok {
 		t.Errorf(`"auto" must be omitted, but quality was sent: %v`, body["quality"])
 	}
-	if body["output_format"] != "webp" {
+	if body["output_format"] != "jpeg" {
 		t.Errorf("output_format was not passed through: %v", body["output_format"])
 	}
 	if string(res.Data) != string(want) {
 		t.Errorf("unexpected image data: %q", res.Data)
 	}
-	if res.MIME != "image/webp" {
-		t.Errorf("MIME = %q, want image/webp", res.MIME)
+	if res.MIME != "image/jpeg" {
+		t.Errorf("MIME = %q, want image/jpeg", res.MIME)
 	}
 	if res.Usage.TotalTokens != 42 || res.Usage.PromptTokens != 12 || res.Usage.CompletionTokens != 30 {
 		t.Errorf("usage was not mapped: %+v", res.Usage)

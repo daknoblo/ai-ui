@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 
@@ -145,17 +144,6 @@ func ParseModelList(raw string) []string {
 	return out
 }
 
-// defaultChatModels are the models the model router offers; they cannot be
-// discovered from the endpoint, so they are curated here.
-var defaultChatModels = []string{
-	"gpt-5.5",
-	"claude-opus-4-7",
-	"claude-sonnet-4-5",
-	"claude-haiku-4-5",
-	"gpt-oss-120b",
-	"grok-4-1-fast-reasoning",
-}
-
 // Defaults returns sensible initial values. SystemPrompt stays empty on purpose
 // so that the localized default prompt is used and follows the UI language.
 func Defaults() Config {
@@ -164,7 +152,7 @@ func Defaults() Config {
 		Endpoint:            "",
 		ChatDeployment:      "",
 		ChatModel:           "",
-		ChatModels:          slices.Clone(defaultChatModels),
+		ChatModels:          nil,
 		APIVersion:          "2024-08-01-preview",
 		EmbeddingEndpoint:   "",
 		EmbeddingDeployment: "",

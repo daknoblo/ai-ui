@@ -14,8 +14,9 @@ compatible).
 
 - Chat interface with a sidebar, multiple conversations and history
 - Answer streaming (token by token) via server-sent events
-- Model picker in the top right of the chat window (curated list; "Auto" lets
-  the router decide). The selection is global and survives switching chats
+- Model picker in the top right of the chat window ("Auto" lets the router
+  decide). The list is curated via the settings dialog or `AZURE_MODELS`; the
+  selection is global and survives switching chats
 - Document upload (text/Markdown, PDF, DOCX) as RAG context
   (embeddings + brute-force cosine search)
 - Attach documents next to the input field (📎) or drag and drop them into the
@@ -91,7 +92,7 @@ General AI endpoint:
 | --------------- | --------------------------------------------- |
 | `AZURE_ENDPOINT` | Endpoint URL of the AI endpoint.             |
 | `AZURE_DEPLOYMENT` | Deployment name of the chat model.         |
-| `AZURE_MODELS` | Selectable models (comma or newline separated). |
+| `AZURE_MODELS` | Selectable models (comma or newline separated), e.g. `gpt-5.5,claude-opus-4-7,claude-sonnet-4-5`. |
 | `AZURE_API_VERSION` | API version of the AI endpoint.           |
 
 Embeddings (fall back to the AI endpoint when empty):

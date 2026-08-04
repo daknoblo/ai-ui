@@ -24,12 +24,14 @@ services:
       - TZ=${TZ:-Europe/Berlin}
       # Interval of the periodic connection check (e.g. 30s, 2m; 0/off = never).
       - HEALTHCHECK_INTERVAL=${HEALTHCHECK_INTERVAL:-60s}
+      # Models offered in the chat header. The model router does not expose
+      # which models it serves, so the list is curated here (comma separated).
+      - AZURE_MODELS=${AZURE_MODELS:-gpt-5.5,claude-opus-4-7,claude-sonnet-4-5,claude-haiku-4-5,gpt-oss-120b,grok-4-1-fast-reasoning}
       # Optional: pin the endpoint settings via environment variables.
       # Values that are set take precedence over config.json and are disabled
       # in the UI.
       # - AZURE_ENDPOINT=${AZURE_ENDPOINT:-}
       # - AZURE_DEPLOYMENT=${AZURE_DEPLOYMENT:-}
-      # - AZURE_MODELS=${AZURE_MODELS:-}
       # - AZURE_API_VERSION=${AZURE_API_VERSION:-}
       # - AZURE_EMBEDDING_ENDPOINT=${AZURE_EMBEDDING_ENDPOINT:-}
       # - AZURE_EMBEDDING_DEPLOYMENT=${AZURE_EMBEDDING_DEPLOYMENT:-}

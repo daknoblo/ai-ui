@@ -54,21 +54,27 @@ func isUntitled(title string) bool {
 
 // pageData bundles all data needed to render a full page.
 type pageData struct {
-	Title         string
-	Chats         []storage.Chat
-	CurrentChat   *storage.Chat
-	Messages      []storage.Message
-	Documents     []storage.Document
-	Configured    bool
-	ChatID        int64
-	Notice        string
-	NoticeErr     bool
-	Models        []string
-	CurrentModel  string
-	UploadsReady  bool
-	SearchEnabled bool
-	ImageEnabled  bool
-	StatusBadge   statusBadge
+	Title          string
+	Chats          []storage.Chat
+	CurrentChat    *storage.Chat
+	Messages       []storage.Message
+	Documents      []storage.Document
+	Configured     bool
+	ChatID         int64
+	Notice         string
+	NoticeErr      bool
+	Models         []string
+	CurrentModel   string
+	UploadsReady   bool
+	SearchEnabled  bool
+	ImageEnabled   bool
+	ImageSize      string
+	ImageQuality   string
+	ImageFormat    string
+	ImageSizes     []string
+	ImageQualities []string
+	ImageFormats   []string
+	StatusBadge    statusBadge
 }
 
 // buildPageData loads chats, documents and – if given – the current chat with
@@ -81,16 +87,22 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 	cfg := s.cfg.Get()
 
 	pd := pageData{
-		Title:         "AI UI",
-		Chats:         chats,
-		CurrentChat:   current,
-		Configured:    s.cfg.IsConfigured(),
-		Models:        cfg.ChatModels,
-		CurrentModel:  cfg.ChatModel,
-		UploadsReady:  s.ready.uploadsAllowed(),
-		SearchEnabled: s.search.Enabled(),
-		ImageEnabled:  s.cfg.ImagesConfigured(),
-		StatusBadge:   s.statusData(),
+		Title:          "AI UI",
+		Chats:          chats,
+		CurrentChat:    current,
+		Configured:     s.cfg.IsConfigured(),
+		Models:         cfg.ChatModels,
+		CurrentModel:   cfg.ChatModel,
+		UploadsReady:   s.ready.uploadsAllowed(),
+		SearchEnabled:  s.search.Enabled(),
+		ImageEnabled:   s.cfg.ImagesConfigured(),
+		ImageSize:      cfg.ImageSize,
+		ImageQuality:   cfg.ImageQuality,
+		ImageFormat:    cfg.ImageFormat,
+		ImageSizes:     imageSizes,
+		ImageQualities: imageQualities,
+		ImageFormats:   imageFormats,
+		StatusBadge:    s.statusData(),
 	}
 	if current != nil {
 		msgs, err := s.store.ListMessages(ctx, current.ID)
@@ -713,9 +725,6 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	if !locks.ImageAPIVersion {
 		cfg.ImageAPIVersion = strings.TrimSpace(r.FormValue("image_api_version"))
 	}
-	cfg.ImageSize = imageParam(r.FormValue("image_size"), imageSizes)
-	cfg.ImageQuality = imageParam(r.FormValue("image_quality"), imageQualities)
-	cfg.ImageFormat = imageParam(r.FormValue("image_format"), imageFormats)
 	cfg.Language = i18n.Normalize(r.FormValue("language"))
 	cfg.SearchProvider = strings.ToLower(strings.TrimSpace(r.FormValue("search_provider")))
 
@@ -1020,9 +1029,6 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 		HasOwnImageKey     bool
 		HasSearchKey       bool
 		SearchEnabled      bool
-		ImageSizes         []string
-		ImageQualities     []string
-		ImageFormats       []string
 		Saved              bool
 		Verified           bool
 		UploadsAllowed     bool
@@ -1039,9 +1045,6 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 		HasOwnImageKey:     s.cfg.HasOwnImageAPIKey(),
 		HasSearchKey:       s.cfg.HasSearchAPIKey(),
 		SearchEnabled:      s.search.Enabled(),
-		ImageSizes:         imageSizes,
-		ImageQualities:     imageQualities,
-		ImageFormats:       imageFormats,
 		Saved:              saved,
 		Verified:           s.ready.verified(),
 		UploadsAllowed:     s.ready.uploadsAllowed(),

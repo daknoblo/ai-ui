@@ -365,12 +365,53 @@ html, body {
 	color: var(--accent);
 }
 .image-toggle.active {
-	background: rgba(16,163,127,.18);
+	background: var(--accent);
 	border-color: var(--accent);
+	color: #fff;
+}
+/* Image mode has to be unmistakable: accent frame plus a parameter bar. */
+.composer.image-mode textarea {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 2px rgba(16,163,127,.35);
+}
+.image-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 14px;
+	margin-bottom: 8px;
+	padding: 8px 12px;
+	border: 1px solid var(--accent);
+	border-radius: 12px;
+	background: rgba(16,163,127,.10);
+}
+/* The class sets display, so the hidden attribute needs to win explicitly. */
+.image-bar[hidden] { display: none; }
+.image-bar-title {
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: .03em;
+	text-transform: uppercase;
 	color: var(--accent);
 }
-/* In image mode the input frame signals that no chat answer follows. */
-.composer.image-mode textarea { border-color: var(--accent); }
+.image-params { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.image-params label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--text-dim);
+}
+.image-params select {
+	background: var(--bg);
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 4px 8px;
+	font: inherit;
+	font-size: 12px;
+}
+.image-params select:focus { outline: none; border-color: var(--accent); }
 .btn-send {
 	width: 42px;
 	height: 42px;

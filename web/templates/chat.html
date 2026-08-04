@@ -35,6 +35,29 @@
 		<div id="upload-status" class="upload-status" hidden></div>
 		{{template "doclist" .}}
 
+		{{if .ImageEnabled}}
+		<div class="image-bar" id="image-bar" hidden>
+			<span class="image-bar-title">🖼 {{t "chat.image_mode"}}</span>
+			<form class="image-params" hx-post="/image/params" hx-trigger="change" hx-swap="none">
+				<label>{{t "config.image_size"}}
+					<select name="image_size">
+						{{range $.ImageSizes}}<option value="{{.}}" {{if eq . $.ImageSize}}selected{{end}}>{{.}}</option>{{end}}
+					</select>
+				</label>
+				<label>{{t "config.image_quality"}}
+					<select name="image_quality">
+						{{range $.ImageQualities}}<option value="{{.}}" {{if eq . $.ImageQuality}}selected{{end}}>{{.}}</option>{{end}}
+					</select>
+				</label>
+				<label>{{t "config.image_format"}}
+					<select name="image_format">
+						{{range $.ImageFormats}}<option value="{{.}}" {{if eq . $.ImageFormat}}selected{{end}}>{{.}}</option>{{end}}
+					</select>
+				</label>
+			</form>
+		</div>
+		{{end}}
+
 		<div class="composer">
 			<label class="composer-btn attach-btn" title="{{t "chat.attach_title"}}">
 				📎
@@ -56,6 +79,8 @@
 				<input type="hidden" name="web" id="web-flag" value="0">
 				<input type="hidden" name="mode" id="mode-flag" value="chat">
 				<textarea name="message" rows="1" placeholder="{{t "chat.input_placeholder"}}"
+					data-placeholder-chat="{{t "chat.input_placeholder"}}"
+					data-placeholder-image="{{t "chat.image_placeholder"}}"
 					oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,200)+'px';"
 					onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"
 					required></textarea>

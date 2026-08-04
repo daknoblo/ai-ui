@@ -80,6 +80,12 @@
 			if (flag) flag.value = on ? 'image' : 'chat';
 			var box = document.querySelector('.composer');
 			if (box) box.classList.toggle('image-mode', on);
+			var bar = document.getElementById('image-bar');
+			if (bar) bar.hidden = !on;
+			var ta = document.querySelector('#chat-form textarea');
+			if (ta && ta.dataset.placeholderImage) {
+				ta.placeholder = on ? ta.dataset.placeholderImage : ta.dataset.placeholderChat;
+			}
 		}
 		function toggleImage(btn) {
 			localStorage.setItem('ai-ui-image', imageEnabled() ? '0' : '1');

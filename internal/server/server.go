@@ -143,6 +143,7 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/config", s.handleConfigGet)
 	r.Post("/config", s.handleConfigPost)
 	r.Post("/model", s.handleSetModel)
+	r.Post("/image/params", s.handleSetImageParams)
 	r.Post("/verify", s.handleVerify)
 	r.Get("/status", s.handleStatus)
 

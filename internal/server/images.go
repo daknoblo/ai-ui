@@ -43,6 +43,24 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleSetImageParams stores the generation parameters chosen in the composer.
+// Like the model picker they are global and survive switching chats.
+func (s *Server) handleSetImageParams(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.httpError(w, err)
+		return
+	}
+	cfg := s.cfg.Get()
+	cfg.ImageSize = imageParam(r.FormValue("image_size"), imageSizes)
+	cfg.ImageQuality = imageParam(r.FormValue("image_quality"), imageQualities)
+	cfg.ImageFormat = imageParam(r.FormValue("image_format"), imageFormats)
+	if err := s.cfg.Save(cfg); err != nil {
+		s.httpError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // generateImage renders the prompt into an image, stores it and pushes it into
 // the open SSE stream.
 func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64, prompt string, fail func(string)) {

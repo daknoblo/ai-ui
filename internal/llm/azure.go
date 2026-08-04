@@ -116,7 +116,7 @@ type streamOptions struct {
 type chatRequest struct {
 	Model         string         `json:"model,omitempty"`
 	Messages      []Message      `json:"messages"`
-	Temperature   float64        `json:"temperature"`
+	Temperature   *float64       `json:"temperature,omitempty"`
 	Stream        bool           `json:"stream"`
 	StreamOptions *streamOptions `json:"stream_options,omitempty"`
 	MaxTokens     int            `json:"max_completion_tokens,omitempty"`
@@ -250,7 +250,7 @@ func (c *Client) streamTurn(ctx context.Context, model string, messages []Messag
 	reqBody := chatRequest{
 		Model:         chatModelField(cfg, model),
 		Messages:      messages,
-		Temperature:   cfg.Temperature,
+		Temperature:   &cfg.Temperature,
 		Stream:        true,
 		StreamOptions: &streamOptions{IncludeUsage: true},
 	}
@@ -259,29 +259,35 @@ func (c *Client) streamTurn(ctx context.Context, model string, messages []Messag
 		reqBody.ToolChoice = "auto"
 	}
 	slog.Debug("chat request", "url", url, "model", reqBody.Model, "messages", len(messages), "tools", len(tools))
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return result, err
-	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return result, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", c.store.APIKey())
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := c.http.Do(req)
+	resp, err := c.postChat(ctx, url, reqBody)
 	if err != nil {
 		return result, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		// The requested model is part of the message: with the v1 schema it has
-		// to be a deployment name, which is the usual cause of a 404 here.
-		return result, fmt.Errorf("model %q: %w", reqBody.Model, readError(resp))
+		msg := errorBody(resp)
+		// Reasoning models only accept their default temperature; the setting is
+		// global, so the request is repeated without it instead of failing.
+		if resp.StatusCode == http.StatusBadRequest && strings.Contains(msg, "temperature") && reqBody.Temperature != nil {
+			slog.Debug("model rejects the temperature, retrying without it", "model", reqBody.Model)
+			reqBody.Temperature = nil
+			_ = resp.Body.Close()
+			resp, err = c.postChat(ctx, url, reqBody)
+			if err != nil {
+				return result, err
+			}
+			msg = ""
+		}
+		if resp.StatusCode != http.StatusOK {
+			if msg == "" {
+				msg = errorBody(resp)
+			}
+			// The requested model is part of the message: with the v1 schema it
+			// has to be a deployment name, the usual cause of a 404 here.
+			return result, fmt.Errorf("model %q: azure error %d: %s", reqBody.Model, resp.StatusCode, msg)
+		}
 	}
 
 	// Tool calls are accumulated per index (arguments arrive fragmented).
@@ -505,11 +511,32 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 
 // readError reads an error response and formats it.
 func readError(resp *http.Response) error {
+	return fmt.Errorf("azure error %d: %s", resp.StatusCode, errorBody(resp))
+}
+
+// errorBody reads and shortens the body of an error response.
+func errorBody(resp *http.Response) string {
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(io.LimitReader(resp.Body, maxErrorBodyBytes))
 	msg := strings.TrimSpace(buf.String())
 	if len(msg) > 500 {
 		msg = msg[:500]
 	}
-	return fmt.Errorf("azure error %d: %s", resp.StatusCode, msg)
+	return msg
+}
+
+// postChat sends a chat completions request.
+func (c *Client) postChat(ctx context.Context, url string, reqBody chatRequest) (*http.Response, error) {
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("api-key", c.store.APIKey())
+	req.Header.Set("Accept", "text/event-stream")
+	return c.http.Do(req)
 }

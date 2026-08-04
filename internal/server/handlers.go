@@ -59,6 +59,7 @@ type pageData struct {
 	CurrentChat    *storage.Chat
 	Messages       []storage.Message
 	Documents      []storage.Document
+	SourceImages   []storage.Image
 	Configured     bool
 	ChatID         int64
 	Notice         string
@@ -113,8 +114,13 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		if err != nil {
 			return pageData{}, err
 		}
+		imgs, err := s.store.ListImagesByKind(ctx, current.ID, storage.ImageUpload)
+		if err != nil {
+			return pageData{}, err
+		}
 		pd.Messages = msgs
 		pd.Documents = docs
+		pd.SourceImages = imgs
 		pd.Title = s.chatTitle(current.Title)
 		pd.ChatID = current.ID
 		pd.CurrentModel = current.Model
@@ -924,7 +930,8 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleUpload accepts a document and processes it (RAG ingestion).
+// handleUpload accepts documents (RAG ingestion) and, when image generation is
+// configured, images that serve as the source for editing.
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -935,14 +942,6 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := s.store.GetChat(ctx, chatID); err != nil {
 		http.NotFound(w, r)
-		return
-	}
-
-	// Uploads are only allowed once storage and the embedding endpoint have
-	// been verified, so no document enters the pipeline before the required
-	// components are demonstrably ready.
-	if !s.ready.uploadsAllowed() {
-		s.renderDocList(w, r, chatID, s.t("upload.blocked"), true)
 		return
 	}
 
@@ -959,12 +958,6 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	ecfg := s.cfg.Get()
-	if ecfg.EmbeddingDeployment == "" || ecfg.EmbeddingHost() == "" || !s.cfg.HasEmbeddingAPIKey() {
-		s.renderDocList(w, r, chatID, s.t("upload.embedding_missing"), true)
-		return
-	}
-
 	var headers []*multipart.FileHeader
 	if r.MultipartForm != nil {
 		headers = r.MultipartForm.File["file"]
@@ -974,11 +967,56 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Images become the source for image editing, everything else is ingested.
+	var images, docs []*multipart.FileHeader
+	for _, header := range headers {
+		if s.cfg.ImagesConfigured() && uploadImageMIME(header) != "" {
+			images = append(images, header)
+			continue
+		}
+		docs = append(docs, header)
+	}
+
+	// Document ingestion needs the embedding endpoint; images do not.
+	if len(docs) > 0 {
+		// Uploads are only allowed once storage and the embedding endpoint have
+		// been verified, so no document enters the pipeline before the required
+		// components are demonstrably ready.
+		if !s.ready.uploadsAllowed() {
+			s.renderDocList(w, r, chatID, s.t("upload.blocked"), true)
+			return
+		}
+		ecfg := s.cfg.Get()
+		if ecfg.EmbeddingDeployment == "" || ecfg.EmbeddingHost() == "" || !s.cfg.HasEmbeddingAPIKey() {
+			s.renderDocList(w, r, chatID, s.t("upload.embedding_missing"), true)
+			return
+		}
+	}
+
 	var (
 		added    int
 		failures []string
 	)
-	for _, header := range headers {
+	for _, header := range images {
+		if header.Size > maxUploadBytes {
+			failures = append(failures, s.t("upload.too_large", header.Filename))
+			continue
+		}
+		data, err := readMultipartFile(header)
+		if err != nil {
+			slog.Error("read upload", "file", header.Filename, "err", err)
+			failures = append(failures, s.t("upload.read_error", header.Filename))
+			continue
+		}
+		if _, err := s.store.AddImage(ctx, chatID, storage.ImageUpload,
+			header.Filename, "", uploadImageMIME(header), data); err != nil {
+			slog.Error("save source image", "file", header.Filename, "err", err)
+			failures = append(failures, s.t("upload.item_failed", header.Filename, err.Error()))
+			continue
+		}
+		added++
+	}
+	for _, header := range docs {
 		if header.Size > maxUploadBytes {
 			failures = append(failures, s.t("upload.too_large", header.Filename))
 			continue
@@ -1122,7 +1160,12 @@ func (s *Server) renderDocList(w http.ResponseWriter, r *http.Request, chatID in
 		s.httpError(w, err)
 		return
 	}
-	s.render(w, "doclist", pageData{ChatID: chatID, Documents: docs, Notice: notice, NoticeErr: isErr})
+	imgs, err := s.store.ListImagesByKind(r.Context(), chatID, storage.ImageUpload)
+	if err != nil {
+		s.httpError(w, err)
+		return
+	}
+	s.render(w, "doclist", pageData{ChatID: chatID, Documents: docs, SourceImages: imgs, Notice: notice, NoticeErr: isErr})
 }
 
 // renderMarkdownString renders Markdown into an HTML string (for SSE).

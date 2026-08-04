@@ -111,6 +111,91 @@ func TestGenerateImage(t *testing.T) {
 	}
 }
 
+// TestEditImage checks the multipart request of an edit: the source image is
+// sent as a file and the parameters travel as form fields.
+func TestEditImage(t *testing.T) {
+	var (
+		gotPath     string
+		gotFileName string
+		gotFileMIME string
+		gotFile     []byte
+		gotFields   = map[string]string{}
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse multipart: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if headers := r.MultipartForm.File["image"]; len(headers) == 1 {
+			gotFileName = headers[0].Filename
+			gotFileMIME = headers[0].Header.Get("Content-Type")
+			f, err := headers[0].Open()
+			if err != nil {
+				t.Errorf("open part: %v", err)
+			} else {
+				defer func() { _ = f.Close() }()
+				gotFile, _ = io.ReadAll(f)
+			}
+		}
+		for name, values := range r.MultipartForm.Value {
+			gotFields[name] = values[0]
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString([]byte("edited"))}},
+		})
+	}))
+	defer srv.Close()
+
+	store := config.NewStore(filepath.Join(t.TempDir(), "config.json"),
+		config.Keys{API: "chat-key"}, config.Overrides{})
+	cfg := config.Defaults()
+	cfg.Endpoint = srv.URL + "/openai/v1"
+	cfg.ImageDeployment = "gpt-image"
+	if err := store.Save(cfg); err != nil {
+		t.Fatalf("save configuration: %v", err)
+	}
+
+	src := ImageSource{Name: "photo.jpg", MIME: "image/jpeg", Data: []byte("original")}
+	res, err := New(store).EditImage(context.Background(), "make it blue", src,
+		ImageOptions{Size: "1024x1024", Quality: "auto", Format: "png"})
+	if err != nil {
+		t.Fatalf("EditImage: %v", err)
+	}
+
+	if gotPath != "/openai/v1/images/edits" {
+		t.Errorf("unexpected path: %q", gotPath)
+	}
+	if gotFileName != "photo.jpg" || gotFileMIME != "image/jpeg" || string(gotFile) != "original" {
+		t.Errorf("source image was not sent correctly: %q %q %q", gotFileName, gotFileMIME, gotFile)
+	}
+	if gotFields["prompt"] != "make it blue" || gotFields["model"] != "gpt-image" || gotFields["size"] != "1024x1024" {
+		t.Errorf("unexpected form fields: %v", gotFields)
+	}
+	if _, ok := gotFields["quality"]; ok {
+		t.Errorf(`"auto" must be omitted, but quality was sent: %v`, gotFields["quality"])
+	}
+	if string(res.Data) != "edited" {
+		t.Errorf("unexpected image data: %q", res.Data)
+	}
+}
+
+// TestSourceFileName falls back to an extension the endpoint understands.
+func TestSourceFileName(t *testing.T) {
+	if got := sourceFileName(ImageSource{Name: "holiday.PNG"}); got != "holiday.PNG" {
+		t.Errorf("sourceFileName = %q, want holiday.PNG", got)
+	}
+	if got := sourceFileName(ImageSource{Name: "", MIME: "image/jpeg"}); got != "source.jpg" {
+		t.Errorf("sourceFileName = %q, want source.jpg", got)
+	}
+	if got := sourceFileName(ImageSource{Name: "no-extension", MIME: "image/png"}); got != "source.png" {
+		t.Errorf("sourceFileName = %q, want source.png", got)
+	}
+}
+
 // TestGenerateImageRequiresDeployment makes sure an unconfigured image endpoint
 // fails before a request is sent.
 func TestGenerateImageRequiresDeployment(t *testing.T) {

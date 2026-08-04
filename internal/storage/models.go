@@ -34,11 +34,19 @@ type Document struct {
 type Image struct {
 	ID        int64     `json:"id"`
 	ChatID    int64     `json:"chat_id"`
+	Kind      string    `json:"kind"` // ImageGenerated or ImageUpload
+	Name      string    `json:"name"` // file name of an upload
 	Prompt    string    `json:"prompt"`
 	MIME      string    `json:"mime"`
 	Data      []byte    `json:"-"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// Kinds of stored images.
+const (
+	ImageGenerated = "generated"
+	ImageUpload    = "upload" // source image for editing
+)
 
 // ChunkVector is a chunk reduced to the fields needed for similarity scoring.
 type ChunkVector struct {

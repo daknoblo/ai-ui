@@ -124,6 +124,8 @@ CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(document_id);
 CREATE TABLE IF NOT EXISTS images (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	chat_id    INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+	kind       TEXT NOT NULL DEFAULT 'generated',
+	name       TEXT NOT NULL DEFAULT '',
 	prompt     TEXT NOT NULL,
 	mime       TEXT NOT NULL,
 	data       BLOB NOT NULL,
@@ -153,6 +155,14 @@ CREATE INDEX IF NOT EXISTS idx_usage_kind_model ON usage_daily(kind, model);
 	}
 	if err := s.ensureColumn(ctx, `PRAGMA table_info(chats)`, "model",
 		`ALTER TABLE chats ADD COLUMN model TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, `PRAGMA table_info(images)`, "kind",
+		`ALTER TABLE images ADD COLUMN kind TEXT NOT NULL DEFAULT 'generated'`); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, `PRAGMA table_info(images)`, "name",
+		`ALTER TABLE images ADD COLUMN name TEXT NOT NULL DEFAULT ''`); err != nil {
 		return err
 	}
 	// Older databases were created without auto_vacuum. The connection pragma
@@ -525,26 +535,26 @@ func (s *Store) CountDocuments(ctx context.Context) (int, error) {
 
 // ---- Generated images ----
 
-// AddImage stores a generated image and returns its ID.
-func (s *Store) AddImage(ctx context.Context, chatID int64, prompt, mime string, data []byte) (int64, error) {
+// AddImage stores an image of a chat and returns its ID.
+func (s *Store) AddImage(ctx context.Context, chatID int64, kind, name, prompt, mime string, data []byte) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO images (chat_id, prompt, mime, data, created_at) VALUES (?, ?, ?, ?, ?)`,
-		chatID, prompt, mime, data, nowStr())
+		`INSERT INTO images (chat_id, kind, name, prompt, mime, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		chatID, kind, name, prompt, mime, data, nowStr())
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-// GetImage loads a generated image by ID.
+// GetImage loads an image by ID.
 func (s *Store) GetImage(ctx context.Context, id int64) (Image, error) {
 	var (
 		img     Image
 		created string
 	)
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, chat_id, prompt, mime, data, created_at FROM images WHERE id = ?`, id).
-		Scan(&img.ID, &img.ChatID, &img.Prompt, &img.MIME, &img.Data, &created)
+		`SELECT id, chat_id, kind, name, prompt, mime, data, created_at FROM images WHERE id = ?`, id).
+		Scan(&img.ID, &img.ChatID, &img.Kind, &img.Name, &img.Prompt, &img.MIME, &img.Data, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Image{}, ErrNotFound
 	}
@@ -553,6 +563,59 @@ func (s *Store) GetImage(ctx context.Context, id int64) (Image, error) {
 	}
 	img.CreatedAt = parseTime(created)
 	return img, nil
+}
+
+// LatestImageByKind returns the most recent image of a kind, including its data.
+func (s *Store) LatestImageByKind(ctx context.Context, chatID int64, kind string) (Image, error) {
+	var (
+		img     Image
+		created string
+	)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, chat_id, kind, name, prompt, mime, data, created_at
+		 FROM images WHERE chat_id = ? AND kind = ? ORDER BY id DESC LIMIT 1`, chatID, kind).
+		Scan(&img.ID, &img.ChatID, &img.Kind, &img.Name, &img.Prompt, &img.MIME, &img.Data, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Image{}, ErrNotFound
+	}
+	if err != nil {
+		return Image{}, err
+	}
+	img.CreatedAt = parseTime(created)
+	return img, nil
+}
+
+// ListImagesByKind returns the images of a chat without their payload.
+func (s *Store) ListImagesByKind(ctx context.Context, chatID int64, kind string) ([]Image, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, chat_id, kind, name, mime, created_at
+		 FROM images WHERE chat_id = ? AND kind = ? ORDER BY id ASC`, chatID, kind)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []Image
+	for rows.Next() {
+		var (
+			img     Image
+			created string
+		)
+		if err := rows.Scan(&img.ID, &img.ChatID, &img.Kind, &img.Name, &img.MIME, &created); err != nil {
+			return nil, err
+		}
+		img.CreatedAt = parseTime(created)
+		out = append(out, img)
+	}
+	return out, rows.Err()
+}
+
+// DeleteImage removes a stored image.
+func (s *Store) DeleteImage(ctx context.Context, id int64) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM images WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return s.Vacuum(ctx)
 }
 
 // ---- Token usage (persistent statistics) ----

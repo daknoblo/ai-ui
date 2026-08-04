@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -31,6 +34,15 @@ func imagesURL(endpoint, deployment, apiVersion string) string {
 		return base + "/images/generations?api-version=" + url.QueryEscape(apiVersion)
 	}
 	return fmt.Sprintf("%s/openai/deployments/%s/images/generations?api-version=%s", base, deployment, apiVersion)
+}
+
+// imageEditsURL builds the image edit URL for the endpoint schema.
+func imageEditsURL(endpoint, deployment, apiVersion string) string {
+	base := strings.TrimRight(endpoint, "/")
+	if isV1Endpoint(base) {
+		return base + "/images/edits?api-version=" + url.QueryEscape(apiVersion)
+	}
+	return fmt.Sprintf("%s/openai/deployments/%s/images/edits?api-version=%s", base, deployment, apiVersion)
 }
 
 // imageAPIVersion resolves the api-version of an image request. A v1 endpoint
@@ -126,6 +138,101 @@ func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOpt
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("api-key", c.store.ImageAPIKey())
 
+	return c.sendImageRequest(req, url, cfg.ImageDeployment, opts.Format)
+}
+
+// ImageSource is the image an edit request starts from.
+type ImageSource struct {
+	Name string
+	MIME string
+	Data []byte
+}
+
+// EditImage changes an existing image according to the prompt.
+func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, opts ImageOptions) (ImageResult, error) {
+	cfg := c.store.Get()
+	endpoint := cfg.ImageHost()
+	if endpoint == "" || cfg.ImageDeployment == "" {
+		return ImageResult{}, fmt.Errorf("image endpoint and deployment are required")
+	}
+	if !c.store.HasImageAPIKey() {
+		return ImageResult{}, fmt.Errorf("no API key set (AZURE_IMAGE_API_KEY)")
+	}
+	if len(src.Data) == 0 {
+		return ImageResult{}, fmt.Errorf("no source image")
+	}
+
+	// The edit endpoint expects multipart/form-data with the image as a file.
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition",
+		fmt.Sprintf(`form-data; name="image"; filename=%q`, sourceFileName(src)))
+	header.Set("Content-Type", src.MIME)
+	part, err := mw.CreatePart(header)
+	if err != nil {
+		return ImageResult{}, err
+	}
+	if _, err := part.Write(src.Data); err != nil {
+		return ImageResult{}, err
+	}
+
+	fields := map[string]string{
+		"prompt":        prompt,
+		"n":             "1",
+		"size":          optionValue(opts.Size),
+		"quality":       optionValue(opts.Quality),
+		"output_format": optionValue(opts.Format),
+	}
+	// With the v1 schema the deployment travels in the body; the classic schema
+	// carries it in the path.
+	if isV1Endpoint(endpoint) {
+		fields["model"] = cfg.ImageDeployment
+	}
+	for name, value := range fields {
+		if value == "" {
+			continue
+		}
+		if err := mw.WriteField(name, value); err != nil {
+			return ImageResult{}, err
+		}
+	}
+	if err := mw.Close(); err != nil {
+		return ImageResult{}, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+
+	url := imageEditsURL(endpoint, cfg.ImageDeployment, imageAPIVersion(cfg))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &buf)
+	if err != nil {
+		return ImageResult{}, err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("api-key", c.store.ImageAPIKey())
+
+	return c.sendImageRequest(req, url, cfg.ImageDeployment, opts.Format)
+}
+
+// sourceFileName keeps the extension the endpoint uses to detect the format.
+func sourceFileName(src ImageSource) string {
+	name := filepath.Base(strings.TrimSpace(src.Name))
+	if name != "" && name != "." && name != string(filepath.Separator) && filepath.Ext(name) != "" {
+		return name
+	}
+	switch strings.ToLower(strings.TrimSpace(src.MIME)) {
+	case "image/jpeg", "image/jpg":
+		return "source.jpg"
+	case "image/webp":
+		return "source.webp"
+	default:
+		return "source.png"
+	}
+}
+
+// sendImageRequest performs an image request and decodes the base64 result.
+func (c *Client) sendImageRequest(req *http.Request, url, deployment, format string) (ImageResult, error) {
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return ImageResult{}, err
@@ -157,10 +264,10 @@ func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOpt
 	}
 	c.metrics.recordImage(usage)
 	if c.recorder != nil {
-		c.recorder.RecordUsage("image", cfg.ImageDeployment, usage)
+		c.recorder.RecordUsage("image", deployment, usage)
 	}
 
-	return ImageResult{Data: raw, MIME: imageMIME(opts.Format), Usage: usage}, nil
+	return ImageResult{Data: raw, MIME: imageMIME(format), Usage: usage}, nil
 }
 
 // optionValue drops empty and "auto" values so the service default applies.

@@ -49,6 +49,21 @@
 {{define "doclist"}}
 <div id="doc-list" class="doc-dock">
 	{{if .Notice}}<p class="doc-notice {{if .NoticeErr}}err{{else}}ok{{end}}">{{.Notice}}</p>{{end}}
+	{{if .SourceImages}}
+	<div class="doc-chips">
+		{{range .SourceImages}}
+		<span class="doc-chip source-chip" title="{{t "image.source_title" .Name}}">
+			<img class="doc-chip-thumb" src="/images/{{.ID}}" alt="">
+			<span class="doc-chip-name">{{.Name}}</span>
+			<button class="doc-chip-del"
+				hx-delete="/chat/{{.ChatID}}/images/{{.ID}}"
+				hx-target="#doc-list"
+				hx-swap="outerHTML"
+				title="{{t "action.remove"}}">×</button>
+		</span>
+		{{end}}
+	</div>
+	{{end}}
 	{{if .Documents}}
 	<div class="doc-chips">
 		{{range .Documents}}

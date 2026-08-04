@@ -3,19 +3,63 @@ package server
 import (
 	"context"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/daknoblo/ai-ui/internal/llm"
+	"github.com/daknoblo/ai-ui/internal/storage"
 )
 
-// allowedImageMIME lists the content types the image endpoint may produce.
-// Serving is restricted to them so a manipulated database row cannot turn a
-// stored blob into an active content type.
+// allowedImageMIME lists the content types the image endpoint may produce or
+// accept as a source. Serving is restricted to them so a manipulated database
+// row cannot turn a stored blob into an active content type.
 var allowedImageMIME = map[string]bool{
 	"image/png":  true,
 	"image/jpeg": true,
+	"image/webp": true,
+}
+
+// uploadImageMIME returns the content type when an upload is a supported image,
+// otherwise an empty string. The extension decides when the browser sends no
+// usable type.
+func uploadImageMIME(header *multipart.FileHeader) string {
+	mime := strings.ToLower(strings.TrimSpace(strings.Split(header.Header.Get("Content-Type"), ";")[0]))
+	if allowedImageMIME[mime] {
+		return mime
+	}
+	switch strings.ToLower(filepath.Ext(header.Filename)) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".webp":
+		return "image/webp"
+	}
+	return ""
+}
+
+// handleDeleteImage removes an uploaded source image.
+func (s *Server) handleDeleteImage(w http.ResponseWriter, r *http.Request) {
+	chatID, err := strconv.ParseInt(chi.URLParam(r, "cid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	imageID, err := strconv.ParseInt(chi.URLParam(r, "iid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.DeleteImage(r.Context(), imageID); err != nil {
+		s.httpError(w, err)
+		return
+	}
+	s.renderDocList(w, r, chatID, "", false)
 }
 
 // handleImage serves a generated image from the database.
@@ -62,23 +106,42 @@ func (s *Server) handleSetImageParams(w http.ResponseWriter, r *http.Request) {
 }
 
 // generateImage renders the prompt into an image, stores it and pushes it into
-// the open SSE stream.
+// the open SSE stream. When the chat has an uploaded source image, that image is
+// edited instead of creating a new one.
 func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64, prompt string, fail func(string)) {
 	cfg := s.cfg.Get()
-	res, err := s.llm.GenerateImage(ctx, prompt, llm.ImageOptions{
+	opts := llm.ImageOptions{
 		Size:    cfg.ImageSize,
 		Quality: cfg.ImageQuality,
 		Format:  cfg.ImageFormat,
-	})
+	}
+
+	var (
+		res  llm.ImageResult
+		err  error
+		src  storage.Image
+		edit bool
+	)
+	if src, err = s.store.LatestImageByKind(ctx, chatID, storage.ImageUpload); err == nil {
+		edit = true
+		res, err = s.llm.EditImage(ctx, prompt, llm.ImageSource{
+			Name: src.Name,
+			MIME: src.MIME,
+			Data: src.Data,
+		}, opts)
+	} else {
+		res, err = s.llm.GenerateImage(ctx, prompt, opts)
+	}
 	if err != nil {
-		slog.Error("image generation", "err", err)
+		slog.Error("image generation", "edit", edit, "err", err)
 		fail(s.t("stream.image_failed", err.Error()))
 		return
 	}
 
 	// Deliberately not the request context: the result must be persisted even
 	// when the browser has already navigated away.
-	imageID, err := s.store.AddImage(context.Background(), chatID, prompt, res.MIME, res.Data)
+	imageID, err := s.store.AddImage(context.Background(), chatID,
+		storage.ImageGenerated, "", prompt, res.MIME, res.Data)
 	if err != nil {
 		slog.Error("save image", "err", err)
 		fail(s.t("stream.image_failed", err.Error()))

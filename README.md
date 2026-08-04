@@ -25,7 +25,8 @@ compatible).
   context - provider agnostic (Tavily, Brave Search, SearXNG)
 - Optional image generation (🖼): the toggle switches the next message from a
   chat answer to a generated image (Azure image models such as `gpt-image-2`);
-  images are stored in the database and shown inline
+  images are stored in the database and shown inline. Attaching an image turns
+  the next prompt into an edit of that image
 - Documents are bound to their chat and are removed together with it
   (including their embeddings)
 - Settings dialog in the UI (language, endpoints, deployments, API version,

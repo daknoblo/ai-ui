@@ -463,6 +463,14 @@ html, body {
 	max-width: 240px;
 }
 .doc-chip-icon { flex: 0 0 auto; }
+.source-chip { border-color: var(--accent); }
+.doc-chip-thumb {
+	width: 22px;
+	height: 22px;
+	object-fit: cover;
+	border-radius: 4px;
+	flex: 0 0 auto;
+}
 .doc-chip-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .doc-chip-del {
 	background: none;

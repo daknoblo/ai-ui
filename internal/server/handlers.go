@@ -71,7 +71,6 @@ type pageData struct {
 	UploadsReady   bool
 	SearchEnabled  bool
 	ImageEnabled   bool
-	HasImage       bool
 	ImageSize      string
 	ImageQuality   string
 	ImageFormat    string
@@ -121,14 +120,9 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		if err != nil {
 			return pageData{}, err
 		}
-		n, err := s.store.CountImages(ctx, current.ID)
-		if err != nil {
-			return pageData{}, err
-		}
 		pd.Messages = msgs
 		pd.Documents = docs
 		pd.SourceImages = imgs
-		pd.HasImage = n > 0
 		pd.Title = s.chatTitle(current.Title)
 		pd.ChatID = current.ID
 		pd.CurrentModel = current.Model

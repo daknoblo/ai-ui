@@ -80,7 +80,9 @@
 			var box = document.querySelector('.composer');
 			var image = !!box && box.dataset.mode === 'image';
 			var web = webEnabled() && !image;
-			var hasImage = box && box.dataset.hasImage === '1';
+			// Read from the DOM instead of a server rendered flag: attaching or
+			// removing a file and finishing a generation all happen without a reload.
+			var hasImage = !!document.querySelector('#doc-list .source-chip, #messages .bubble img');
 			var edit = image && hasImage && editEnabled();
 
 			document.querySelectorAll('.mode-opt').forEach(function (btn) {
@@ -115,6 +117,7 @@
 		}
 		window.addEventListener('load', applyComposerState);
 		document.body.addEventListener('htmx:afterSwap', applyComposerState);
+		document.body.addEventListener('htmx:sseMessage', applyComposerState);
 	</script>
 </body>
 </html>

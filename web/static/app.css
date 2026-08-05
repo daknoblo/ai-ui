@@ -326,8 +326,34 @@ html, body {
 .bubble pre code { background: none; padding: 0; }
 /* Generated images are inserted as Markdown images. */
 .bubble img { max-width: 100%; height: auto; border-radius: 10px; display: block; }
-.cursor { animation: blink 1s step-start infinite; color: var(--accent); }
 @keyframes blink { 50% { opacity: 0; } }
+
+/* Shown until the first token arrives; image requests sit here for a while. */
+.pending { display: flex; flex-direction: column; gap: 8px; }
+.pending-label { font-size: 13px; color: var(--text-dim); }
+.pending-bar {
+	position: relative;
+	height: 4px;
+	border-radius: 2px;
+	background: var(--bg);
+	overflow: hidden;
+}
+.pending-fill {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 40%;
+	border-radius: 2px;
+	background: var(--accent);
+	animation: pending-slide 1.4s ease-in-out infinite;
+}
+@keyframes pending-slide {
+	from { left: -40%; }
+	to { left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.pending-fill { animation: none; left: 0; width: 100%; opacity: .5; }
+}
 
 .composer-dock {
 	border-top: 1px solid var(--border);

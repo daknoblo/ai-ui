@@ -236,5 +236,9 @@
 		if (window.htmx) {
 			window.htmx.process(fresh);
 		}
+		// The chips decide whether image mode edits or generates.
+		if (window.applyComposerState) {
+			window.applyComposerState();
+		}
 	}
 })();

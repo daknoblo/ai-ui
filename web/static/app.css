@@ -25,11 +25,13 @@ html, body {
 	/* Keeps mobile Safari from inflating text when the device is rotated. */
 	-webkit-text-size-adjust: 100%;
 	text-size-adjust: 100%;
+	overflow-x: hidden;
+	overscroll-behavior-x: none;
 }
 
 /* dvh keeps the layout inside the visible area while mobile browsers show or
    hide their address bar; vh stays as the fallback for older engines. */
-.app { display: flex; height: 100vh; height: 100dvh; }
+.app { display: flex; height: 100vh; height: 100dvh; max-width: 100%; overflow: hidden; }
 
 /* ---------- Sidebar ---------- */
 .sidebar {
@@ -43,14 +45,18 @@ html, body {
 	gap: 12px;
 	overflow: hidden;
 }
-.sidebar-top { flex: 0 0 auto; }
-.new-chat-form { margin: 0; }
+/* The children are ordered explicitly so the drawer can regroup them on a
+   phone without a second set of wrappers. */
+.new-chat-form { margin: 0; flex: 0 0 auto; order: 1; }
 .btn-new { width: 100%; }
 /* Only used while the sidebar is an off-canvas drawer (narrow viewports). */
 .nav-backdrop { display: none; }
+.btn-new, .btn-config { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn-icon { line-height: 1; }
 
 .chat-list {
 	flex: 1 1 auto;
+	order: 2;
 	overflow-y: auto;
 	display: flex;
 	flex-direction: column;
@@ -142,17 +148,15 @@ html, body {
 	padding: 1px 6px;
 }
 
-.sidebar-bottom {
+#conn-status {
 	flex: 0 0 auto;
+	order: 3;
 	border-top: 1px solid var(--border);
 	padding-top: 10px;
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
 }
 .btn-config { width: 100%; background: transparent; border: 1px solid var(--border); }
 /* Settings and logs share one row, each half the width. */
-.sidebar-actions { display: flex; gap: 8px; }
+.sidebar-actions { display: flex; gap: 8px; flex: 0 0 auto; order: 4; }
 .sidebar-actions > * {
 	flex: 1 1 0;
 	min-width: 0;
@@ -802,10 +806,15 @@ html, body {
 		bottom: 0;
 		left: 0;
 		z-index: 60;
-		width: min(84vw, 300px);
+		width: min(80vw, 280px);
 		min-width: 0;
 		border-right: 1px solid var(--border);
-		padding: calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom));
+		padding: calc(10px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom));
+		gap: 10px;
+		/* Row one carries the icon bar, the chat list takes the rest. */
+		display: grid;
+		grid-template-columns: auto 1fr;
+		grid-template-rows: auto 1fr auto;
 		/* visibility keeps the closed drawer out of the tab and reader order. */
 		visibility: hidden;
 		transform: translateX(-100%);
@@ -819,27 +828,34 @@ html, body {
 		z-index: 55;
 		background: rgba(0,0,0,.5);
 	}
-	.chat-list { overscroll-behavior: contain; }
+	.new-chat-form { grid-column: 1; grid-row: 1; }
+	.sidebar-actions { grid-column: 2; grid-row: 1; justify-self: end; }
+	.chat-list { grid-column: 1 / -1; grid-row: 2; overscroll-behavior: contain; }
+	#conn-status { grid-column: 1 / -1; grid-row: 3; }
+
+	/* Every labelled button collapses to its icon; the name lives in aria-label. */
+	.btn-label { display: none; }
+	.btn-new, .sidebar-actions > * { width: 36px; height: 36px; padding: 0; flex: 0 0 auto; }
+	.btn-icon { font-size: 16px; }
+	.chat-link { font-size: 13px; }
 
 	.nav-toggle {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		flex: 0 0 auto;
-		width: 40px;
-		height: 40px;
+		width: 36px;
+		height: 36px;
 		padding: 0;
-		font-size: 20px;
-		line-height: 1;
 		background: transparent;
 		border: 1px solid var(--border);
-		border-radius: 10px;
+		border-radius: 9px;
 		color: var(--text);
 		cursor: pointer;
 	}
 
-	.chat-header { gap: 10px; padding: 8px 12px; }
-	.chat-header h1 { font-size: 15px; }
+	.chat-header { gap: 8px; padding: 6px 10px; }
+	.chat-header h1 { font-size: 14px; }
 	/* The label only exists for screen readers here; the select shows the name. */
 	.model-label {
 		position: absolute;
@@ -851,12 +867,25 @@ html, body {
 		clip-path: inset(50%);
 		white-space: nowrap;
 	}
-	.model-picker select { max-width: 40vw; }
+	.model-picker select { max-width: 38vw; padding: 5px 24px 5px 8px; }
 
-	.messages { padding: 14px; gap: 16px; }
-	.composer-dock { padding: 8px 12px calc(12px + env(safe-area-inset-bottom)); }
-	.composer-tools { gap: 6px 10px; }
+	.messages { padding: 12px; gap: 14px; }
+	.msg-role { font-size: 11px; }
+	.bubble { padding: 10px 12px; font-size: 14px; }
+	.bubble code { font-size: 12px; }
+	.welcome h2 { font-size: 18px; }
+	.welcome p { font-size: 13px; }
+
+	.composer-dock { padding: 6px 10px calc(10px + env(safe-area-inset-bottom)); }
+	.composer-tools { gap: 6px 12px; min-height: 0; margin-bottom: 6px; }
+	.tool-opt { gap: 4px; }
+	.tool-opt .btn-icon { font-size: 17px; }
 	.image-params { gap: 6px 10px; }
+	.image-params label { font-size: 11px; gap: 4px; }
+	.image-params select { padding: 3px 6px; }
+	.composer textarea { padding: 9px 12px; }
+	.composer-btn, .btn-send { width: 38px; height: 38px; }
+	.mode-opt { font-size: 15px; padding: 6px 10px; }
 	.doc-chip { max-width: 100%; }
 
 	.modal-overlay { padding: 0; }
@@ -865,13 +894,13 @@ html, body {
 		max-width: none;
 		max-height: 100dvh;
 		border-radius: 0;
-		padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+		padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
 	}
 	.modal-actions { flex-wrap: wrap; }
 
-	.stats-page { padding: 18px 14px calc(32px + env(safe-area-inset-bottom)); }
-	.stats-head { flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
-	.stats-head h1 { font-size: 19px; }
+	.stats-page { padding: 16px 12px calc(28px + env(safe-area-inset-bottom)); }
+	.stats-head { flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+	.stats-head h1 { font-size: 18px; }
 	.stats-cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 	.stat-value { font-size: 22px; }
 	/* Rather scroll the wrapper than squeeze a date onto three lines. */
@@ -895,12 +924,13 @@ html, body {
 @media (pointer: coarse) {
 	.composer textarea,
 	.model-picker select,
+	.image-params select,
 	.config-form input,
 	.config-form select,
 	.config-form textarea { font-size: 16px; }
 
 	.chat-item .chat-del { opacity: 1; }
-	.chat-link { padding: 12px 0; }
+	.chat-link { padding: 10px 0; }
 	.chat-del { min-width: 40px; min-height: 40px; padding: 0 10px; }
 	.doc-chip-del { min-width: 32px; min-height: 32px; padding: 0 6px; }
 	.modal-close { min-width: 40px; min-height: 40px; }

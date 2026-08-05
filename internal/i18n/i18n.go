@@ -108,7 +108,7 @@ var catalog = map[string]map[string]string{
 		"action.save":   "Save",
 
 		// ---- sidebar ----
-		"nav.new_chat":         "+ New chat",
+		"nav.new_chat":         "New chat",
 		"nav.menu":             "Menu",
 		"nav.settings":         "Settings",
 		"nav.stats":            "Statistics",
@@ -342,7 +342,7 @@ var catalog = map[string]map[string]string{
 		"action.save":   "Speichern",
 
 		// ---- sidebar ----
-		"nav.new_chat":         "+ Neuer Chat",
+		"nav.new_chat":         "Neuer Chat",
 		"nav.menu":             "Menü",
 		"nav.settings":         "Einstellungen",
 		"nav.stats":            "Statistik",

@@ -1,29 +1,29 @@
 {{define "sidebar"}}
 <div class="nav-backdrop" onclick="closeNav()"></div>
 <aside class="sidebar" id="sidebar">
-	<div class="sidebar-top">
-		<form hx-post="/chats" hx-target="body" hx-push-url="true" class="new-chat-form">
-			<button type="submit" class="btn btn-new" onclick="closeNav()">{{t "nav.new_chat"}}</button>
-		</form>
+	<form hx-post="/chats" hx-target="body" hx-push-url="true" class="new-chat-form">
+		<button type="submit" class="btn btn-new" onclick="closeNav()"
+			title="{{t "nav.new_chat"}}" aria-label="{{t "nav.new_chat"}}"><span class="btn-icon" aria-hidden="true">+</span><span class="btn-label">{{t "nav.new_chat"}}</span></button>
+	</form>
+
+	<div class="sidebar-actions">
+		<button class="btn btn-config"
+			onclick="closeNav()"
+			hx-get="/config"
+			hx-target="#modal-root"
+			hx-swap="innerHTML"
+			title="{{t "nav.settings"}}" aria-label="{{t "nav.settings"}}"><span class="btn-icon" aria-hidden="true">⚙</span><span class="btn-label">{{t "nav.settings"}}</span></button>
+		<a class="btn btn-config" href="/logs"
+			title="{{t "nav.logs"}}" aria-label="{{t "nav.logs"}}"><span class="btn-icon" aria-hidden="true">📄</span><span class="btn-label">{{t "nav.logs"}}</span></a>
 	</div>
 
 	{{template "chatnav" .}}
 
-	<div class="sidebar-bottom">
-		<div id="conn-status"
-			hx-get="/status"
-			hx-trigger="load, every 30s"
-			hx-swap="innerHTML">
-			{{template "status-badge" .StatusBadge}}
-		</div>
-		<div class="sidebar-actions">
-			<button class="btn btn-config"
-				onclick="closeNav()"
-				hx-get="/config"
-				hx-target="#modal-root"
-				hx-swap="innerHTML">⚙ {{t "nav.settings"}}</button>
-			<a class="btn btn-config" href="/logs">📄 {{t "nav.logs"}}</a>
-		</div>
+	<div id="conn-status"
+		hx-get="/status"
+		hx-trigger="load, every 30s"
+		hx-swap="innerHTML">
+		{{template "status-badge" .StatusBadge}}
 	</div>
 </aside>
 <div id="modal-root"></div>

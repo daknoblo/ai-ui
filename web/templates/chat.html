@@ -1,6 +1,9 @@
 {{define "content"}}
 <div class="chat-main" id="chat-dropzone" data-chat-id="{{.ChatID}}" data-uploads-ready="{{if .UploadsReady}}1{{else}}0{{end}}">
 	<div class="chat-header">
+		<button type="button" class="nav-toggle" id="nav-toggle" onclick="toggleNav()"
+			aria-controls="sidebar" aria-expanded="false"
+			title="{{t "nav.menu"}}" aria-label="{{t "nav.menu"}}">☰</button>
 		<h1 id="chat-title">{{if .CurrentChat}}{{chatTitle .CurrentChat.Title}}{{else}}{{t "chat.default_title"}}{{end}}</h1>
 		{{if .Models}}
 		<form class="model-picker" hx-post="/chat/{{.ChatID}}/model" hx-trigger="change" hx-swap="none">

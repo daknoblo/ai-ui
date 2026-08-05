@@ -1,8 +1,9 @@
 {{define "sidebar"}}
-<aside class="sidebar">
+<div class="nav-backdrop" onclick="closeNav()"></div>
+<aside class="sidebar" id="sidebar">
 	<div class="sidebar-top">
 		<form hx-post="/chats" hx-target="body" hx-push-url="true" class="new-chat-form">
-			<button type="submit" class="btn btn-new">{{t "nav.new_chat"}}</button>
+			<button type="submit" class="btn btn-new" onclick="closeNav()">{{t "nav.new_chat"}}</button>
 		</form>
 	</div>
 
@@ -17,6 +18,7 @@
 		</div>
 		<div class="sidebar-actions">
 			<button class="btn btn-config"
+				onclick="closeNav()"
 				hx-get="/config"
 				hx-target="#modal-root"
 				hx-swap="innerHTML">⚙ {{t "nav.settings"}}</button>

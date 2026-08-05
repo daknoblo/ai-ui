@@ -22,6 +22,9 @@ html, body {
 	background: var(--bg);
 	color: var(--text);
 	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+	/* Keeps mobile Safari from inflating text when the device is rotated. */
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
 }
 
 /* dvh keeps the layout inside the visible area while mobile browsers show or
@@ -43,6 +46,8 @@ html, body {
 .sidebar-top { flex: 0 0 auto; }
 .new-chat-form { margin: 0; }
 .btn-new { width: 100%; }
+/* Only used while the sidebar is an off-canvas drawer (narrow viewports). */
+.nav-backdrop { display: none; }
 
 .chat-list {
 	flex: 1 1 auto;
@@ -250,6 +255,8 @@ html, body {
 	flex: 1;
 	min-width: 0;
 }
+/* Opens the drawer; only shown once the sidebar is off-canvas. */
+.nav-toggle { display: none; }
 .model-picker {
 	display: flex;
 	align-items: center;
@@ -274,6 +281,8 @@ html, body {
 .messages {
 	flex: 1;
 	overflow-y: auto;
+	/* Stops the scroll from chaining into the page (mobile pull-to-refresh). */
+	overscroll-behavior: contain;
 	padding: 24px;
 	display: flex;
 	flex-direction: column;
@@ -552,6 +561,7 @@ html, body {
 	width: 60vw;
 	max-width: 1000px;
 	max-height: 88vh;
+	max-height: 88dvh;
 	overflow-y: auto;
 	padding: 22px 24px;
 	container-type: inline-size;
@@ -741,6 +751,9 @@ html, body {
 	margin-top: 6px;
 	white-space: nowrap;
 }
+/* Wrapper so a wide table scrolls sideways instead of stretching the page.
+   The table itself keeps its semantics, unlike a display:block override. */
+.table-scroll { overflow-x: auto; }
 .stats-table {
 	width: 100%;
 	border-collapse: collapse;
@@ -764,6 +777,7 @@ html, body {
 	border-radius: 12px;
 	padding: 14px;
 	max-height: 65vh;
+	max-height: 65dvh;
 	overflow: auto;
 	font-size: 12px;
 	line-height: 1.5;
@@ -778,41 +792,122 @@ html, body {
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* ---------- Narrow viewports (phones, small windows) ---------- */
-/* The layout stays CSS only: the sidebar moves above the chat and shrinks to a
-   scrollable strip, everything else gets tighter spacing and may wrap. */
+/* The sidebar turns into an off-canvas drawer so the chat itself keeps the
+   whole viewport; body.nav-open slides it in. Everything else gets tighter
+   spacing and respects the safe area of notched devices. */
 @media (max-width: 720px) {
-	.app { flex-direction: column; }
-
 	.sidebar {
-		width: 100%;
+		position: fixed;
+		top: 0;
+		bottom: 0;
+		left: 0;
+		z-index: 60;
+		width: min(84vw, 300px);
 		min-width: 0;
-		max-height: 45dvh;
-		border-right: none;
-		border-bottom: 1px solid var(--border);
-		padding: 8px;
-		gap: 8px;
+		border-right: 1px solid var(--border);
+		padding: calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom));
+		/* visibility keeps the closed drawer out of the tab and reader order. */
+		visibility: hidden;
+		transform: translateX(-100%);
+		transition: transform .2s ease, visibility .2s;
 	}
-	.chat-list { max-height: 22dvh; min-height: 0; }
-	.sidebar-section { max-height: 30dvh; }
-	/* Touch devices have no hover, so the delete buttons stay visible. */
-	.chat-del, .doc-del { opacity: 1; }
+	body.nav-open .sidebar { visibility: visible; transform: none; }
+	body.nav-open .nav-backdrop {
+		display: block;
+		position: fixed;
+		inset: 0;
+		z-index: 55;
+		background: rgba(0,0,0,.5);
+	}
+	.chat-list { overscroll-behavior: contain; }
 
-	.main { flex: 1 1 auto; min-height: 0; }
+	.nav-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex: 0 0 auto;
+		width: 40px;
+		height: 40px;
+		padding: 0;
+		font-size: 20px;
+		line-height: 1;
+		background: transparent;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		color: var(--text);
+		cursor: pointer;
+	}
 
-	.chat-header { flex-wrap: wrap; gap: 8px 12px; padding: 10px 14px; }
-	.chat-header h1 { flex: 1 1 100%; }
-	.model-picker { flex: 1 1 auto; }
-	.model-picker select { flex: 1 1 auto; max-width: none; }
+	.chat-header { gap: 10px; padding: 8px 12px; }
+	.chat-header h1 { font-size: 15px; }
+	/* The label only exists for screen readers here; the select shows the name. */
+	.model-label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+	.model-picker select { max-width: 40vw; }
 
 	.messages { padding: 14px; gap: 16px; }
-	.composer-dock { padding: 8px 14px 12px; }
+	.composer-dock { padding: 8px 12px calc(12px + env(safe-area-inset-bottom)); }
+	.composer-tools { gap: 6px 10px; }
+	.image-params { gap: 6px 10px; }
 	.doc-chip { max-width: 100%; }
 
-	.modal { width: 100%; max-height: 100dvh; border-radius: 0; padding: 16px; }
 	.modal-overlay { padding: 0; }
+	.modal {
+		width: 100%;
+		max-width: none;
+		max-height: 100dvh;
+		border-radius: 0;
+		padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+	}
+	.modal-actions { flex-wrap: wrap; }
 
-	.stats-page { padding: 18px 14px 32px; }
+	.stats-page { padding: 18px 14px calc(32px + env(safe-area-inset-bottom)); }
+	.stats-head { flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+	.stats-head h1 { font-size: 19px; }
 	.stats-cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
-	/* Wide tables scroll horizontally instead of pushing the page out. */
-	.stats-table { display: block; overflow-x: auto; white-space: nowrap; }
+	.stat-value { font-size: 22px; }
+	/* Rather scroll the wrapper than squeeze a date onto three lines. */
+	.stats-table { min-width: 460px; }
+	/* Keeps the day labels legible instead of squeezing 30 columns onto 390px. */
+	.chart { overflow-x: auto; overscroll-behavior-x: contain; }
+	.chart-col { flex: 1 0 34px; min-width: 34px; }
 }
+
+/* Landscape phones: plenty of width, almost no height. */
+@media (max-height: 480px) {
+	.chat-header { padding: 6px 16px; }
+	.messages { padding: 12px 16px; gap: 12px; }
+	.composer-dock { padding: 6px 16px 10px; }
+	.composer textarea { max-height: 96px; }
+	.modal { max-height: 96dvh; padding: 14px 18px; }
+}
+
+/* Touch devices: mobile Safari zooms into any field whose text is smaller than
+   16px, and hover-only affordances never show up at all. */
+@media (pointer: coarse) {
+	.composer textarea,
+	.model-picker select,
+	.config-form input,
+	.config-form select,
+	.config-form textarea { font-size: 16px; }
+
+	.chat-item .chat-del { opacity: 1; }
+	.chat-link { padding: 12px 0; }
+	.chat-del { min-width: 40px; min-height: 40px; padding: 0 10px; }
+	.doc-chip-del { min-width: 32px; min-height: 32px; padding: 0 6px; }
+	.modal-close { min-width: 40px; min-height: 40px; }
+	.tool-opt input[type="checkbox"] { width: 18px; height: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sidebar { transition: none; }
+}
+

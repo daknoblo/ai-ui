@@ -37,6 +37,22 @@
 		document.body.addEventListener('htmx:sseMessage', scrollMessages);
 		window.addEventListener('load', scrollMessages);
 
+		// On narrow viewports the sidebar is an off-canvas drawer. The open
+		// state lives as a class on <body> because htmx swaps the body content
+		// on navigation, which resets the drawer along with it.
+		function setNav(open) {
+			document.body.classList.toggle('nav-open', open);
+			var btn = document.getElementById('nav-toggle');
+			if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+		}
+		function toggleNav() {
+			setNav(!document.body.classList.contains('nav-open'));
+		}
+		function closeNav() { setNav(false); }
+		document.addEventListener('keydown', function (e) {
+			if (e.key === 'Escape') { closeNav(); }
+		});
+
 		// Composer state: the answer mode belongs to the chat (the buttons post it
 		// as well), while web search and image editing are kept per browser. All
 		// three travel with the message as hidden form fields.

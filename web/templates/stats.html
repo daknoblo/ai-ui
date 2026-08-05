@@ -60,6 +60,7 @@
 
 		<h2>{{t "stats.history"}}</h2>
 		{{if .Days}}
+		<div class="table-scroll">
 		<table class="stats-table">
 			<thead>
 				<tr><th>{{t "stats.day"}}</th><th class="num">{{t "stats.chat"}}</th><th class="num">{{t "stats.embedding"}}</th><th class="num">{{t "stats.total"}}</th><th class="num">{{t "stats.requests"}}</th></tr>
@@ -76,12 +77,14 @@
 				{{end}}
 			</tbody>
 		</table>
+		</div>
 		{{else}}
 		<p class="empty-hint">{{t "stats.no_usage"}}</p>
 		{{end}}
 
 		<h2>{{t "stats.by_model"}}</h2>
 		{{if .Models}}
+		<div class="table-scroll">
 		<table class="stats-table">
 			<thead>
 				<tr><th>{{t "stats.model"}}</th><th class="num">{{t "stats.requests"}}</th><th class="num">{{t "stats.total_tokens"}}</th></tr>
@@ -96,6 +99,7 @@
 				{{end}}
 			</tbody>
 		</table>
+		</div>
 		{{else}}
 		<p class="empty-hint">{{t "stats.no_chat_requests"}}</p>
 		{{end}}

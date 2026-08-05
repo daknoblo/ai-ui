@@ -1,6 +1,9 @@
 {{define "content"}}
 <div class="chat-main" id="chat-dropzone" data-chat-id="{{.ChatID}}" data-uploads-ready="{{if .UploadsReady}}1{{else}}0{{end}}">
 	<div class="chat-header">
+		<button type="button" class="nav-toggle" id="nav-toggle" onclick="toggleNav()"
+			aria-controls="sidebar" aria-expanded="false"
+			title="{{t "nav.menu"}}" aria-label="{{t "nav.menu"}}"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
 		<h1 id="chat-title">{{if .CurrentChat}}{{chatTitle .CurrentChat.Title}}{{else}}{{t "chat.default_title"}}{{end}}</h1>
 		{{if .Models}}
 		<form class="model-picker" hx-post="/chat/{{.ChatID}}/model" hx-trigger="change" hx-swap="none">
@@ -36,22 +39,22 @@
 		{{template "doclist" .}}
 
 		<div class="composer-tools">
-			<label class="tool-opt attach-opt" title="{{t "chat.attach_title"}}">
+			<label class="tool-opt attach-opt" title="{{t "chat.attach_title"}}" aria-label="{{t "chat.attach_option"}}">
 				<input type="file" id="attach-input" accept=".txt,.md,.markdown,.json,.pdf,.docx,.png,.jpg,.jpeg,.webp" multiple
 					data-chat-id="{{.ChatID}}"
 					onchange="handleAttach(this)">
-				<span>📎 {{t "chat.attach_option"}}</span>
+				<span class="btn-icon" aria-hidden="true">📎</span><span class="btn-label">{{t "chat.attach_option"}}</span>
 			</label>
 			{{if .SearchEnabled}}
 			<label class="tool-opt" id="web-option" title="{{t "chat.web_toggle_title"}}">
-				<input type="checkbox" id="web-check" onchange="setWeb(this.checked)">
-				<span>🌐 {{t "chat.web_option"}}</span>
+				<input type="checkbox" id="web-check" onchange="setWeb(this.checked)" aria-label="{{t "chat.web_option"}}">
+				<span class="btn-icon" aria-hidden="true">🌐</span><span class="btn-label">{{t "chat.web_option"}}</span>
 			</label>
 			{{end}}
 			{{if .ImageEnabled}}
 			<label class="tool-opt" id="edit-option" title="{{t "chat.image_edit_title"}}" hidden>
-				<input type="checkbox" id="edit-check" onchange="setEdit(this.checked)">
-				<span>🖌 {{t "chat.image_edit"}}</span>
+				<input type="checkbox" id="edit-check" onchange="setEdit(this.checked)" aria-label="{{t "chat.image_edit"}}">
+				<span class="btn-icon" aria-hidden="true">🖌</span><span class="btn-label">{{t "chat.image_edit"}}</span>
 			</label>
 			<form class="image-params" id="image-params" hx-post="/image/params" hx-trigger="change" hx-swap="none" hidden>
 				<label>{{t "config.image_size"}}

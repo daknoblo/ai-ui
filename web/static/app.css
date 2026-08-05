@@ -154,7 +154,6 @@ html, body {
 	border-top: 1px solid var(--border);
 	padding-top: 10px;
 }
-.btn-config { width: 100%; background: transparent; border: 1px solid var(--border); }
 /* Settings and logs share one row, each half the width. */
 .sidebar-actions { display: flex; gap: 8px; flex: 0 0 auto; order: 4; }
 .sidebar-actions > * {
@@ -231,6 +230,9 @@ html, body {
 .btn-small { padding: 6px 10px; font-size: 13px; }
 .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
 .btn-ghost:hover { background: var(--bg-elev); }
+/* Has to stay below .btn, otherwise the accent background wins. */
+.btn-config { width: 100%; background: transparent; border: 1px solid var(--border); color: var(--text); }
+.btn-config:hover { background: var(--bg-elev); }
 
 /* ---------- Main / Chat ---------- */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }

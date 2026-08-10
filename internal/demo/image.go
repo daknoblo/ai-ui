@@ -66,24 +66,24 @@ func shade(c color.RGBA, percent int) color.RGBA {
 }
 
 // box draws a cuboid with its top, right and left face.
-func box(img *image.RGBA, origin point, c0, w, d, h int, face color.RGBA) {
+func box(img *image.RGBA, origin point, a, b, c0, w, d, h int, face color.RGBA) {
 	fillPoly(img, []point{
-		project(origin, w, 0, c0),
-		project(origin, w, d, c0),
-		project(origin, w, d, c0+h),
-		project(origin, w, 0, c0+h),
+		project(origin, a+w, b, c0),
+		project(origin, a+w, b+d, c0),
+		project(origin, a+w, b+d, c0+h),
+		project(origin, a+w, b, c0+h),
 	}, shade(face, 62))
 	fillPoly(img, []point{
-		project(origin, 0, d, c0),
-		project(origin, w, d, c0),
-		project(origin, w, d, c0+h),
-		project(origin, 0, d, c0+h),
+		project(origin, a, b+d, c0),
+		project(origin, a+w, b+d, c0),
+		project(origin, a+w, b+d, c0+h),
+		project(origin, a, b+d, c0+h),
 	}, shade(face, 84))
 	fillPoly(img, []point{
-		project(origin, 0, 0, c0+h),
-		project(origin, w, 0, c0+h),
-		project(origin, w, d, c0+h),
-		project(origin, 0, d, c0+h),
+		project(origin, a, b, c0+h),
+		project(origin, a+w, b, c0+h),
+		project(origin, a+w, b+d, c0+h),
+		project(origin, a, b+d, c0+h),
 	}, face)
 }
 
@@ -128,7 +128,7 @@ func renderIllustration(width, height int, accent color.RGBA) *image.RGBA {
 	// The rack units, bottom to top.
 	for i := 0; i < units; i++ {
 		base := i * (unitH + gap)
-		box(img, origin, base, unitW, unitD, unitH,
+		box(img, origin, 0, 0, base, unitW, unitD, unitH,
 			shade(color.RGBA{R: 0x3c, G: 0x42, B: 0x4b, A: 0xff}, 100-i*5))
 
 		// Status lights on the left face.
@@ -148,8 +148,9 @@ func renderIllustration(width, height int, accent color.RGBA) *image.RGBA {
 		}
 	}
 
-	// Accent plate closing the stack.
-	box(img, origin, stack+gap, unitW, unitD, max(unitH/4, 2), accent)
+	// Accent module on top of the stack, inset so it reads as a highlight.
+	insetA, insetB := unitW/5, unitD/5
+	box(img, origin, insetA, insetB, stack+gap, unitW-2*insetA, unitD-2*insetB, unitH*2/3, accent)
 	return img
 }
 

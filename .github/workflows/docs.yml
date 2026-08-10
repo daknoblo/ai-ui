@@ -65,6 +65,10 @@ jobs:
       - name: Install screenshot tooling
         working-directory: tools/screenshots
         run: |
+          # Chromium falls back to monochrome glyphs (or tofu) for the emoji the
+          # interface uses unless a color emoji font is installed.
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-color-emoji
           npm ci
           npx playwright install --with-deps chromium
 

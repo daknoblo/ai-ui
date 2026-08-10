@@ -134,7 +134,7 @@
 	hx-ext="sse"
 	sse-connect="/chat/{{.ChatID}}/generate{{if .Image}}?image=1{{if .Edit}}&amp;edit=1{{end}}{{else if .Web}}?web=1{{end}}"
 	sse-close="done">
-	<div class="msg-role">{{t "role.assistant"}}<span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span>{{if .Web}} <span class="web-tag">🌐 {{t "chat.web_tag"}}</span>{{end}}{{if .Image}} <span class="web-tag">🖼️ {{t "chat.image_tag"}}</span>{{end}}</div>
+	<div class="msg-role">{{t "role.assistant"}}<span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span>{{if .Web}} <span class="web-tag"><span class="emoji">🌐</span> {{t "chat.web_tag"}}</span>{{end}}{{if .Image}} <span class="web-tag"><span class="emoji">🖼️</span> {{t "chat.image_tag"}}</span>{{end}}</div>
 	<div class="msg-tools" sse-swap="tool" hx-swap="beforeend"></div>
 	<div class="bubble" sse-swap="token" hx-swap="innerHTML"><div class="pending" role="status"><span class="pending-label">{{if .Image}}{{if .Edit}}{{t "stream.pending_image_edit"}}{{else}}{{t "stream.pending_image"}}{{end}}{{else}}{{t "stream.pending_chat"}}{{end}}</span><span class="pending-bar"><span class="pending-fill"></span></span></div></div>
 	<div class="msg-usage" sse-swap="usage" hx-swap="innerHTML"></div>

@@ -89,9 +89,9 @@
 
 {{define "status-badge"}}
 <a href="/stats" class="usage-row" title="{{t "nav.stats_hint"}}&#10;{{t "usage.tooltip_head"}}&#10;{{t "usage.tooltip_chat" (thousands .Metrics.ChatTotalTokens) (thousands .Metrics.ChatPromptTokens) (thousands .Metrics.ChatComplTokens) (thousands .Metrics.ChatRequests)}}&#10;{{t "usage.tooltip_embed" (thousands .Metrics.EmbedTokens) (thousands .Metrics.EmbedRequests)}}{{if .Metrics.ImageRequests}}&#10;{{t "usage.tooltip_image" (thousands .Metrics.ImageTokens) (thousands .Metrics.ImageRequests)}}{{end}}">
-	<span class="usage-cell">💾 {{.DiskHuman}}</span>
-	<span class="usage-cell">📄 {{.DocCount}}</span>
-	<span class="usage-cell">🪙 {{thousands .Metrics.TotalTokens}}</span>
+	<span class="usage-cell"><span class="emoji">💾</span> {{.DiskHuman}}</span>
+	<span class="usage-cell"><span class="emoji">📄</span> {{.DocCount}}</span>
+	<span class="usage-cell"><span class="emoji">🪙</span> {{thousands .Metrics.TotalTokens}}</span>
 </a>
 <div class="status {{.Level}}" title="{{if .Uploads}}{{t "uploads.allowed_hint"}}{{else}}{{t "uploads.blocked_hint"}}{{end}}">
 	<span class="status-dot"></span>{{.Label}}

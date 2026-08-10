@@ -20,9 +20,10 @@
 
 * { box-sizing: border-box; }
 
-/* Elements that carry an emoji icon. The UI font stays as the fallback so the
-   text next to an icon keeps rendering in it. */
-.btn-icon, .mode-opt, .drop-icon, .doc-chip-icon, .usage-cell, .web-tag {
+/* Elements that consist of nothing but an emoji icon. Text must stay out of
+   this rule: the emoji fonts also carry digits, which would then render in
+   them. */
+.emoji, .btn-icon, .mode-opt, .drop-icon, .doc-chip-icon {
 	font-family: var(--font-emoji), var(--font-ui);
 }
 

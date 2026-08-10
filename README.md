@@ -1,6 +1,7 @@
 # ai-ui
 
 [![CI](https://github.com/daknoblo/ai-ui/actions/workflows/ci.yml/badge.svg)](https://github.com/daknoblo/ai-ui/actions/workflows/ci.yml)
+[![Docs](https://github.com/daknoblo/ai-ui/actions/workflows/docs.yml/badge.svg)](https://daknoblo.github.io/ai-ui/)
 [![Release](https://img.shields.io/github/v/release/daknoblo/ai-ui)](https://github.com/daknoblo/ai-ui/releases/latest)
 [![Go](https://img.shields.io/github/go-mod/go-version/daknoblo/ai-ui)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -9,6 +10,20 @@
 A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to an Azure Foundry model router (Azure OpenAI
 compatible).
+
+**Website with the full screenshot gallery:**
+<https://daknoblo.github.io/ai-ui/>
+
+## Screenshots
+
+[![Chat with Markdown answers](docs/screenshots/en/chat.png)](https://daknoblo.github.io/ai-ui/#screenshots)
+
+| Documents as context (RAG) | Image generation | Token statistics |
+| -------------------------- | ---------------- | ---------------- |
+| ![Documents as chat context](docs/screenshots/en/documents.png) | ![Image generation](docs/screenshots/en/image.png) | ![Token statistics](docs/screenshots/en/stats.png) |
+
+All screenshots are generated automatically from the demo instance
+([cmd/demo](cmd/demo)) - see [Demo & documentation](#demo--documentation).
 
 ## Features
 
@@ -236,6 +251,40 @@ CGO_ENABLED=0 go build ./...
 
 User interface strings live in [internal/i18n](internal/i18n/i18n.go). Every key
 must exist in all supported languages; a test enforces that.
+
+## Demo & documentation
+
+The repository contains a demo instance that needs neither an API key nor any
+Azure resources: [internal/demo](internal/demo) provides a stub of the
+Azure-compatible endpoints (chat streaming, embeddings, images) and seeds the
+database with conversations, documents, a generated image and token statistics.
+
+```sh
+go run ./cmd/demo             # http://localhost:8080
+go run ./cmd/demo -lang de    # German interface
+```
+
+The demo is also the source of the screenshots. They are captured with
+Playwright and written to `docs/screenshots`, together with a manifest that
+describes every shot:
+
+```sh
+go build -o bin/ai-ui-demo ./cmd/demo
+cd tools/screenshots && npm ci && npx playwright install chromium
+node capture.mjs --bin=../../bin/ai-ui-demo --out=../../docs/screenshots
+```
+
+[cmd/site](cmd/site) turns this README and the screenshots into the static
+website that is published on GitHub Pages:
+
+```sh
+go run ./cmd/site -out site   # open site/index.html
+```
+
+The `Docs` workflow runs all three steps on every push to `main` that touches
+the application, the templates or this README: it recaptures the screenshots,
+commits them when they changed and deploys the regenerated website. New features
+therefore appear in the documentation without a manual screenshot session.
 
 ## License
 

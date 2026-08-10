@@ -1,6 +1,13 @@
 # Binaries
 /ai-ui
 /out
+/bin
+
+# Generated documentation website (built by cmd/site)
+/site
+
+# Screenshot tooling
+node_modules/
 
 # Local data path / SQLite
 /data

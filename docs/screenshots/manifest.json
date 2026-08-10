@@ -1,0 +1,121 @@
+{
+  "shots": [
+    {
+      "id": "chat",
+      "lang": "en",
+      "file": "en/chat.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Chat with Markdown answers",
+      "caption": "Conversations in the sidebar, model picker in the header, answers rendered as sanitized Markdown including tables and code."
+    },
+    {
+      "id": "streaming",
+      "lang": "en",
+      "file": "en/streaming.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Answers stream token by token",
+      "caption": "The answer arrives over server-sent events; the model used and the token usage are shown once the stream ends."
+    },
+    {
+      "id": "documents",
+      "lang": "en",
+      "file": "en/documents.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Documents as chat context (RAG)",
+      "caption": "Uploads are chunked, embedded and stored next to the chat; the attachments stay visible above the input."
+    },
+    {
+      "id": "websearch",
+      "lang": "en",
+      "file": "en/websearch.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Optional web search",
+      "caption": "With the 🌐 toggle a request is enriched with current results from Tavily, Brave Search or a self-hosted SearXNG."
+    },
+    {
+      "id": "image",
+      "lang": "en",
+      "file": "en/image.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Image generation and editing",
+      "caption": "The 🖼 mode turns the next message into a generated image; an attached image is edited instead of created from scratch."
+    },
+    {
+      "id": "settings",
+      "lang": "en",
+      "file": "en/settings.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Settings dialog",
+      "caption": "Language, endpoints, deployments, image parameters, web search and log level - all in the UI. API keys stay in the environment."
+    },
+    {
+      "id": "stats",
+      "lang": "en",
+      "file": "en/stats.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Token statistics",
+      "caption": "Persisted usage per day and per model, including embeddings, images and the size of the data path."
+    },
+    {
+      "id": "logs",
+      "lang": "en",
+      "file": "en/logs.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Live log",
+      "caption": "The last log lines in the browser, with a level filter - handy behind a reverse proxy without shell access."
+    },
+    {
+      "id": "mobile",
+      "lang": "en",
+      "file": "en/mobile.png",
+      "width": 390,
+      "height": 844,
+      "title": "Phone layout",
+      "caption": "On a narrow viewport the sidebar turns into an off-canvas drawer behind the ☰ button, so the conversation keeps the full width."
+    },
+    {
+      "id": "chat",
+      "lang": "de",
+      "file": "de/chat.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Chat mit Markdown-Antworten",
+      "caption": "Unterhaltungen in der Seitenleiste, Modellauswahl in der Kopfzeile, Antworten als bereinigtes Markdown inklusive Tabellen und Code."
+    },
+    {
+      "id": "image",
+      "lang": "de",
+      "file": "de/image.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Bilder erzeugen und bearbeiten",
+      "caption": "Der Modus 🖼 macht aus der nächsten Nachricht ein erzeugtes Bild; ein angehängtes Bild wird stattdessen bearbeitet."
+    },
+    {
+      "id": "settings",
+      "lang": "de",
+      "file": "de/settings.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Einstellungsdialog",
+      "caption": "Sprache, Endpunkte, Deployments, Bildparameter, Websuche und Log-Level - alles in der Oberfläche. API-Schlüssel bleiben in der Umgebung."
+    },
+    {
+      "id": "stats",
+      "lang": "de",
+      "file": "de/stats.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Token-Statistik",
+      "caption": "Dauerhaft gespeicherter Verbrauch pro Tag und Modell, inklusive Embeddings, Bildern und Größe des Datenpfads."
+    }
+  ]
+}

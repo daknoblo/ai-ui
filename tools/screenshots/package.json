@@ -1,0 +1,13 @@
+{
+  "name": "ai-ui-screenshots",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Captures the documentation screenshots from the ai-ui demo instance.",
+  "scripts": {
+    "screenshots": "node capture.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.58.1"
+  }
+}

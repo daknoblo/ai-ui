@@ -12,6 +12,13 @@
 # Build artifacts
 /ai-ui
 /out
+/bin
+
+# Documentation website, screenshots and their tooling
+/docs
+/site
+/tools
+node_modules
 
 # IDE
 .vscode

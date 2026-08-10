@@ -1,0 +1,117 @@
+name: Docs
+
+# Regenerates the demo screenshots and publishes the static website on GitHub
+# Pages. Everything is derived from the repository: the screenshots come from
+# cmd/demo, the pages from README.md - so a new feature only has to be built and
+# documented, not photographed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "main.go"
+      - "cmd/**"
+      - "internal/**"
+      - "web/**"
+      - "README.md"
+      - "tools/screenshots/**"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "main.go"
+      - "cmd/**"
+      - "internal/**"
+      - "web/**"
+      - "README.md"
+      - "tools/screenshots/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Screenshots & website
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to push the refreshed screenshots back to main.
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tools/screenshots/package-lock.json
+
+      - name: Install screenshot tooling
+        working-directory: tools/screenshots
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Build the demo instance
+        run: CGO_ENABLED=0 go build -o bin/ai-ui-demo ./cmd/demo
+
+      - name: Capture screenshots
+        working-directory: tools/screenshots
+        run: node capture.mjs --bin=../../bin/ai-ui-demo --out=../../docs/screenshots
+
+      - name: Commit refreshed screenshots
+        if: github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          if git diff --cached --quiet; then
+            echo "screenshots unchanged"
+            exit 0
+          fi
+          # [skip ci] keeps this commit from triggering the workflows again.
+          git commit -m "docs: refresh demo screenshots [skip ci]"
+          git pull --rebase --autostash
+          git push
+
+      - name: Build the website
+        run: go run ./cmd/site -out site
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+          include-hidden-files: true
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

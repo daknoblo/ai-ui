@@ -1,0 +1,95 @@
+{{define "head"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{{.Title}}</title>
+	<meta name="description" content="{{.Description}}">
+	<meta name="color-scheme" content="dark">
+	<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header class="topbar">
+	<a class="brand" href="index.html">{{.Name}}</a>
+	<nav class="topnav">
+		<a href="index.html">Overview</a>
+		<a href="docs.html">Documentation</a>
+		<a href="{{.Repo}}">GitHub</a>
+	</nav>
+</header>
+{{end}}
+
+{{define "foot"}}
+<footer class="footer">
+	<p>Generated from README.md and the automated demo screenshots &middot; MIT License &middot; &copy; {{.Year}}</p>
+	<p><a href="{{.Repo}}">Source code</a> &middot; <a href="{{.Repo}}/pkgs/container/ai-ui">Container image</a></p>
+</footer>
+</body>
+</html>
+{{end}}
+
+{{define "index"}}
+{{template "head" .}}
+<main class="page">
+	<section class="hero">
+		<h1>{{.Name}}</h1>
+		<p class="tagline">{{.Tagline}}</p>
+		<p class="cta">
+			<a class="btn" href="docs.html">Documentation</a>
+			<a class="btn btn-ghost" href="{{.Repo}}">GitHub</a>
+			<a class="btn btn-ghost" href="#screenshots">Screenshots</a>
+		</p>
+	</section>
+
+	{{if .Features}}
+	<section class="section">
+		<h2>Features</h2>
+		<div class="prose">{{.Features}}</div>
+	</section>
+	{{end}}
+
+	<section class="section" id="screenshots">
+		<h2>Screenshots</h2>
+		<p class="muted">Captured automatically from the demo instance on every change - no manual editing.</p>
+		{{range .Galleries}}
+		<h3 class="gallery-head">{{.Name}}</h3>
+		<div class="gallery">
+			{{range .Shots}}
+			<figure class="shot">
+				<a href="{{$.ShotsDir}}/{{.File}}">
+					<img src="{{$.ShotsDir}}/{{.File}}" width="{{.Width}}" height="{{.Height}}" loading="lazy" alt="{{.Title}}">
+				</a>
+				<figcaption>
+					<strong>{{.Title}}</strong>
+					<span>{{.Caption}}</span>
+				</figcaption>
+			</figure>
+			{{end}}
+		</div>
+		{{end}}
+	</section>
+
+	<section class="section">
+		<h2>Try it yourself</h2>
+		<p class="muted">The same demo the screenshots come from runs locally without any API key:</p>
+		<pre><code>git clone {{.Repo}}.git
+cd ai-ui
+go run ./cmd/demo   # http://localhost:8080</code></pre>
+	</section>
+</main>
+{{template "foot" .}}
+{{end}}
+
+{{define "docs"}}
+{{template "head" .}}
+<main class="page docs">
+	<aside class="toc">
+		<p class="toc-head">Contents</p>
+		<ul>
+			{{range .Headings}}<li><a href="#{{.ID}}">{{.Title}}</a></li>{{end}}
+		</ul>
+	</aside>
+	<article class="prose">{{.Body}}</article>
+</main>
+{{template "foot" .}}
+{{end}}

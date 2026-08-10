@@ -30,8 +30,12 @@ code, the Dockerfile, GitHub Actions, tests and documentation.
 ```
 ai-ui/
 ├── main.go                       # entry point: env, wiring, server, shutdown
+├── cmd/
+│   ├── demo/                     # demo instance with a stub backend (no API key)
+│   └── site/                     # generator of the GitHub Pages website
 ├── internal/
 │   ├── config/                   # configuration from env and JSON file
+│   ├── demo/                     # stub backend + seeded demo content
 │   ├── docparse/                 # plain text extraction from uploads
 │   ├── i18n/                     # UI message catalog (en/de)
 │   ├── llm/                      # Azure/OpenAI compatible client
@@ -39,18 +43,22 @@ ai-ui/
 │   ├── server/                   # HTTP server, routing, handlers, SSE
 │   ├── storage/                  # SQLite access and migrations
 │   └── websearch/                # optional web search
+├── tools/screenshots/            # Playwright capture of the documentation shots
+├── docs/screenshots/             # generated screenshots + manifest (committed)
 ├── web/                          # embedded templates and static assets
 ├── Dockerfile
 ├── docker-compose.example.yml
 ├── go.mod / go.sum
 ├── .golangci.yml
-└── .github/workflows/            # ci.yml, release.yml, codeql.yml
+└── .github/workflows/            # ci.yml, release.yml, codeql.yml, docs.yml
 ```
 
 - `main.go` stays lean: argument parsing, configuration, dependencies, signal
   handling and graceful shutdown.
 - Code that is not meant for public reuse lives under `internal/`.
 - HTTP routes are registered centrally in `internal/server.(*Server).Routes()`.
+- The demo is not part of the container image: the Dockerfile only builds the
+  root package.
 
 ## 3. Configuration & environment variables
 
@@ -116,7 +124,11 @@ ai-ui does not use a project specific env prefix. The relevant variables are:
   - `release.yml`: multi-arch Docker Buildx, GHCR push, SBOM, provenance,
     keyless cosign signature and Trivy SARIF upload.
   - `codeql.yml`: CodeQL for Go with `build-mode: autobuild`.
-- Dependabot watches `gomod`, `github-actions` and `docker` weekly.
+  - `docs.yml`: recaptures the demo screenshots with Playwright, commits them to
+    `docs/screenshots` (`[skip ci]`, so no workflow loop), builds the website
+    with `go run ./cmd/site` and deploys it to GitHub Pages.
+- Dependabot watches `gomod`, `github-actions`, `docker` and the `npm` project
+  in `tools/screenshots` weekly.
 - Always pin actions to stable major/version tags; never use `@master` or
   `@main`.
 
@@ -148,7 +160,22 @@ ai-ui does not use a project specific env prefix. The relevant variables are:
   proxy/VPN and should not be exposed to the internet unprotected.
 - Container images are signed and scanned by Trivy for CRITICAL/HIGH findings.
 
-## 10. Definition of done for changes
+## 10. Demo, screenshots & website
+
+- `internal/demo` holds a stub of the Azure-compatible endpoints plus the seeded
+  demo content; the conversations are Markdown files under
+  `internal/demo/content/<lang>/` (embedded with `all:` so `_reply.md` is
+  included). Every language must provide the same section keys - a test enforces
+  that.
+- `cmd/demo` starts the real server against that stub, writes `demo-index.json`
+  into the data path and needs no credentials.
+- `tools/screenshots/capture.mjs` captures one PNG per section and language plus
+  a manifest; new UI sections belong in its shot list.
+- `cmd/site` generates the website from `README.md` and that manifest. The
+  README stays the single source of the documentation - there is no second copy
+  of the docs to maintain.
+
+## 11. Definition of done for changes
 
 1. `gofmt -l .` is empty.
 2. `go vet ./...`, `golangci-lint run ./...`, `CGO_ENABLED=0 go build ./...` and
@@ -158,3 +185,5 @@ ai-ui does not use a project specific env prefix. The relevant variables are:
 5. Docker stays distroless, non-root, multi-arch capable and uses the binary
    health check.
 6. No secrets or local data are committed.
+7. A user visible feature is reflected in the README and, when it adds a new
+   part of the interface, in the screenshot list of `tools/screenshots`.

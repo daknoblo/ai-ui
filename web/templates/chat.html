@@ -54,7 +54,7 @@
 			{{if .ImageEnabled}}
 			<label class="tool-opt" id="edit-option" title="{{t "chat.image_edit_title"}}" hidden>
 				<input type="checkbox" id="edit-check" onchange="setEdit(this.checked)" aria-label="{{t "chat.image_edit"}}">
-				<span class="btn-icon" aria-hidden="true">🖌</span><span class="btn-label">{{t "chat.image_edit"}}</span>
+				<span class="btn-icon" aria-hidden="true">🖌️</span><span class="btn-label">{{t "chat.image_edit"}}</span>
 			</label>
 			<form class="image-params" id="image-params" hx-post="/image/params" hx-trigger="change" hx-swap="none" hidden>
 				<label>{{t "config.image_size"}}
@@ -84,7 +84,7 @@
 					title="{{t "chat.mode_chat"}}" aria-label="{{t "chat.mode_chat"}}">💬</button>
 				<button type="button" class="mode-opt" data-mode="image" onclick="setMode('image')"
 					hx-post="/chat/{{.ChatID}}/mode" hx-vals='{"mode":"image"}' hx-swap="none"
-					title="{{t "chat.mode_image"}}" aria-label="{{t "chat.mode_image"}}">🖼</button>
+					title="{{t "chat.mode_image"}}" aria-label="{{t "chat.mode_image"}}">🖼️</button>
 			</div>
 			{{end}}
 			<form id="chat-form" class="composer-form"
@@ -108,7 +108,7 @@
 
 	<div class="drop-overlay" id="drop-overlay" aria-hidden="true">
 		<div class="drop-inner drop-ready">
-			<div class="drop-icon">⬇</div>
+			<div class="drop-icon">⬇️</div>
 			<div>{{t "drop.ready_title"}}</div>
 			<div class="drop-sub">{{t "drop.ready_sub"}}</div>
 		</div>
@@ -134,7 +134,7 @@
 	hx-ext="sse"
 	sse-connect="/chat/{{.ChatID}}/generate{{if .Image}}?image=1{{if .Edit}}&amp;edit=1{{end}}{{else if .Web}}?web=1{{end}}"
 	sse-close="done">
-	<div class="msg-role">{{t "role.assistant"}}<span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span>{{if .Web}} <span class="web-tag">🌐 {{t "chat.web_tag"}}</span>{{end}}{{if .Image}} <span class="web-tag">🖼 {{t "chat.image_tag"}}</span>{{end}}</div>
+	<div class="msg-role">{{t "role.assistant"}}<span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span>{{if .Web}} <span class="web-tag">🌐 {{t "chat.web_tag"}}</span>{{end}}{{if .Image}} <span class="web-tag">🖼️ {{t "chat.image_tag"}}</span>{{end}}</div>
 	<div class="msg-tools" sse-swap="tool" hx-swap="beforeend"></div>
 	<div class="bubble" sse-swap="token" hx-swap="innerHTML"><div class="pending" role="status"><span class="pending-label">{{if .Image}}{{if .Edit}}{{t "stream.pending_image_edit"}}{{else}}{{t "stream.pending_image"}}{{end}}{{else}}{{t "stream.pending_chat"}}{{end}}</span><span class="pending-bar"><span class="pending-fill"></span></span></div></div>
 	<div class="msg-usage" sse-swap="usage" hx-swap="innerHTML"></div>

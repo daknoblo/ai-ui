@@ -11,17 +11,27 @@
 	--warn: #e0a030;
 	--danger: #e0564a;
 	--radius: 10px;
+	--font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+	/* Emoji fonts first for the icon glyphs. Without them Linux picks a
+	   monochrome symbol font (Unifont, DejaVu) for part of the icons. */
+	--font-emoji: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla";
 	font-size: 15px;
 }
 
 * { box-sizing: border-box; }
+
+/* Elements that carry an emoji icon. The UI font stays as the fallback so the
+   text next to an icon keeps rendering in it. */
+.btn-icon, .mode-opt, .drop-icon, .doc-chip-icon, .usage-cell, .web-tag {
+	font-family: var(--font-emoji), var(--font-ui);
+}
 
 html, body {
 	margin: 0;
 	height: 100%;
 	background: var(--bg);
 	color: var(--text);
-	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+	font-family: var(--font-ui);
 	/* Keeps mobile Safari from inflating text when the device is rotated. */
 	-webkit-text-size-adjust: 100%;
 	text-size-adjust: 100%;

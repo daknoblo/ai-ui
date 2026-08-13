@@ -88,12 +88,13 @@ func (s *Store) Ping(ctx context.Context) error {
 func (s *Store) Migrate(ctx context.Context) error {
 	const schema = `
 CREATE TABLE IF NOT EXISTS chats (
-	id         INTEGER PRIMARY KEY AUTOINCREMENT,
-	title      TEXT NOT NULL,
-	model      TEXT NOT NULL DEFAULT '',
-	mode       TEXT NOT NULL DEFAULT 'chat',
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
+	id               INTEGER PRIMARY KEY AUTOINCREMENT,
+	title            TEXT NOT NULL,
+	model            TEXT NOT NULL DEFAULT '',
+	mode             TEXT NOT NULL DEFAULT 'chat',
+	reasoning_effort TEXT NOT NULL DEFAULT 'auto',
+	created_at       TEXT NOT NULL,
+	updated_at       TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chats_updated ON chats(updated_at DESC);
 CREATE TABLE IF NOT EXISTS messages (
@@ -160,6 +161,10 @@ CREATE INDEX IF NOT EXISTS idx_usage_kind_model ON usage_daily(kind, model);
 	}
 	if err := s.ensureColumn(ctx, `PRAGMA table_info(chats)`, "mode",
 		`ALTER TABLE chats ADD COLUMN mode TEXT NOT NULL DEFAULT 'chat'`); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, `PRAGMA table_info(chats)`, "reasoning_effort",
+		`ALTER TABLE chats ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT 'auto'`); err != nil {
 		return err
 	}
 	if err := s.ensureColumn(ctx, `PRAGMA table_info(images)`, "kind",
@@ -229,12 +234,13 @@ func (s *Store) ensureColumn(ctx context.Context, pragma, column, alter string) 
 // ---- Chats ----
 
 // CreateChat creates a new chat and returns its ID. model pins the chat to a
-// specific model; an empty value leaves the choice to the router.
-func (s *Store) CreateChat(ctx context.Context, title, model string) (int64, error) {
+// specific model; an empty value leaves the choice to the router. effort is the
+// reasoning effort the chat starts with.
+func (s *Store) CreateChat(ctx context.Context, title, model, effort string) (int64, error) {
 	now := nowStr()
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO chats (title, model, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		title, model, ChatModeChat, now, now)
+		`INSERT INTO chats (title, model, mode, reasoning_effort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		title, model, ChatModeChat, effort, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -244,7 +250,7 @@ func (s *Store) CreateChat(ctx context.Context, title, model string) (int64, err
 // ListChats returns all chats, most recently updated first.
 func (s *Store) ListChats(ctx context.Context) ([]Chat, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, title, model, mode, created_at, updated_at FROM chats ORDER BY updated_at DESC`)
+		`SELECT id, title, model, mode, reasoning_effort, created_at, updated_at FROM chats ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +260,7 @@ func (s *Store) ListChats(ctx context.Context) ([]Chat, error) {
 	for rows.Next() {
 		var c Chat
 		var created, updated string
-		if err := rows.Scan(&c.ID, &c.Title, &c.Model, &c.Mode, &created, &updated); err != nil {
+		if err := rows.Scan(&c.ID, &c.Title, &c.Model, &c.Mode, &c.ReasoningEffort, &created, &updated); err != nil {
 			return nil, err
 		}
 		c.CreatedAt = parseTime(created)
@@ -269,8 +275,8 @@ func (s *Store) GetChat(ctx context.Context, id int64) (Chat, error) {
 	var c Chat
 	var created, updated string
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, title, model, mode, created_at, updated_at FROM chats WHERE id = ?`, id).
-		Scan(&c.ID, &c.Title, &c.Model, &c.Mode, &created, &updated)
+		`SELECT id, title, model, mode, reasoning_effort, created_at, updated_at FROM chats WHERE id = ?`, id).
+		Scan(&c.ID, &c.Title, &c.Model, &c.Mode, &c.ReasoningEffort, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, ErrNotFound
 	}
@@ -291,6 +297,12 @@ func (s *Store) UpdateChatModel(ctx context.Context, id int64, model string) err
 // UpdateChatMode stores the answer mode of a chat.
 func (s *Store) UpdateChatMode(ctx context.Context, id int64, mode string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE chats SET mode = ? WHERE id = ?`, mode, id)
+	return err
+}
+
+// UpdateChatReasoningEffort stores the reasoning effort of a chat.
+func (s *Store) UpdateChatReasoningEffort(ctx context.Context, id int64, effort string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE chats SET reasoning_effort = ? WHERE id = ?`, effort, id)
 	return err
 }
 

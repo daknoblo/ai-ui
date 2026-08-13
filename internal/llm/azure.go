@@ -234,23 +234,32 @@ func chatModelField(cfg config.Config, override string) string {
 	return ""
 }
 
+// ChatOptions are the settings of a single chat turn. They belong to the chat,
+// not to the client, so every request can use its own model and effort.
+type ChatOptions struct {
+	Model           string // deployment name; empty leaves the choice to the router
+	ReasoningEffort string // "" or "auto" leaves it to the model
+}
+
 // ChatStream sends the messages and calls onDelta for every text token. An empty
 // model falls back to the configured one. When finished it returns the token
 // usage and the model that was actually used.
-func (c *Client) ChatStream(ctx context.Context, model string, messages []Message, onDelta func(string) error) (ChatResult, error) {
-	turn, err := c.streamTurn(ctx, model, messages, nil, onDelta)
+
+// ChatStream streams an answer and reports the token usage of the turn.
+func (c *Client) ChatStream(ctx context.Context, opts ChatOptions, messages []Message, onDelta func(string) error) (ChatResult, error) {
+	turn, err := c.streamTurn(ctx, opts, messages, nil, onDelta)
 	return ChatResult{Usage: turn.Usage, Model: turn.Model}, err
 }
 
 // ChatStreamWithTools behaves like ChatStream but offers the given tools to the
 // model and returns the tool calls it requested, if any.
-func (c *Client) ChatStreamWithTools(ctx context.Context, model string, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
-	return c.streamTurn(ctx, model, messages, tools, onDelta)
+func (c *Client) ChatStreamWithTools(ctx context.Context, opts ChatOptions, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
+	return c.streamTurn(ctx, opts, messages, tools, onDelta)
 }
 
 // streamTurn runs one streaming pass, streams text through onDelta and collects
 // optional tool calls (whose arguments arrive across several chunks).
-func (c *Client) streamTurn(ctx context.Context, model string, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
+func (c *Client) streamTurn(ctx context.Context, opts ChatOptions, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
 	var result TurnResult
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || cfg.APIVersion == "" {
@@ -263,10 +272,10 @@ func (c *Client) streamTurn(ctx context.Context, model string, messages []Messag
 	url := chatCompletionsURL(cfg.Endpoint, cfg.ChatDeployment, cfg.APIVersion)
 
 	reqBody := chatRequest{
-		Model:           chatModelField(cfg, model),
+		Model:           chatModelField(cfg, opts.Model),
 		Messages:        messages,
 		Temperature:     &cfg.Temperature,
-		ReasoningEffort: optionValue(cfg.ReasoningEffort),
+		ReasoningEffort: optionValue(opts.ReasoningEffort),
 		Stream:          true,
 		StreamOptions:   &streamOptions{IncludeUsage: true},
 	}

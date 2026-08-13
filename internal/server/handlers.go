@@ -78,7 +78,18 @@ type pageData struct {
 	ImageSizes     []string
 	ImageQualities []string
 	ImageFormats   []string
+	Reasoning      reasoningView
 	StatusBadge    statusBadge
+}
+
+// reasoningView is the model of the reasoning effort picker in the composer.
+// The offered values depend on the model of the chat, so the picker is also
+// re-rendered out of band whenever the model changes.
+type reasoningView struct {
+	ChatID  int64
+	Efforts []string
+	Current string
+	OOB     bool
 }
 
 // buildPageData loads chats, documents and – if given – the current chat with
@@ -108,6 +119,10 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		ImageFormats:   imageFormats,
 		StatusBadge:    s.statusData(),
 	}
+	pd.Reasoning = reasoningView{
+		Efforts: llm.ReasoningEfforts(pd.CurrentModel),
+		Current: llm.NormalizeReasoningEffort(pd.CurrentModel, cfg.ReasoningEffort),
+	}
 	if current != nil {
 		msgs, err := s.store.ListMessages(ctx, current.ID)
 		if err != nil {
@@ -128,6 +143,11 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		pd.ChatID = current.ID
 		pd.CurrentModel = current.Model
 		pd.ChatMode = current.Mode
+		pd.Reasoning = reasoningView{
+			ChatID:  current.ID,
+			Efforts: llm.ReasoningEfforts(current.Model),
+			Current: llm.NormalizeReasoningEffort(current.Model, current.ReasoningEffort),
+		}
 	}
 	return pd, nil
 }
@@ -155,6 +175,13 @@ func (s *Server) defaultChatModel() string {
 	return ""
 }
 
+// newChat creates a chat with the defaults for model and reasoning effort.
+func (s *Server) newChat(ctx context.Context) (int64, error) {
+	model := s.defaultChatModel()
+	return s.store.CreateChat(ctx, untitled, model,
+		llm.NormalizeReasoningEffort(model, s.cfg.Get().ReasoningEffort))
+}
+
 // handleIndex always opens a fresh chat and cleans up orphaned empty ones.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -162,7 +189,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
 		slog.Warn("clean up empty chats", "err", err)
 	}
-	id, err := s.store.CreateChat(ctx, untitled, s.defaultChatModel())
+	id, err := s.newChat(ctx)
 	if err != nil {
 		s.httpError(w, err)
 		return
@@ -202,7 +229,7 @@ func (s *Server) handleCreateChat(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.store.DeleteEmptyChats(ctx, 0); err != nil {
 		slog.Warn("clean up empty chats", "err", err)
 	}
-	id, err := s.store.CreateChat(ctx, untitled, s.defaultChatModel())
+	id, err := s.newChat(ctx)
 	if err != nil {
 		s.httpError(w, err)
 		return
@@ -318,7 +345,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	idParam := chi.URLParam(r, "id")
 	var chatID int64
 	if idParam == "new" {
-		newID, err := s.store.CreateChat(ctx, untitled, s.defaultChatModel())
+		newID, err := s.newChat(ctx)
 		if err != nil {
 			s.httpError(w, err)
 			return
@@ -442,10 +469,14 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	forceWeb := r.URL.Query().Get("web") == "1" && s.search.Enabled()
 	autoWeb := cfg.SearchAuto && s.search.Enabled() && !forceWeb
 
-	// The chat keeps its own model choice; an empty value lets the router decide.
-	model := ""
+	// The chat keeps its own model and reasoning effort; empty values leave both
+	// to the router and the model.
+	var opts llm.ChatOptions
 	if chat, err := s.store.GetChat(ctx, id); err == nil {
-		model = chat.Model
+		opts = llm.ChatOptions{
+			Model:           chat.Model,
+			ReasoningEffort: llm.NormalizeReasoningEffort(chat.Model, chat.ReasoningEffort),
+		}
 	}
 
 	messages := s.buildLLMMessages(ctx, id, cfg, history, query, forceWeb)
@@ -461,14 +492,14 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		streamErr error
 	)
 	if autoWeb {
-		result, streamErr = s.streamWithSearch(ctx, sse, model, messages, onDelta)
+		result, streamErr = s.streamWithSearch(ctx, sse, opts, messages, onDelta)
 		// Fall back without tools if the router does not support tool calling.
 		if streamErr != nil && acc.Len() == 0 {
 			slog.Warn("tool-calling failed, falling back without tools", "err", streamErr)
-			result, streamErr = s.llm.ChatStream(ctx, model, messages, onDelta)
+			result, streamErr = s.llm.ChatStream(ctx, opts, messages, onDelta)
 		}
 	} else {
-		result, streamErr = s.llm.ChatStream(ctx, model, messages, onDelta)
+		result, streamErr = s.llm.ChatStream(ctx, opts, messages, onDelta)
 	}
 
 	if streamErr != nil {
@@ -542,7 +573,7 @@ func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID 
 	}
 
 	var sb strings.Builder
-	if _, err := s.llm.ChatStream(ctx, "", titleMessages, func(delta string) error {
+	if _, err := s.llm.ChatStream(ctx, llm.ChatOptions{}, titleMessages, func(delta string) error {
 		sb.WriteString(delta)
 		return nil
 	}); err != nil {
@@ -672,12 +703,12 @@ func (s *Server) webSearchTool() llm.Tool {
 // streamWithSearch runs the tool loop: the model may call the web_search tool
 // itself, results are fed back until a final answer (without a tool call) is
 // streamed.
-func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, model string, messages []llm.Message, onDelta func(string) error) (llm.ChatResult, error) {
+func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, opts llm.ChatOptions, messages []llm.Message, onDelta func(string) error) (llm.ChatResult, error) {
 	tools := []llm.Tool{s.webSearchTool()}
 	var final llm.ChatResult
 
 	for range maxToolIterations {
-		turn, err := s.llm.ChatStreamWithTools(ctx, model, messages, tools, onDelta)
+		turn, err := s.llm.ChatStreamWithTools(ctx, opts, messages, tools, onDelta)
 		if err != nil {
 			return final, err
 		}
@@ -712,7 +743,7 @@ func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, model str
 	}
 
 	// Iteration limit reached: force a last answer without tools.
-	turn, err := s.llm.ChatStream(ctx, model, messages, onDelta)
+	turn, err := s.llm.ChatStream(ctx, opts, messages, onDelta)
 	if err != nil {
 		return final, err
 	}
@@ -955,6 +986,47 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.UpdateChatModel(r.Context(), chatID, model); err != nil {
+		s.httpError(w, err)
+		return
+	}
+
+	// The offered efforts belong to the model, so the picker is re-rendered and
+	// a value the new model does not know falls back to "auto".
+	effort := llm.ReasoningAuto
+	if chat, err := s.store.GetChat(r.Context(), chatID); err == nil {
+		effort = llm.NormalizeReasoningEffort(model, chat.ReasoningEffort)
+	}
+	if err := s.store.UpdateChatReasoningEffort(r.Context(), chatID, effort); err != nil {
+		s.httpError(w, err)
+		return
+	}
+	s.render(w, "reasoning-opt", reasoningView{
+		ChatID:  chatID,
+		Efforts: llm.ReasoningEfforts(model),
+		Current: effort,
+		OOB:     true,
+	})
+}
+
+// handleSetReasoning stores the reasoning effort of a chat. Which values are
+// valid depends on the model the chat is pinned to.
+func (s *Server) handleSetReasoning(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.httpError(w, err)
+		return
+	}
+	chatID, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	chat, err := s.store.GetChat(r.Context(), chatID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	effort := llm.NormalizeReasoningEffort(chat.Model, r.FormValue("reasoning_effort"))
+	if err := s.store.UpdateChatReasoningEffort(r.Context(), chatID, effort); err != nil {
 		s.httpError(w, err)
 		return
 	}

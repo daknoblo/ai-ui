@@ -95,6 +95,10 @@
 			if (webCheck) webCheck.checked = web;
 			var webOption = document.getElementById('web-option');
 			if (webOption) webOption.hidden = image;
+			// Image generation has no reasoning effort, and not every model
+			// offers one either.
+			var reasoning = document.getElementById('reasoning-opt');
+			if (reasoning) reasoning.hidden = image || reasoning.dataset.supported !== '1';
 			var editCheck = document.getElementById('edit-check');
 			if (editCheck) editCheck.checked = edit;
 			var editOption = document.getElementById('edit-option');

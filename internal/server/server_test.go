@@ -9,6 +9,7 @@ import (
 
 	"github.com/daknoblo/ai-ui/internal/config"
 	"github.com/daknoblo/ai-ui/internal/i18n"
+	"github.com/daknoblo/ai-ui/internal/llm"
 	"github.com/daknoblo/ai-ui/internal/logbuf"
 	"github.com/daknoblo/ai-ui/internal/storage"
 )
@@ -48,7 +49,7 @@ func TestRoutesRenderInEveryLanguage(t *testing.T) {
 		t.Run(opt.Code, func(t *testing.T) {
 			srv, handler := newTestServer(t, opt.Code)
 
-			chatID, err := srv.store.CreateChat(t.Context(), untitled, "")
+			chatID, err := srv.store.CreateChat(t.Context(), untitled, "", llm.ReasoningAuto)
 			if err != nil {
 				t.Fatalf("create chat: %v", err)
 			}

@@ -16,6 +16,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/daknoblo/ai-ui/internal/llm"
 	"github.com/daknoblo/ai-ui/internal/storage"
 )
 
@@ -93,7 +94,7 @@ func Seed(ctx context.Context, store *storage.Store, dbPath, lang string) (Index
 
 // seedConversation writes one demo chat including its attachments.
 func seedConversation(ctx context.Context, store *storage.Store, conv conversation) (int64, error) {
-	chatID, err := store.CreateChat(ctx, conv.Title, conv.Model)
+	chatID, err := store.CreateChat(ctx, conv.Title, conv.Model, llm.ReasoningAuto)
 	if err != nil {
 		return 0, err
 	}

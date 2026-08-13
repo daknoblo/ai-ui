@@ -46,7 +46,7 @@ func TestStreamRetriesWithoutTemperature(t *testing.T) {
 	}
 
 	var got string
-	if _, err := New(store).ChatStream(context.Background(), "", []Message{{Role: "user", Content: "ping"}},
+	if _, err := New(store).ChatStream(context.Background(), ChatOptions{}, []Message{{Role: "user", Content: "ping"}},
 		func(delta string) error {
 			got += delta
 			return nil
@@ -97,13 +97,12 @@ func TestStreamRetriesWithoutReasoningEffort(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Endpoint = srv.URL + "/openai/v1"
 	cfg.ChatDeployment = "gpt-4.1"
-	cfg.ReasoningEffort = "high"
 	if err := store.Save(cfg); err != nil {
 		t.Fatalf("save configuration: %v", err)
 	}
 
-	if _, err := New(store).ChatStream(context.Background(), "", []Message{{Role: "user", Content: "ping"}},
-		func(string) error { return nil }); err != nil {
+	if _, err := New(store).ChatStream(context.Background(), ChatOptions{ReasoningEffort: "high"},
+		[]Message{{Role: "user", Content: "ping"}}, func(string) error { return nil }); err != nil {
 		t.Fatalf("ChatStream: %v", err)
 	}
 
@@ -118,8 +117,8 @@ func TestStreamRetriesWithoutReasoningEffort(t *testing.T) {
 	}
 }
 
-// TestStreamOmitsAutomaticReasoningEffort makes sure the default setting does
-// not send the parameter at all.
+// TestStreamOmitsAutomaticReasoningEffort makes sure a chat without a chosen
+// effort does not send the parameter at all.
 func TestStreamOmitsAutomaticReasoningEffort(t *testing.T) {
 	var body map[string]any
 
@@ -142,11 +141,11 @@ func TestStreamOmitsAutomaticReasoningEffort(t *testing.T) {
 		t.Fatalf("save configuration: %v", err)
 	}
 
-	if _, err := New(store).ChatStream(context.Background(), "", []Message{{Role: "user", Content: "ping"}},
-		func(string) error { return nil }); err != nil {
+	if _, err := New(store).ChatStream(context.Background(), ChatOptions{ReasoningEffort: ReasoningAuto},
+		[]Message{{Role: "user", Content: "ping"}}, func(string) error { return nil }); err != nil {
 		t.Fatalf("ChatStream: %v", err)
 	}
 	if _, ok := body["reasoning_effort"]; ok {
-		t.Error("the default configuration must not send a reasoning effort")
+		t.Error("an automatic reasoning effort must not be sent")
 	}
 }

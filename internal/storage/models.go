@@ -4,12 +4,13 @@ import "time"
 
 // Chat is a conversation shown in the sidebar.
 type Chat struct {
-	ID        int64     `json:"id"`
-	Title     string    `json:"title"`
-	Model     string    `json:"model"` // pinned model of this chat (empty = router decides)
-	Mode      string    `json:"mode"`  // ChatModeChat or ChatModeImage
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              int64     `json:"id"`
+	Title           string    `json:"title"`
+	Model           string    `json:"model"`            // pinned model of this chat (empty = router decides)
+	Mode            string    `json:"mode"`             // ChatModeChat or ChatModeImage
+	ReasoningEffort string    `json:"reasoning_effort"` // "auto" leaves it to the model
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // Answer modes of a chat.

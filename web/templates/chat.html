@@ -45,6 +45,7 @@
 					onchange="handleAttach(this)">
 				<span class="btn-icon" aria-hidden="true">📎</span><span class="btn-label">{{t "chat.attach_option"}}</span>
 			</label>
+			{{template "reasoning-opt" .Reasoning}}
 			{{if .SearchEnabled}}
 			<label class="tool-opt" id="web-option" title="{{t "chat.web_toggle_title"}}">
 				<input type="checkbox" id="web-check" onchange="setWeb(this.checked)" aria-label="{{t "chat.web_option"}}">
@@ -121,8 +122,24 @@
 </div>
 {{end}}
 
-{{define "message"}}
-<div class="msg {{.Role}}">
+{{/* reasoning-opt: the effort picker of the composer. It is re-rendered out of
+     band when the model changes, so it always stays a single element with a
+     stable id - even for models that offer no reasoning effort. */}}
+{{define "reasoning-opt"}}
+<form class="tool-opt reasoning-opt" id="reasoning-opt"
+	data-supported="{{if .Efforts}}1{{else}}0{{end}}"
+	hx-post="/chat/{{.ChatID}}/reasoning" hx-trigger="change" hx-swap="none"
+	title="{{t "chat.reasoning_title"}}"
+	{{if .OOB}}hx-swap-oob="true"{{end}}{{if not .Efforts}} hidden{{end}}>
+	<span class="btn-icon" aria-hidden="true">🧠</span>
+	<label class="btn-label" for="reasoning-select">{{t "chat.reasoning_label"}}</label>
+	<select id="reasoning-select" name="reasoning_effort" aria-label="{{t "chat.reasoning_label"}}">
+		{{range .Efforts}}<option value="{{.}}" {{if eq . $.Current}}selected{{end}}>{{.}}</option>{{end}}
+	</select>
+</form>
+{{end}}
+
+{{define "message"}}<div class="msg {{.Role}}">
 	<div class="msg-role">{{if eq .Role "user"}}{{t "role.user"}}{{else}}{{t "role.assistant"}}{{end}}</div>
 	<div class="bubble">{{renderMarkdown .Content}}</div>
 </div>

@@ -483,7 +483,8 @@ html, body {
 	line-height: 1;
 	color: var(--text-dim);
 }
-.image-params select {
+.image-params select,
+.reasoning-opt select {
 	background: var(--bg);
 	color: var(--text);
 	border: 1px solid var(--border);
@@ -492,7 +493,8 @@ html, body {
 	font: inherit;
 	font-size: 12px;
 }
-.image-params select:focus { outline: none; border-color: var(--accent); }
+.image-params select:focus,
+.reasoning-opt select:focus { outline: none; border-color: var(--accent); }
 .btn-send {
 	width: 42px;
 	height: 42px;
@@ -964,6 +966,7 @@ html, body {
 	.composer textarea,
 	.model-picker select,
 	.image-params select,
+	.reasoning-opt select,
 	.config-form input,
 	.config-form select,
 	.config-form textarea { font-size: 16px; }

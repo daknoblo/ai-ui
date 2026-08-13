@@ -25,7 +25,7 @@ func TestChunkRoundTrip(t *testing.T) {
 	store := newTestStore(t)
 	ctx := t.Context()
 
-	chatID, err := store.CreateChat(ctx, "test", "")
+	chatID, err := store.CreateChat(ctx, "test", "", "auto")
 	if err != nil {
 		t.Fatalf("create chat: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestDeleteChatCascades(t *testing.T) {
 	store := newTestStore(t)
 	ctx := t.Context()
 
-	chatID, err := store.CreateChat(ctx, "test", "")
+	chatID, err := store.CreateChat(ctx, "test", "", "auto")
 	if err != nil {
 		t.Fatalf("create chat: %v", err)
 	}

@@ -32,6 +32,8 @@ All screenshots are generated automatically from the demo instance
 - Model picker in the top right of the chat window ("Auto" lets the router
   decide). The list comes from `AZURE_MODELS`; the selection is global and
   survives switching chats
+- Reasoning effort selectable per chat next to the input field; the offered
+  values follow the selected model
 - Document upload (text/Markdown, PDF, DOCX) as RAG context
   (embeddings + brute-force cosine search)
 - Attach documents next to the input field (📎) or drag and drop them into the
@@ -45,8 +47,8 @@ All screenshots are generated automatically from the demo instance
 - Documents are bound to their chat and are removed together with it
   (including their embeddings)
 - Settings dialog in the UI (language, endpoints, deployments, API version,
-  system prompt, temperature, reasoning effort); the configured models are
-  listed read-only
+  system prompt, temperature, default reasoning effort); the configured models
+  are listed read-only
 - User interface available in **English and German**, switchable in the settings
 - Readiness/connection check: uploads are only possible once storage and the
   embedding endpoint are verified; checked at start-up and periodically in the
@@ -98,13 +100,18 @@ the language has been changed. New installations default to English.
 
 ### Temperature & reasoning effort
 
-Both live in the settings dialog under **Behavior** and apply to every chat
-request. **Reasoning effort** maps to the `reasoning_effort` parameter of
-reasoning models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`); the
-default `auto` omits the parameter, so the model keeps its own default. Which
-values a model accepts differs, and behind a model router the answering model is
-not known in advance - a rejected temperature or reasoning effort is therefore
-dropped automatically and the request is repeated without it instead of failing.
+The temperature lives in the settings dialog under **Behavior** and applies to
+every chat request. The **reasoning effort** (the `reasoning_effort` parameter of
+reasoning models) is chosen **per chat** next to the input field; the settings
+dialog only holds the default for new chats.
+
+The offered values follow the model selected in the top right and are updated
+when it changes: `none`, `low`, `medium`, `high`, `xhigh` for GPT-5.1 and newer,
+`minimal`, `low`, `medium`, `high` for GPT-5, `low`, `medium`, `high` for the
+o-series. Models without reasoning hide the field, and `auto` omits the parameter
+so the model keeps its own default. A value the answering model does not accept -
+which cannot be ruled out behind a model router - is dropped automatically and
+the request is repeated without it, the same way an unsupported temperature is.
 
 ### Pinning the endpoint via environment variables (optional)
 

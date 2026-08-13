@@ -81,6 +81,69 @@ func TestRoutesRenderInEveryLanguage(t *testing.T) {
 	}
 }
 
+// TestDeepChecksEveryDeployment makes sure the manual connection test probes
+// every entry of AZURE_MODELS, so a typo in the list surfaces there instead of
+// when that model is picked.
+func TestDeepChecksEveryDeployment(t *testing.T) {
+	azure := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/deployments/typo/") {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"code":"DeploymentNotFound"}}`))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/embeddings") {
+			_, _ = w.Write([]byte(`{"data":[{"index":0,"embedding":[0.5]}],"usage":{"total_tokens":1}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"pong"}}]}`))
+	}))
+	defer azure.Close()
+
+	dir := t.TempDir()
+	store, err := storage.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.Migrate(t.Context()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	cfgStore := config.NewStore(filepath.Join(dir, "config.json"), config.Keys{API: "key"},
+		config.Overrides{ChatModels: []string{"gpt-5.1", "typo"}})
+	if _, err := cfgStore.Load(); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	cfg := cfgStore.Get()
+	cfg.Endpoint = azure.URL
+	cfg.ChatDeployment = "model-router"
+	cfg.EmbeddingDeployment = "text-embedding-3-large"
+	if err := cfgStore.Save(cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := New(cfgStore, store, logbuf.New(50))
+
+	shallow := srv.runChecks(t.Context(), false)
+	for _, r := range shallow {
+		if strings.HasPrefix(r.Name, "Deployment") {
+			t.Errorf("the periodic check must not probe deployments, got %q", r.Name)
+		}
+	}
+
+	byName := map[string]bool{}
+	for _, r := range srv.runChecks(t.Context(), true) {
+		byName[r.Name] = r.OK
+	}
+	if ok, found := byName["Deployment gpt-5.1"]; !found || !ok {
+		t.Errorf("a reachable deployment must pass: found=%v ok=%v", found, ok)
+	}
+	if ok, found := byName["Deployment typo"]; !found || ok {
+		t.Errorf("an unknown deployment must fail: found=%v ok=%v", found, ok)
+	}
+}
+
 // TestSecurityHeaders verifies the defensive headers are present on responses.
 func TestSecurityHeaders(t *testing.T) {
 	_, handler := newTestServer(t, i18n.EN)

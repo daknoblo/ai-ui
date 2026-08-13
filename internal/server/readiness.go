@@ -89,8 +89,10 @@ func (r *readiness) snapshot() statusSnapshot {
 }
 
 // runChecks executes all readiness checks, stores the result and returns the
-// individual outcomes for display.
-func (s *Server) runChecks(ctx context.Context) []checkResult {
+// individual outcomes for display. With deep every deployment of AZURE_MODELS is
+// probed as well, which is too expensive for the periodic check but exactly what
+// the button in the settings dialog is for.
+func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 	results := make([]checkResult, 0, 4)
 
 	// 1. Storage reachable & writable.
@@ -132,6 +134,20 @@ func (s *Server) runChecks(ctx context.Context) []checkResult {
 		results = append(results, checkResult{Name: s.t("check.web_search"), OK: searchOK, Detail: searchDetail})
 	}
 
+	// 5. Every selectable deployment (informational as well): a typo in
+	//    AZURE_MODELS would otherwise only surface when that model is picked.
+	if deep && chatOK {
+		for _, model := range s.cfg.Get().ChatModels {
+			detail := s.t("check.reachable")
+			ok := true
+			if err := s.llm.VerifyDeployment(ctx, model); err != nil {
+				ok = false
+				detail = err.Error()
+			}
+			results = append(results, checkResult{Name: s.t("check.deployment", model), OK: ok, Detail: detail})
+		}
+	}
+
 	s.ready.set(storageOK, chatOK, embeddingOK)
 	return results
 }
@@ -148,7 +164,7 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 			return
 		}
 		prev := s.ready.snapshot()
-		results := s.runChecks(ctx)
+		results := s.runChecks(ctx, false)
 		cur := s.ready.snapshot()
 
 		// Log state changes so outages become visible.

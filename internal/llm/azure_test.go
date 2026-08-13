@@ -92,3 +92,25 @@ func TestChatModelField(t *testing.T) {
 		t.Errorf("classic without a pinned model: got %q, want empty", got)
 	}
 }
+
+// TestChatDeployment covers the routing of a picked model: on the classic schema
+// it has to replace the deployment in the URL path, because there the path - not
+// the body - decides which deployment answers.
+func TestChatDeployment(t *testing.T) {
+	classic := config.Config{Endpoint: "https://x.openai.azure.com", ChatDeployment: "model-router"}
+	if got := chatDeployment(classic, ""); got != "model-router" {
+		t.Errorf("classic without a selection: got %q, want model-router", got)
+	}
+	if got := chatDeployment(classic, "o4-mini"); got != "o4-mini" {
+		t.Errorf("classic with a selection: got %q, want o4-mini", got)
+	}
+	classic.ChatModel = "gpt-4.1"
+	if got := chatDeployment(classic, ""); got != "gpt-4.1" {
+		t.Errorf("classic with a pinned model: got %q, want gpt-4.1", got)
+	}
+
+	v1 := config.Config{Endpoint: "https://x.services.ai.azure.com/openai/v1", ChatDeployment: "model-router"}
+	if got := chatDeployment(v1, "o4-mini"); got != "o4-mini" {
+		t.Errorf("v1 with a selection: got %q, want o4-mini", got)
+	}
+}

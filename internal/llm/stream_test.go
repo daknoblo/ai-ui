@@ -149,3 +149,75 @@ func TestStreamOmitsAutomaticReasoningEffort(t *testing.T) {
 		t.Error("an automatic reasoning effort must not be sent")
 	}
 }
+
+// TestClassicStreamUsesSelectedDeployment covers the classic schema, where the
+// URL path decides which deployment answers.
+func TestClassicStreamUsesSelectedDeployment(t *testing.T) {
+	var path string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	store := config.NewStore(filepath.Join(t.TempDir(), "config.json"),
+		config.Keys{API: "key"}, config.Overrides{})
+	cfg := config.Defaults()
+	cfg.Endpoint = srv.URL
+	cfg.ChatDeployment = "model-router"
+	if err := store.Save(cfg); err != nil {
+		t.Fatalf("save configuration: %v", err)
+	}
+	client := New(store)
+
+	if _, err := client.ChatStream(context.Background(), ChatOptions{Model: "o4-mini"},
+		[]Message{{Role: "user", Content: "ping"}}, func(string) error { return nil }); err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+	if want := "/openai/deployments/o4-mini/chat/completions"; path != want {
+		t.Errorf("request path = %q, want %q", path, want)
+	}
+
+	if _, err := client.ChatStream(context.Background(), ChatOptions{},
+		[]Message{{Role: "user", Content: "ping"}}, func(string) error { return nil }); err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+	if want := "/openai/deployments/model-router/chat/completions"; path != want {
+		t.Errorf("without a selection the path = %q, want %q", path, want)
+	}
+}
+
+// TestEmbedSendsDeploymentOnV1 makes sure the embedding deployment travels in
+// the body on the v1 surface, where the path does not carry it.
+func TestEmbedSendsDeploymentOnV1(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Errorf("request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"index":0,"embedding":[0.1,0.2]}],"usage":{"total_tokens":3}}`))
+	}))
+	defer srv.Close()
+
+	store := config.NewStore(filepath.Join(t.TempDir(), "config.json"),
+		config.Keys{API: "key"}, config.Overrides{})
+	cfg := config.Defaults()
+	cfg.Endpoint = srv.URL + "/openai/v1"
+	cfg.ChatDeployment = "model-router"
+	cfg.EmbeddingDeployment = "text-embedding-3-large"
+	if err := store.Save(cfg); err != nil {
+		t.Fatalf("save configuration: %v", err)
+	}
+
+	if _, err := New(store).Embed(context.Background(), []string{"hello"}); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if body["model"] != "text-embedding-3-large" {
+		t.Errorf("model = %v, want the embedding deployment", body["model"])
+	}
+}

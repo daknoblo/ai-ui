@@ -888,7 +888,7 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 
 // handleVerify runs all readiness checks and returns the result.
 func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
-	results := s.runChecks(r.Context())
+	results := s.runChecks(r.Context(), true)
 	data := struct {
 		Results        []checkResult
 		Verified       bool

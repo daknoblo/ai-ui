@@ -234,6 +234,17 @@ func chatModelField(cfg config.Config, override string) string {
 	return ""
 }
 
+// chatDeployment resolves the deployment a request is routed to. With the
+// classic schema it forms the URL path, so a model picked in the interface has
+// to replace the configured default there as well - the names in AZURE_MODELS
+// are deployments of the same resource.
+func chatDeployment(cfg config.Config, override string) string {
+	if name := chatModelField(cfg, override); name != "" {
+		return name
+	}
+	return cfg.ChatDeployment
+}
+
 // ChatOptions are the settings of a single chat turn. They belong to the chat,
 // not to the client, so every request can use its own model and effort.
 type ChatOptions struct {
@@ -269,7 +280,7 @@ func (c *Client) streamTurn(ctx context.Context, opts ChatOptions, messages []Me
 		return result, fmt.Errorf("no API key set (AZURE_API_KEY)")
 	}
 
-	url := chatCompletionsURL(cfg.Endpoint, cfg.ChatDeployment, cfg.APIVersion)
+	url := chatCompletionsURL(cfg.Endpoint, chatDeployment(cfg, opts.Model), cfg.APIVersion)
 
 	reqBody := chatRequest{
 		Model:           chatModelField(cfg, opts.Model),
@@ -400,6 +411,12 @@ func (c *Client) streamTurn(ctx context.Context, opts ChatOptions, messages []Me
 // VerifyChat performs a minimal request to check that the chat endpoint is
 // reachable and answers with a valid response.
 func (c *Client) VerifyChat(ctx context.Context) error {
+	return c.VerifyDeployment(ctx, "")
+}
+
+// VerifyDeployment checks a single chat deployment the same way. An empty name
+// uses the configured default, which is what VerifyChat does.
+func (c *Client) VerifyDeployment(ctx context.Context, deployment string) error {
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || cfg.APIVersion == "" {
 		return fmt.Errorf("endpoint, chat deployment and api version are required")
@@ -408,10 +425,10 @@ func (c *Client) VerifyChat(ctx context.Context) error {
 		return fmt.Errorf("no API key set (AZURE_API_KEY)")
 	}
 
-	url := chatCompletionsURL(cfg.Endpoint, cfg.ChatDeployment, cfg.APIVersion)
+	url := chatCompletionsURL(cfg.Endpoint, chatDeployment(cfg, deployment), cfg.APIVersion)
 
 	body, err := json.Marshal(chatRequest{
-		Model:     chatModelField(cfg, ""),
+		Model:     chatModelField(cfg, deployment),
 		Messages:  []Message{{Role: "user", Content: "ping"}},
 		Stream:    false,
 		MaxTokens: 16,
@@ -477,6 +494,7 @@ func (c *Client) VerifyEmbedding(ctx context.Context) error {
 
 // embeddingRequest is the request body for the embeddings API.
 type embeddingRequest struct {
+	Model string   `json:"model,omitempty"`
 	Input []string `json:"input"`
 }
 
@@ -501,7 +519,12 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 
 	url := embeddingsURL(cfg.EmbeddingHost(), cfg.EmbeddingDeployment, cfg.EmbeddingVersion())
 
-	body, err := json.Marshal(embeddingRequest{Input: inputs})
+	reqBody := embeddingRequest{Input: inputs}
+	// The v1 surface has no deployment in the path, so it travels in the body.
+	if isV1Endpoint(cfg.EmbeddingHost()) {
+		reqBody.Model = cfg.EmbeddingDeployment
+	}
+	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, err
 	}

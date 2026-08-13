@@ -67,3 +67,86 @@ func TestStreamRetriesWithoutTemperature(t *testing.T) {
 		t.Errorf("streamed content = %q, want hi", got)
 	}
 }
+
+// TestStreamRetriesWithoutReasoningEffort covers the opposite case: a model
+// without reasoning support rejects the configured effort, so the request is
+// repeated without it.
+func TestStreamRetriesWithoutReasoningEffort(t *testing.T) {
+	var bodies []map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Errorf("request body: %v", err)
+		}
+		bodies = append(bodies, body)
+
+		if _, ok := body["reasoning_effort"]; ok {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"Unrecognized request argument supplied: reasoning_effort","param":"reasoning_effort"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	store := config.NewStore(filepath.Join(t.TempDir(), "config.json"),
+		config.Keys{API: "key"}, config.Overrides{})
+	cfg := config.Defaults()
+	cfg.Endpoint = srv.URL + "/openai/v1"
+	cfg.ChatDeployment = "gpt-4.1"
+	cfg.ReasoningEffort = "high"
+	if err := store.Save(cfg); err != nil {
+		t.Fatalf("save configuration: %v", err)
+	}
+
+	if _, err := New(store).ChatStream(context.Background(), "", []Message{{Role: "user", Content: "ping"}},
+		func(string) error { return nil }); err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+
+	if len(bodies) != 2 {
+		t.Fatalf("expected a retry, got %d requests", len(bodies))
+	}
+	if bodies[0]["reasoning_effort"] != "high" {
+		t.Errorf("the first request must carry the configured effort, got %v", bodies[0]["reasoning_effort"])
+	}
+	if _, ok := bodies[1]["reasoning_effort"]; ok {
+		t.Error("the retry must omit the reasoning effort")
+	}
+}
+
+// TestStreamOmitsAutomaticReasoningEffort makes sure the default setting does
+// not send the parameter at all.
+func TestStreamOmitsAutomaticReasoningEffort(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Errorf("request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	store := config.NewStore(filepath.Join(t.TempDir(), "config.json"),
+		config.Keys{API: "key"}, config.Overrides{})
+	cfg := config.Defaults()
+	cfg.Endpoint = srv.URL + "/openai/v1"
+	cfg.ChatDeployment = "gpt-4.1"
+	if err := store.Save(cfg); err != nil {
+		t.Fatalf("save configuration: %v", err)
+	}
+
+	if _, err := New(store).ChatStream(context.Background(), "", []Message{{Role: "user", Content: "ping"}},
+		func(string) error { return nil }); err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+	if _, ok := body["reasoning_effort"]; ok {
+		t.Error("the default configuration must not send a reasoning effort")
+	}
+}

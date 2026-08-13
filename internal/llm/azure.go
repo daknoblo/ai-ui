@@ -114,14 +114,29 @@ type streamOptions struct {
 
 // chatRequest is the request body for chat completions.
 type chatRequest struct {
-	Model         string         `json:"model,omitempty"`
-	Messages      []Message      `json:"messages"`
-	Temperature   *float64       `json:"temperature,omitempty"`
-	Stream        bool           `json:"stream"`
-	StreamOptions *streamOptions `json:"stream_options,omitempty"`
-	MaxTokens     int            `json:"max_completion_tokens,omitempty"`
-	Tools         []Tool         `json:"tools,omitempty"`
-	ToolChoice    string         `json:"tool_choice,omitempty"`
+	Model           string         `json:"model,omitempty"`
+	Messages        []Message      `json:"messages"`
+	Temperature     *float64       `json:"temperature,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	Stream          bool           `json:"stream"`
+	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
+	MaxTokens       int            `json:"max_completion_tokens,omitempty"`
+	Tools           []Tool         `json:"tools,omitempty"`
+	ToolChoice      string         `json:"tool_choice,omitempty"`
+}
+
+// dropRejected removes the parameter an error message complains about and
+// returns its name. An empty name means there is nothing left to retry.
+func (r *chatRequest) dropRejected(msg string) string {
+	switch {
+	case r.Temperature != nil && strings.Contains(msg, "temperature"):
+		r.Temperature = nil
+		return "temperature"
+	case r.ReasoningEffort != "" && strings.Contains(msg, "reasoning"):
+		r.ReasoningEffort = ""
+		return "reasoning_effort"
+	}
+	return ""
 }
 
 // streamChunk is a single SSE delta of the chat completions response.
@@ -248,11 +263,12 @@ func (c *Client) streamTurn(ctx context.Context, model string, messages []Messag
 	url := chatCompletionsURL(cfg.Endpoint, cfg.ChatDeployment, cfg.APIVersion)
 
 	reqBody := chatRequest{
-		Model:         chatModelField(cfg, model),
-		Messages:      messages,
-		Temperature:   &cfg.Temperature,
-		Stream:        true,
-		StreamOptions: &streamOptions{IncludeUsage: true},
+		Model:           chatModelField(cfg, model),
+		Messages:        messages,
+		Temperature:     &cfg.Temperature,
+		ReasoningEffort: optionValue(cfg.ReasoningEffort),
+		Stream:          true,
+		StreamOptions:   &streamOptions{IncludeUsage: true},
 	}
 	if len(tools) > 0 {
 		reqBody.Tools = tools
@@ -268,17 +284,25 @@ func (c *Client) streamTurn(ctx context.Context, model string, messages []Messag
 
 	if resp.StatusCode != http.StatusOK {
 		msg := errorBody(resp)
-		// Reasoning models only accept their default temperature; the setting is
-		// global, so the request is repeated without it instead of failing.
-		if resp.StatusCode == http.StatusBadRequest && strings.Contains(msg, "temperature") && reqBody.Temperature != nil {
-			slog.Debug("model rejects the temperature, retrying without it", "model", reqBody.Model)
-			reqBody.Temperature = nil
+		// Temperature and reasoning effort are global settings, but support for
+		// them differs per model: reasoning models accept only their default
+		// temperature, models without reasoning reject the effort. A rejected
+		// parameter is dropped and the request repeated instead of failing.
+		for resp.StatusCode == http.StatusBadRequest {
+			dropped := reqBody.dropRejected(msg)
+			if dropped == "" {
+				break
+			}
+			slog.Debug("model rejects a parameter, retrying without it", "model", reqBody.Model, "parameter", dropped)
 			_ = resp.Body.Close()
 			resp, err = c.postChat(ctx, url, reqBody)
 			if err != nil {
 				return result, err
 			}
 			msg = ""
+			if resp.StatusCode != http.StatusOK {
+				msg = errorBody(resp)
+			}
 		}
 		if resp.StatusCode != http.StatusOK {
 			if msg == "" {

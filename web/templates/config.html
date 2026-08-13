@@ -127,6 +127,12 @@
 					min="0" max="2" step="0.1">
 			</label>
 			<label>
+				{{t "config.reasoning_effort"}} <span class="hint">{{t "config.reasoning_effort_hint"}}</span>
+				<select name="reasoning_effort">
+					{{range $.ReasoningEfforts}}<option value="{{.}}" {{if eq . $.Config.ReasoningEffort}}selected{{end}}>{{.}}</option>{{end}}
+				</select>
+			</label>
+			<label>
 				{{t "config.log_level"}} <span class="hint">{{t "config.log_level_hint"}}</span>
 				<select name="log_level">
 					{{range $.LogLevels}}<option value="{{.}}" {{if eq . $.Config.LogLevel}}selected{{end}}>{{.}}</option>{{end}}

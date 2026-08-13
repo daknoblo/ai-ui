@@ -45,7 +45,8 @@ All screenshots are generated automatically from the demo instance
 - Documents are bound to their chat and are removed together with it
   (including their embeddings)
 - Settings dialog in the UI (language, endpoints, deployments, API version,
-  system prompt, temperature); the configured models are listed read-only
+  system prompt, temperature, reasoning effort); the configured models are
+  listed read-only
 - User interface available in **English and German**, switchable in the settings
 - Readiness/connection check: uploads are only possible once storage and the
   embedding endpoint are verified; checked at start-up and periodically in the
@@ -94,6 +95,16 @@ The interface language (English or German) is selected in the settings dialog
 and applies to the whole application, including the prompts used for the
 automatic chat titles and the document/web context. The page reloads once after
 the language has been changed. New installations default to English.
+
+### Temperature & reasoning effort
+
+Both live in the settings dialog under **Behavior** and apply to every chat
+request. **Reasoning effort** maps to the `reasoning_effort` parameter of
+reasoning models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`); the
+default `auto` omits the parameter, so the model keeps its own default. Which
+values a model accepts differs, and behind a model router the answering model is
+not known in advance - a rejected temperature or reasoning effort is therefore
+dropped automatically and the request is repeated without it instead of failing.
 
 ### Pinning the endpoint via environment variables (optional)
 

@@ -39,6 +39,7 @@ type Config struct {
 	SystemPrompt        string   `json:"system_prompt"`         // empty means "use the localized default"
 	LogLevel            string   `json:"log_level"`             // debug | info | warn | error
 	Temperature         float64  `json:"temperature"`
+	ReasoningEffort     string   `json:"reasoning_effort"` // "auto" leaves the decision to the model
 }
 
 // EmbeddingVersion returns the API version to use for embeddings. When no
@@ -204,6 +205,7 @@ func Defaults() Config {
 		SystemPrompt:        "",
 		LogLevel:            "info",
 		Temperature:         0.7,
+		ReasoningEffort:     "auto",
 	}
 }
 

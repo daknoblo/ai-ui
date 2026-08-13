@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -762,6 +763,11 @@ func (s *Server) executeToolCall(ctx context.Context, sse *sseWriter, tc llm.Too
 	return sb.String()
 }
 
+// reasoningEfforts are the selectable values of the reasoning effort. Which of
+// them a model accepts differs; "auto" omits the parameter, and a rejected
+// value is dropped by the client (see llm.chatRequest.dropRejected).
+var reasoningEfforts = []string{"auto", "none", "minimal", "low", "medium", "high", "xhigh"}
+
 // handleConfigGet returns the settings dialog.
 func (s *Server) handleConfigGet(w http.ResponseWriter, _ *http.Request) {
 	s.renderConfig(w, false)
@@ -826,6 +832,9 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	cfg.LogLevel = logbuf.NormalizeLevel(r.FormValue("log_level"))
 	if t, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("temperature")), 64); err == nil {
 		cfg.Temperature = t
+	}
+	if effort := strings.ToLower(strings.TrimSpace(r.FormValue("reasoning_effort"))); slices.Contains(reasoningEfforts, effort) {
+		cfg.ReasoningEffort = effort
 	}
 
 	if err := s.cfg.Save(cfg); err != nil {
@@ -1175,6 +1184,7 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 		HasSearchKey       bool
 		SearchEnabled      bool
 		LogLevels          []string
+		ReasoningEfforts   []string
 		Saved              bool
 		Verified           bool
 		UploadsAllowed     bool
@@ -1192,6 +1202,7 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 		HasSearchKey:       s.cfg.HasSearchAPIKey(),
 		SearchEnabled:      s.search.Enabled(),
 		LogLevels:          logbuf.Levels,
+		ReasoningEfforts:   reasoningEfforts,
 		Saved:              saved,
 		Verified:           s.ready.verified(),
 		UploadsAllowed:     s.ready.uploadsAllowed(),

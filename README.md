@@ -143,7 +143,7 @@ General AI endpoint:
 | `AZURE_ENDPOINT` | Endpoint URL of the AI endpoint.             |
 | `AZURE_DEPLOYMENT` | Deployment name of the chat model.         |
 | `AZURE_MODELS` | Selectable models (comma or newline separated), e.g. `model-router,gpt-5.1,o4-mini`. The only source of the list; the settings dialog shows it read-only. The entries are **deployment names of the same resource**, and the first one is the default for new chats. |
-| `AZURE_API_VERSION` | API version of the AI endpoint.           |
+| `AZURE_API_VERSION` | API version of the AI endpoint. Only used by the classic schema; with a `/openai/v1` endpoint the client picks it and the field disappears from the settings dialog. |
 
 Embeddings (fall back to the AI endpoint when empty):
 
@@ -172,14 +172,15 @@ Variables that are not set stay editable in the UI. Empty values count as
 
 ### Readiness & connection check
 
-After configuring the app in the UI for the first time, click **Save** and then
-**Test connection**. Storage (data path writable), the chat endpoint and the
-embedding endpoint are checked, and every deployment from `AZURE_MODELS` is
-probed individually - a typo in the list shows up there instead of when that
-model is picked. Document uploads are only enabled once storage
-and the embedding endpoint are green. Every configuration change resets the
-verification. The connection is verified automatically when the container starts
-(if configured); a background check (`HEALTHCHECK_INTERVAL`) monitors it
+The connection check sits at the top of the settings dialog and runs on its own:
+once when the container starts and again in the dialog whenever the
+configuration changed. It probes storage (data path writable), the chat and
+embedding endpoint and every deployment from `AZURE_MODELS` individually - a
+typo in the list shows up there instead of when that model is picked. **Check
+again** repeats it on demand.
+
+Document uploads are only enabled once storage and the embedding endpoint are
+green. A background check (`HEALTHCHECK_INTERVAL`) monitors the connection
 continuously - without the per-deployment probes - and reports failures through
 the sidebar status and the log.
 

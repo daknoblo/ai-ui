@@ -176,14 +176,14 @@ type TurnResult struct {
 	Model        string
 }
 
-// isV1Endpoint detects the new OpenAI-compatible v1 schema of Azure AI Foundry
+// IsV1Endpoint detects the new OpenAI-compatible v1 schema of Azure AI Foundry
 // by the "/openai/v1" path segment (e.g.
 // https://resource.services.ai.azure.com/openai/v1). With that schema the
 // standard OpenAI paths are appended and the deployment is passed in the
 // "model" field of the request body instead of in the URL path. Otherwise the
 // classic Azure OpenAI schema applies
 // (/openai/deployments/{deployment}/...?api-version=...).
-func isV1Endpoint(endpoint string) bool {
+func IsV1Endpoint(endpoint string) bool {
 	return strings.Contains(strings.TrimRight(endpoint, "/"), "/openai/v1")
 }
 
@@ -191,7 +191,7 @@ func isV1Endpoint(endpoint string) bool {
 // dated versions of the classic schema are meaningless, and only the preview
 // moniker exposes the full Foundry model catalog, so that is the default there.
 func apiVersionFor(endpoint, configured string) string {
-	if !isV1Endpoint(endpoint) {
+	if !IsV1Endpoint(endpoint) {
 		return configured
 	}
 	if configured == "preview" || configured == "v1" {
@@ -203,7 +203,7 @@ func apiVersionFor(endpoint, configured string) string {
 // chatCompletionsURL builds the chat completions URL for the endpoint schema.
 func chatCompletionsURL(endpoint, deployment, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
-	if isV1Endpoint(base) {
+	if IsV1Endpoint(base) {
 		return base + "/chat/completions"
 	}
 	return fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=%s", base, deployment, apiVersion)
@@ -212,7 +212,7 @@ func chatCompletionsURL(endpoint, deployment, apiVersion string) string {
 // embeddingsURL builds the embeddings URL for the endpoint schema.
 func embeddingsURL(endpoint, deployment, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
-	if isV1Endpoint(base) {
+	if IsV1Endpoint(base) {
 		return base + "/embeddings"
 	}
 	return fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=%s", base, deployment, apiVersion)
@@ -228,7 +228,7 @@ func chatModelField(cfg config.Config, override string) string {
 	if cfg.ChatModel != "" {
 		return cfg.ChatModel
 	}
-	if isV1Endpoint(cfg.Endpoint) {
+	if IsV1Endpoint(cfg.Endpoint) {
 		return cfg.ChatDeployment
 	}
 	return ""
@@ -521,7 +521,7 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 
 	reqBody := embeddingRequest{Input: inputs}
 	// The v1 surface has no deployment in the path, so it travels in the body.
-	if isV1Endpoint(cfg.EmbeddingHost()) {
+	if IsV1Endpoint(cfg.EmbeddingHost()) {
 		reqBody.Model = cfg.EmbeddingDeployment
 	}
 	body, err := json.Marshal(reqBody)

@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -794,6 +795,15 @@ func (s *Server) executeToolCall(ctx context.Context, sse *sseWriter, tc llm.Too
 	return sb.String()
 }
 
+// submitted returns a trimmed form value and whether the field was part of the
+// form at all. Fields the dialog hides must keep their stored value.
+func submitted(r *http.Request, name string) (string, bool) {
+	if _, ok := r.Form[name]; !ok {
+		return "", false
+	}
+	return strings.TrimSpace(r.FormValue(name)), true
+}
+
 // reasoningEfforts are the selectable values of the reasoning effort. Which of
 // them a model accepts differs; "auto" omits the parameter, and a rejected
 // value is dropped by the client (see llm.chatRequest.dropRejected).
@@ -823,7 +833,9 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 		cfg.ChatDeployment = strings.TrimSpace(r.FormValue("chat_deployment"))
 	}
 	if !locks.APIVersion {
-		cfg.APIVersion = strings.TrimSpace(r.FormValue("api_version"))
+		if v, ok := submitted(r, "api_version"); ok {
+			cfg.APIVersion = v
+		}
 	}
 	if !locks.EmbeddingEndpoint {
 		cfg.EmbeddingEndpoint = strings.TrimSpace(r.FormValue("embedding_endpoint"))
@@ -832,7 +844,9 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 		cfg.EmbeddingDeployment = strings.TrimSpace(r.FormValue("embedding_deployment"))
 	}
 	if !locks.EmbeddingAPIVersion {
-		cfg.EmbeddingAPIVersion = strings.TrimSpace(r.FormValue("embedding_api_version"))
+		if v, ok := submitted(r, "embedding_api_version"); ok {
+			cfg.EmbeddingAPIVersion = v
+		}
 	}
 	if !locks.ImageEndpoint {
 		cfg.ImageEndpoint = strings.TrimSpace(r.FormValue("image_endpoint"))
@@ -841,7 +855,9 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 		cfg.ImageDeployment = strings.TrimSpace(r.FormValue("image_deployment"))
 	}
 	if !locks.ImageAPIVersion {
-		cfg.ImageAPIVersion = strings.TrimSpace(r.FormValue("image_api_version"))
+		if v, ok := submitted(r, "image_api_version"); ok {
+			cfg.ImageAPIVersion = v
+		}
 	}
 	cfg.Language = i18n.Normalize(r.FormValue("language"))
 	cfg.SearchProvider = strings.ToLower(strings.TrimSpace(r.FormValue("search_provider")))
@@ -889,18 +905,29 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 // handleVerify runs all readiness checks and returns the result.
 func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 	results := s.runChecks(r.Context(), true)
+	_, checkedAt := s.ready.lastResults()
 	data := struct {
 		Results        []checkResult
+		CheckedAt      string
 		Verified       bool
 		UploadsAllowed bool
 		StatusBadge    statusBadge
 	}{
 		Results:        results,
+		CheckedAt:      formatCheckTime(checkedAt),
 		Verified:       s.ready.verified(),
 		UploadsAllowed: s.ready.uploadsAllowed(),
 		StatusBadge:    s.statusData(),
 	}
 	s.render(w, "verify-results", data)
+}
+
+// formatCheckTime renders when a check ran; an empty result means "never".
+func formatCheckTime(at time.Time) string {
+	if at.IsZero() {
+		return ""
+	}
+	return at.Local().Format("2006-01-02 15:04:05")
 }
 
 // handleStatus returns the connection badge for the sidebar. The UI polls it
@@ -1244,6 +1271,8 @@ func (s *Server) renderConfigNotice(w http.ResponseWriter, notice string, isErr 
 }
 
 func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice string, noticeErr bool) {
+	cfg := s.cfg.Get()
+	results, checkedAt := s.ready.lastResults()
 	data := struct {
 		Config             config.Config
 		Locks              config.Locks
@@ -1257,29 +1286,41 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 		SearchEnabled      bool
 		LogLevels          []string
 		ReasoningEfforts   []string
-		Saved              bool
-		Verified           bool
-		UploadsAllowed     bool
-		Notice             string
-		NoticeErr          bool
+		// The api-version only exists on the classic schema; on the v1 surface
+		// the client decides it, so the fields stay out of the dialog.
+		ShowAPIVersion          bool
+		ShowEmbeddingAPIVersion bool
+		ShowImageAPIVersion     bool
+		Results                 []checkResult
+		CheckedAt               string
+		Saved                   bool
+		Verified                bool
+		UploadsAllowed          bool
+		Notice                  string
+		NoticeErr               bool
 	}{
-		Config:             s.cfg.Get(),
-		Locks:              s.cfg.Locks(),
-		Languages:          i18n.Options(),
-		HasKey:             s.cfg.HasAPIKey(),
-		HasEmbeddingKey:    s.cfg.HasEmbeddingAPIKey(),
-		HasOwnEmbeddingKey: s.cfg.HasOwnEmbeddingAPIKey(),
-		HasImageKey:        s.cfg.HasImageAPIKey(),
-		HasOwnImageKey:     s.cfg.HasOwnImageAPIKey(),
-		HasSearchKey:       s.cfg.HasSearchAPIKey(),
-		SearchEnabled:      s.search.Enabled(),
-		LogLevels:          logbuf.Levels,
-		ReasoningEfforts:   reasoningEfforts,
-		Saved:              saved,
-		Verified:           s.ready.verified(),
-		UploadsAllowed:     s.ready.uploadsAllowed(),
-		Notice:             notice,
-		NoticeErr:          noticeErr,
+		Config:                  cfg,
+		Locks:                   s.cfg.Locks(),
+		Languages:               i18n.Options(),
+		ShowAPIVersion:          !llm.IsV1Endpoint(cfg.Endpoint),
+		ShowEmbeddingAPIVersion: !llm.IsV1Endpoint(cfg.EmbeddingHost()),
+		ShowImageAPIVersion:     !llm.IsV1Endpoint(cfg.ImageHost()),
+		Results:                 results,
+		CheckedAt:               formatCheckTime(checkedAt),
+		HasKey:                  s.cfg.HasAPIKey(),
+		HasEmbeddingKey:         s.cfg.HasEmbeddingAPIKey(),
+		HasOwnEmbeddingKey:      s.cfg.HasOwnEmbeddingAPIKey(),
+		HasImageKey:             s.cfg.HasImageAPIKey(),
+		HasOwnImageKey:          s.cfg.HasOwnImageAPIKey(),
+		HasSearchKey:            s.cfg.HasSearchAPIKey(),
+		SearchEnabled:           s.search.Enabled(),
+		LogLevels:               logbuf.Levels,
+		ReasoningEfforts:        reasoningEfforts,
+		Saved:                   saved,
+		Verified:                s.ready.verified(),
+		UploadsAllowed:          s.ready.uploadsAllowed(),
+		Notice:                  notice,
+		NoticeErr:               noticeErr,
 	}
 	s.render(w, "config", data)
 }

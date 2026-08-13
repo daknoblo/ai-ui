@@ -7,6 +7,23 @@
 		</div>
 
 		<form hx-post="/config" hx-target="#modal-root" hx-swap="innerHTML" class="config-form">
+			<div class="config-section-head">{{t "config.section_readiness"}}</div>
+			<div id="verify-results" class="config-full"
+				{{if not .Results}}hx-post="/verify" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-indicator="#verify-indicator"{{end}}>
+				{{if .Results}}{{template "check-list" .}}{{end}}
+			</div>
+			<div id="verify-indicator" class="htmx-indicator hint config-full">{{t "config.verify_running"}}</div>
+			<div class="config-full">
+				<button type="button" class="btn btn-ghost"
+					hx-post="/verify"
+					hx-target="#verify-results"
+					hx-swap="innerHTML"
+					hx-disabled-elt="this"
+					hx-indicator="#verify-indicator">
+					{{t "config.verify"}}
+				</button>
+			</div>
+
 			<div class="config-section-head">{{t "config.section_general"}}</div>
 			<label>
 				{{t "config.language"}} <span class="hint">{{t "config.language_hint"}}</span>
@@ -22,13 +39,15 @@
 			<label>
 				{{t "config.endpoint"}} {{if .Locks.Endpoint}}<span class="hint">{{t "config.set_via" "AZURE_ENDPOINT"}}</span>{{end}}
 				<input type="url" name="endpoint" value="{{.Config.Endpoint}}"
-					placeholder="https://my-router.openai.azure.com" required{{if .Locks.Endpoint}} disabled{{end}}>
+					placeholder="https://my-resource.services.ai.azure.com/openai/v1" required{{if .Locks.Endpoint}} disabled{{end}}>
 			</label>
+			{{if .ShowAPIVersion}}
 			<label>
 				{{t "config.api_version"}} {{if .Locks.APIVersion}}<span class="hint">{{t "config.set_via" "AZURE_API_VERSION"}}</span>{{end}}
 				<input type="text" name="api_version" value="{{.Config.APIVersion}}"
 					placeholder="2024-08-01-preview" required{{if .Locks.APIVersion}} disabled{{end}}>
 			</label>
+			{{end}}
 			<label>
 				{{t "config.chat_deployment"}} {{if .Locks.ChatDeployment}}<span class="hint">{{t "config.set_via" "AZURE_DEPLOYMENT"}}</span>{{end}}
 				<input type="text" name="chat_deployment" value="{{.Config.ChatDeployment}}"
@@ -50,13 +69,15 @@
 			<label>
 				{{t "config.embedding_endpoint"}} <span class="hint">{{if .Locks.EmbeddingEndpoint}}{{t "config.set_via" "AZURE_EMBEDDING_ENDPOINT"}}{{else}}{{t "config.optional_same_as_chat"}}{{end}}</span>
 				<input type="url" name="embedding_endpoint" value="{{.Config.EmbeddingEndpoint}}"
-					placeholder="https://my-resource.cognitiveservices.azure.com"{{if .Locks.EmbeddingEndpoint}} disabled{{end}}>
+					placeholder="{{.Config.Endpoint}}"{{if .Locks.EmbeddingEndpoint}} disabled{{end}}>
 			</label>
+			{{if .ShowEmbeddingAPIVersion}}
 			<label>
 				{{t "config.embedding_api_version"}} <span class="hint">{{if .Locks.EmbeddingAPIVersion}}{{t "config.set_via" "AZURE_EMBEDDING_API_VERSION"}}{{else}}{{t "config.optional_same_as_chat"}}{{end}}</span>
 				<input type="text" name="embedding_api_version" value="{{.Config.EmbeddingAPIVersion}}"
 					placeholder="2023-05-15"{{if .Locks.EmbeddingAPIVersion}} disabled{{end}}>
 			</label>
+			{{end}}
 			<label>
 				{{t "config.embedding_deployment"}} {{if .Locks.EmbeddingDeployment}}<span class="hint">{{t "config.set_via" "AZURE_EMBEDDING_DEPLOYMENT"}}</span>{{end}}
 				<input type="text" name="embedding_deployment" value="{{.Config.EmbeddingDeployment}}"
@@ -67,18 +88,20 @@
 			<label>
 				{{t "config.image_endpoint"}} <span class="hint">{{if .Locks.ImageEndpoint}}{{t "config.set_via" "AZURE_IMAGE_ENDPOINT"}}{{else}}{{t "config.optional_same_as_chat"}}{{end}}</span>
 				<input type="url" name="image_endpoint" value="{{.Config.ImageEndpoint}}"
-					placeholder="https://my-resource.services.ai.azure.com/openai/v1"{{if .Locks.ImageEndpoint}} disabled{{end}}>
+					placeholder="{{.Config.Endpoint}}"{{if .Locks.ImageEndpoint}} disabled{{end}}>
 			</label>
 			<label>
 				{{t "config.image_deployment"}} <span class="hint">{{if .Locks.ImageDeployment}}{{t "config.set_via" "AZURE_IMAGE_DEPLOYMENT"}}{{else}}{{t "config.image_optional"}}{{end}}</span>
 				<input type="text" name="image_deployment" value="{{.Config.ImageDeployment}}"
 					placeholder="gpt-image-2"{{if .Locks.ImageDeployment}} disabled{{end}}>
 			</label>
+			{{if .ShowImageAPIVersion}}
 			<label>
 				{{t "config.image_api_version"}} <span class="hint">{{if .Locks.ImageAPIVersion}}{{t "config.set_via" "AZURE_IMAGE_API_VERSION"}}{{else}}{{t "config.image_version_hint"}}{{end}}</span>
 				<input type="text" name="image_api_version" value="{{.Config.ImageAPIVersion}}"
 					placeholder="preview"{{if .Locks.ImageAPIVersion}} disabled{{end}}>
 			</label>
+			{{end}}
 			<div class="config-secret {{if .HasImageKey}}ok{{else}}warn{{end}}">
 				{{t "config.image_key"}}
 				{{if .HasOwnImageKey}}{{t "config.image_key_own"}}
@@ -152,24 +175,6 @@
 
 			{{if .Saved}}<div class="config-saved">{{t "config.saved"}}</div>{{end}}
 
-			<div class="config-section-head">{{t "config.section_readiness"}}</div>
-			<p class="hint config-hint-tight">{{t "config.readiness_hint"}}</p>
-			<div class="verify-banner {{if .UploadsAllowed}}ok{{else}}warn{{end}}">
-				{{if .UploadsAllowed}}{{t "config.uploads_allowed"}}{{else}}{{t "config.uploads_blocked"}}{{end}}
-			</div>
-			<button type="button" class="btn btn-ghost"
-				hx-post="/verify"
-				hx-target="#verify-results"
-				hx-swap="innerHTML"
-				hx-disabled-elt="this"
-				hx-indicator="#verify-indicator">
-				{{t "config.verify"}}
-			</button>
-			<div id="verify-indicator" class="htmx-indicator hint">{{t "config.verify_running"}}</div>
-			<div id="verify-results">
-				{{if .Verified}}<div class="verify-banner ok">{{t "config.verified_last"}}</div>{{end}}
-			</div>
-
 			<div class="modal-actions">
 				<button type="button" class="btn btn-ghost"
 					hx-on:click="document.querySelector('.modal-overlay').remove()">{{t "action.close"}}</button>
@@ -180,7 +185,9 @@
 </div>
 {{end}}
 
-{{define "verify-results"}}
+{{/* check-list: the result rows of a connection check. Rendered inside the
+     settings dialog (stored result) and as the answer of /verify. */}}
+{{define "check-list"}}
 <ul class="check-list">
 	{{range .Results}}
 	<li class="check {{if .OK}}ok{{else}}err{{end}}">
@@ -193,6 +200,11 @@
 <div class="verify-banner {{if .UploadsAllowed}}ok{{else}}warn{{end}}">
 	{{if .UploadsAllowed}}{{t "verify.uploads_ready"}}{{else}}{{t "verify.uploads_blocked"}}{{end}}
 </div>
+{{if .CheckedAt}}<p class="hint config-hint-tight">{{t "config.checked_at" .CheckedAt}}</p>{{end}}
+{{end}}
+
+{{define "verify-results"}}
+{{template "check-list" .}}
 <div id="conn-status" hx-swap-oob="true"
 	hx-get="/status" hx-trigger="load, every 30s" hx-swap="innerHTML">
 	{{template "status-badge" .StatusBadge}}

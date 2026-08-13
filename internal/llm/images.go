@@ -31,7 +31,7 @@ const previewAPIVersion = "preview"
 // chat completions, the v1 surface requires an api-version here as well.
 func imagesURL(endpoint, deployment, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
-	if isV1Endpoint(base) {
+	if IsV1Endpoint(base) {
 		return base + "/images/generations?api-version=" + url.QueryEscape(apiVersion)
 	}
 	return fmt.Sprintf("%s/openai/deployments/%s/images/generations?api-version=%s", base, deployment, apiVersion)
@@ -40,7 +40,7 @@ func imagesURL(endpoint, deployment, apiVersion string) string {
 // imageEditsURL builds the image edit URL for the endpoint schema.
 func imageEditsURL(endpoint, deployment, apiVersion string) string {
 	base := strings.TrimRight(endpoint, "/")
-	if isV1Endpoint(base) {
+	if IsV1Endpoint(base) {
 		return base + "/images/edits?api-version=" + url.QueryEscape(apiVersion)
 	}
 	return fmt.Sprintf("%s/openai/deployments/%s/images/edits?api-version=%s", base, deployment, apiVersion)
@@ -115,7 +115,7 @@ func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOpt
 	}
 	// With the v1 schema the deployment travels in the body; the classic schema
 	// carries it in the path.
-	if isV1Endpoint(endpoint) {
+	if IsV1Endpoint(endpoint) {
 		reqBody.Model = cfg.ImageDeployment
 	}
 
@@ -184,7 +184,7 @@ func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, 
 	}
 	// With the v1 schema the deployment travels in the body; the classic schema
 	// carries it in the path.
-	if isV1Endpoint(endpoint) {
+	if IsV1Endpoint(endpoint) {
 		fields["model"] = cfg.ImageDeployment
 	}
 	for name, value := range fields {

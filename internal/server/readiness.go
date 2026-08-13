@@ -24,6 +24,10 @@ type readiness struct {
 	chatOK      bool
 	embeddingOK bool
 	checkedAt   time.Time
+	// results of the last full check, so the settings dialog can show it
+	// without probing every deployment again.
+	results   []checkResult
+	resultsAt time.Time
 }
 
 // invalidate resets all check results.
@@ -34,6 +38,23 @@ func (r *readiness) invalidate() {
 	r.chatOK = false
 	r.embeddingOK = false
 	r.checkedAt = time.Time{}
+	r.results = nil
+	r.resultsAt = time.Time{}
+}
+
+// setResults stores the outcome of a full check.
+func (r *readiness) setResults(results []checkResult) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.results = results
+	r.resultsAt = time.Now()
+}
+
+// lastResults returns the outcome of the last full check and when it ran.
+func (r *readiness) lastResults() ([]checkResult, time.Time) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.results, r.resultsAt
 }
 
 // set stores the results of a check run.
@@ -149,6 +170,9 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 	}
 
 	s.ready.set(storageOK, chatOK, embeddingOK)
+	if deep {
+		s.ready.setResults(results)
+	}
 	return results
 }
 
@@ -157,14 +181,14 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 // otherwise the check is skipped until the app has been configured.
 // The function blocks until ctx is canceled (e.g. on shutdown).
 func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
-	check := func(reason string) {
+	check := func(reason string, deep bool) {
 		// Without the minimum configuration an endpoint check is pointless.
 		if !s.cfg.IsConfigured() {
 			slog.Info("connection check skipped (not configured)", "reason", reason)
 			return
 		}
 		prev := s.ready.snapshot()
-		results := s.runChecks(ctx, false)
+		results := s.runChecks(ctx, deep)
 		cur := s.ready.snapshot()
 
 		// Log state changes so outages become visible.
@@ -180,8 +204,9 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 		}
 	}
 
-	// Check immediately at start-up.
-	check("start")
+	// Check immediately at start-up, including every deployment, so the settings
+	// dialog can show a complete result without probing again.
+	check("start", true)
 
 	// interval <= 0 disables the periodic check (start-up check only).
 	if interval <= 0 {
@@ -196,7 +221,7 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			check("periodic")
+			check("periodic", false)
 		}
 	}
 }

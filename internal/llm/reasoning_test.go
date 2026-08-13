@@ -19,6 +19,9 @@ func TestReasoningEfforts(t *testing.T) {
 		{"gpt-5-mini", effortsGPT5},          //
 		{"gpt-5.1", effortsGPT51},            //
 		{"gpt-5.6-sol", effortsGPT51},        //
+		{"gpt-5.1-chat", nil},                // chat tuned: answers without reasoning
+		{"gpt-chat-latest", nil},             //
+		{"grok-4.3", effortsAny},             //
 		{"o3", effortsO},                     //
 		{"prod-o4-mini", effortsO},           //
 		{"o1-mini", nil},                     // the o-series model without effort

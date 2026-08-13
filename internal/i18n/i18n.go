@@ -252,7 +252,7 @@ var catalog = map[string]map[string]string{
 		"config.verify":                "Check again",
 		"config.verify_running":        "Checking storage and endpoints…",
 		"config.checked_at":            "Last check: %s",
-		"verify.uploads_ready":         "Storage & embedding ready – uploads enabled ✓",
+		"verify.uploads_ready":         "Storage & embedding ready – uploads enabled",
 		"verify.uploads_blocked":       "Uploads stay blocked until storage and embedding are green",
 
 		// ---- readiness checks ----
@@ -493,7 +493,7 @@ var catalog = map[string]map[string]string{
 		"config.verify":                "Erneut prüfen",
 		"config.verify_running":        "Prüfe Speicher und Endpoints…",
 		"config.checked_at":            "Letzte Prüfung: %s",
-		"verify.uploads_ready":         "Speicher & Embedding bereit – Uploads freigegeben ✓",
+		"verify.uploads_ready":         "Speicher & Embedding bereit – Uploads freigegeben",
 		"verify.uploads_blocked":       "Uploads bleiben gesperrt, bis Speicher und Embedding grün sind",
 
 		// ---- readiness checks ----

@@ -724,9 +724,21 @@ html, body {
 .htmx-indicator { display: none; }
 .htmx-request.htmx-indicator,
 .htmx-request .htmx-indicator { display: block; }
-.verify-banner { font-size: 13px; padding: 8px 10px; border-radius: 8px; }
-.verify-banner.ok { color: var(--accent); background: rgba(16,163,127,.12); }
-.verify-banner.warn { color: var(--warn); background: rgba(224,160,48,.12); }
+/* Same grid as a check row, so icon and text line up across the whole block. */
+.verify-banner {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 8px;
+	align-items: baseline;
+	font-size: 13px;
+	padding: 8px 10px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	margin-top: 6px;
+}
+.verify-banner.ok { color: var(--accent); background: rgba(16,163,127,.12); border-color: rgba(16,163,127,.35); }
+.verify-banner.warn { color: var(--warn); background: rgba(224,160,48,.12); border-color: rgba(224,160,48,.35); }
+.verify-banner + .config-hint-tight { margin-top: 8px; }
 .check-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .check {
 	display: grid;

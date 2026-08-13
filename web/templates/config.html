@@ -199,7 +199,8 @@
 	{{end}}
 </ul>
 <div class="verify-banner {{if .UploadsAllowed}}ok{{else}}warn{{end}}">
-	{{if .UploadsAllowed}}{{t "verify.uploads_ready"}}{{else}}{{t "verify.uploads_blocked"}}{{end}}
+	<span class="check-icon" aria-hidden="true">{{if .UploadsAllowed}}✓{{else}}✗{{end}}</span>
+	<span>{{if .UploadsAllowed}}{{t "verify.uploads_ready"}}{{else}}{{t "verify.uploads_blocked"}}{{end}}</span>
 </div>
 {{if .CheckedAt}}<p class="hint config-hint-tight">{{t "config.checked_at" .CheckedAt}}</p>{{end}}
 {{end}}

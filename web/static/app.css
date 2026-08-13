@@ -281,6 +281,8 @@ html, body {
 	flex: 0 0 auto;
 	margin: 0;
 }
+/* The class sets display, so the hidden attribute needs to win explicitly. */
+.model-picker[hidden] { display: none; }
 .model-label { font-size: 12px; color: var(--text-dim); }
 .model-picker select {
 	background: var(--bg-elev);

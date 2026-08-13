@@ -58,9 +58,18 @@ func imageAPIVersion(cfg config.Config) string {
 // ImageOptions are the generation parameters offered in the settings dialog.
 // Empty values and "auto" are omitted so the service default applies.
 type ImageOptions struct {
-	Size    string // e.g. 1024x1024
-	Quality string // low | medium | high
-	Format  string // png | jpeg
+	Deployment string // image deployment of the chat; empty uses the configured one
+	Size       string // e.g. 1024x1024
+	Quality    string // low | medium | high
+	Format     string // png | jpeg
+}
+
+// imageDeployment resolves which deployment answers an image request.
+func imageDeployment(cfg config.Config, override string) string {
+	if override != "" {
+		return override
+	}
+	return cfg.ImageDeployment
 }
 
 // ImageResult is a generated image including its token usage.
@@ -99,7 +108,8 @@ type imageResponse struct {
 func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOptions) (ImageResult, error) {
 	cfg := c.store.Get()
 	endpoint := cfg.ImageHost()
-	if endpoint == "" || cfg.ImageDeployment == "" {
+	deployment := imageDeployment(cfg, opts.Deployment)
+	if endpoint == "" || deployment == "" {
 		return ImageResult{}, fmt.Errorf("image endpoint and deployment are required")
 	}
 	if !c.store.HasImageAPIKey() {
@@ -116,7 +126,7 @@ func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOpt
 	// With the v1 schema the deployment travels in the body; the classic schema
 	// carries it in the path.
 	if IsV1Endpoint(endpoint) {
-		reqBody.Model = cfg.ImageDeployment
+		reqBody.Model = deployment
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -128,7 +138,7 @@ func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOpt
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 
-	url := imagesURL(endpoint, cfg.ImageDeployment, imageAPIVersion(cfg))
+	url := imagesURL(endpoint, deployment, imageAPIVersion(cfg))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return ImageResult{}, err
@@ -136,7 +146,7 @@ func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOpt
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("api-key", c.store.ImageAPIKey())
 
-	return c.sendImageRequest(req, url, cfg.ImageDeployment, opts.Format)
+	return c.sendImageRequest(req, url, deployment, opts.Format)
 }
 
 // ImageSource is the image an edit request starts from.
@@ -150,7 +160,8 @@ type ImageSource struct {
 func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, opts ImageOptions) (ImageResult, error) {
 	cfg := c.store.Get()
 	endpoint := cfg.ImageHost()
-	if endpoint == "" || cfg.ImageDeployment == "" {
+	deployment := imageDeployment(cfg, opts.Deployment)
+	if endpoint == "" || deployment == "" {
 		return ImageResult{}, fmt.Errorf("image endpoint and deployment are required")
 	}
 	if !c.store.HasImageAPIKey() {
@@ -185,7 +196,7 @@ func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, 
 	// With the v1 schema the deployment travels in the body; the classic schema
 	// carries it in the path.
 	if IsV1Endpoint(endpoint) {
-		fields["model"] = cfg.ImageDeployment
+		fields["model"] = deployment
 	}
 	for name, value := range fields {
 		if value == "" {
@@ -202,7 +213,7 @@ func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 
-	url := imageEditsURL(endpoint, cfg.ImageDeployment, imageAPIVersion(cfg))
+	url := imageEditsURL(endpoint, deployment, imageAPIVersion(cfg))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &buf)
 	if err != nil {
 		return ImageResult{}, err
@@ -210,7 +221,49 @@ func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, 
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.Header.Set("api-key", c.store.ImageAPIKey())
 
-	return c.sendImageRequest(req, url, cfg.ImageDeployment, opts.Format)
+	return c.sendImageRequest(req, url, deployment, opts.Format)
+}
+
+// VerifyImage checks endpoint, deployment and key of the image surface without
+// generating anything: the request is deliberately incomplete, so a rejected
+// payload (400) proves that the call arrived authenticated, while 401 or 404
+// point at the key or the deployment.
+func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
+	cfg := c.store.Get()
+	endpoint := cfg.ImageHost()
+	deployment = imageDeployment(cfg, deployment)
+	if endpoint == "" || deployment == "" {
+		return fmt.Errorf("image endpoint and deployment are required")
+	}
+	if !c.store.HasImageAPIKey() {
+		return fmt.Errorf("no API key set (AZURE_IMAGE_API_KEY)")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	body := []byte(`{}`)
+	if IsV1Endpoint(endpoint) {
+		body, _ = json.Marshal(imageRequest{Model: deployment})
+	}
+	url := imagesURL(endpoint, deployment, imageAPIVersion(cfg))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("api-key", c.store.ImageAPIKey())
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusBadRequest {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", url, readError(resp))
 }
 
 // sourceFileName keeps the extension the endpoint uses to detect the format.

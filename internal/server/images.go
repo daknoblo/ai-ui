@@ -5,15 +5,37 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/daknoblo/ai-ui/internal/config"
 	"github.com/daknoblo/ai-ui/internal/llm"
 	"github.com/daknoblo/ai-ui/internal/storage"
 )
+
+// crossResourceImageKey reports whether the image endpoint points at a different
+// resource while no dedicated key is set. The inherited chat key is rejected
+// there, which the endpoint answers with 401.
+func crossResourceImageKey(cfg config.Config, hasOwnKey bool) bool {
+	if hasOwnKey || cfg.ImageEndpoint == "" || cfg.Endpoint == "" {
+		return false
+	}
+	return endpointHost(cfg.ImageEndpoint) != endpointHost(cfg.Endpoint)
+}
+
+// endpointHost reduces an endpoint URL to its host for comparison.
+func endpointHost(raw string) string {
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return strings.ToLower(raw)
+	}
+	return strings.ToLower(u.Host)
+}
 
 // allowedImageMIME lists the content types the image endpoint may produce or
 // accept as a source. Serving is restricted to them so a manipulated database
@@ -110,10 +132,17 @@ func (s *Server) handleSetImageParams(w http.ResponseWriter, r *http.Request) {
 // instead of creating a new one, which allows refining step by step.
 func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64, prompt string, edit bool, fail func(string)) {
 	cfg := s.cfg.Get()
+	chat, err := s.store.GetChat(ctx, chatID)
+	if err != nil {
+		fail(s.t("stream.image_failed", err.Error()))
+		return
+	}
+	deployment := imageModelOf(cfg, &chat)
 	opts := llm.ImageOptions{
-		Size:    cfg.ImageSize,
-		Quality: cfg.ImageQuality,
-		Format:  cfg.ImageFormat,
+		Deployment: deployment,
+		Size:       cfg.ImageSize,
+		Quality:    cfg.ImageQuality,
+		Format:     cfg.ImageFormat,
 	}
 
 	// Editing continues from the latest image, so refinements build on each other.
@@ -125,21 +154,21 @@ func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64
 	}
 
 	var (
-		res llm.ImageResult
-		err error
+		res    llm.ImageResult
+		genErr error
 	)
 	if src != nil {
-		res, err = s.llm.EditImage(ctx, prompt, llm.ImageSource{
+		res, genErr = s.llm.EditImage(ctx, prompt, llm.ImageSource{
 			Name: src.Name,
 			MIME: src.MIME,
 			Data: src.Data,
 		}, opts)
 	} else {
-		res, err = s.llm.GenerateImage(ctx, prompt, opts)
+		res, genErr = s.llm.GenerateImage(ctx, prompt, opts)
 	}
-	if err != nil {
-		slog.Error("image generation", "edit", src != nil, "err", err)
-		fail(s.t("stream.image_failed", err.Error()))
+	if genErr != nil {
+		slog.Error("image generation", "edit", src != nil, "deployment", deployment, "err", genErr)
+		fail(s.t("stream.image_failed", genErr.Error()))
 		return
 	}
 

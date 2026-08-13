@@ -43,7 +43,8 @@ All screenshots are generated automatically from the demo instance
 - Optional image generation (🖼): the toggle switches the next message from a
   chat answer to a generated image (Azure image models such as `gpt-image-2`);
   images are stored in the database and shown inline. Attaching an image turns
-  the next prompt into an edit of that image
+  the next prompt into an edit of that image. In image mode the model picker
+  offers the image deployments
 - Documents are bound to their chat and are removed together with it
   (including their embeddings)
 - Settings dialog in the UI (language, endpoints, deployments, API version,
@@ -159,9 +160,15 @@ Image generation (fall back to the AI endpoint when empty):
 | --------------- | --------------------------------------------- |
 | `AZURE_IMAGE_ENDPOINT` | Image endpoint URL, e.g. `https://my-resource.services.ai.azure.com/openai/v1`. |
 | `AZURE_IMAGE_DEPLOYMENT` | Deployment name of the image model, e.g. `gpt-image-2`. |
+| `AZURE_IMAGE_MODELS` | Selectable image deployments (comma or newline separated). Empty ⇒ only `AZURE_IMAGE_DEPLOYMENT`. In image mode the picker in the top right offers these instead of the chat models. |
 | `AZURE_IMAGE_API_VERSION` | Image API version.                    |
 
 The key is `AZURE_IMAGE_API_KEY`; when it is empty `AZURE_API_KEY` is used.
+**A dedicated key is required as soon as the image endpoint belongs to a
+different resource** - the chat key is rejected there with HTTP 401. The
+settings dialog points that out, and the connection check probes the image
+deployments as well (with an intentionally incomplete request, so it costs
+nothing and generates no image).
 Size, quality and file format are chosen in the settings dialog.
 
 The matching secrets are `AZURE_API_KEY` and `AZURE_EMBEDDING_API_KEY`

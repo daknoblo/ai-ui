@@ -5,17 +5,7 @@
 			aria-controls="sidebar" aria-expanded="false"
 			title="{{t "nav.menu"}}" aria-label="{{t "nav.menu"}}"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button>
 		<h1 id="chat-title">{{if .CurrentChat}}{{chatTitle .CurrentChat.Title}}{{else}}{{t "chat.default_title"}}{{end}}</h1>
-		{{if .Models}}
-		<form class="model-picker" hx-post="/chat/{{.ChatID}}/model" hx-trigger="change" hx-swap="none">
-			<label class="model-label" for="model-select">{{t "chat.model_label"}}</label>
-			<select id="model-select" name="model">
-				<option value="" {{if eq .CurrentModel ""}}selected{{end}}>{{t "chat.model_auto"}}</option>
-				{{range .Models}}
-				<option value="{{.}}" {{if eq . $.CurrentModel}}selected{{end}}>{{.}}</option>
-				{{end}}
-			</select>
-		</form>
-		{{end}}
+		{{template "model-picker" .Picker}}
 	</div>
 
 	<div id="messages" class="messages">
@@ -120,6 +110,19 @@
 		</div>
 	</div>
 </div>
+{{end}}
+
+{{/* model-picker: the deployment picker in the header. Image mode offers the
+     image deployments, so the mode switch swaps it out of band. */}}
+{{define "model-picker"}}
+<form class="model-picker" id="model-picker" hx-post="/chat/{{.ChatID}}/model" hx-trigger="change" hx-swap="none"
+	{{if .OOB}}hx-swap-oob="true"{{end}}{{if not .Models}} hidden{{end}}>
+	<label class="model-label" for="model-select">{{t "chat.model_label"}}</label>
+	<select id="model-select" name="model">
+		{{if .AllowAuto}}<option value="" {{if eq .Current ""}}selected{{end}}>{{t "chat.model_auto"}}</option>{{end}}
+		{{range .Models}}<option value="{{.}}" {{if eq . $.Current}}selected{{end}}>{{.}}</option>{{end}}
+	</select>
+</form>
 {{end}}
 
 {{/* reasoning-opt: the effort picker of the composer. It is re-rendered out of

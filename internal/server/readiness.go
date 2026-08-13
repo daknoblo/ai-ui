@@ -169,6 +169,20 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 		}
 	}
 
+	// 6. Image deployments. The probe sends an incomplete request on purpose, so
+	//    it costs nothing but still proves endpoint, deployment and key.
+	if deep && s.cfg.ImagesConfigured() {
+		for _, model := range s.cfg.Get().ImageModels {
+			detail := s.t("check.reachable")
+			ok := true
+			if err := s.llm.VerifyImage(ctx, model); err != nil {
+				ok = false
+				detail = err.Error()
+			}
+			results = append(results, checkResult{Name: s.t("check.image_deployment", model), OK: ok, Detail: detail})
+		}
+	}
+
 	s.ready.set(storageOK, chatOK, embeddingOK)
 	if deep {
 		s.ready.setResults(results)

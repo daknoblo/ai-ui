@@ -64,6 +64,7 @@ func run() error {
 		EmbeddingAPIVersion: strings.TrimSpace(os.Getenv("AZURE_EMBEDDING_API_VERSION")),
 		ImageEndpoint:       strings.TrimSpace(os.Getenv("AZURE_IMAGE_ENDPOINT")),
 		ImageDeployment:     strings.TrimSpace(os.Getenv("AZURE_IMAGE_DEPLOYMENT")),
+		ImageModels:         config.ParseModelList(os.Getenv("AZURE_IMAGE_MODELS")),
 		ImageAPIVersion:     strings.TrimSpace(os.Getenv("AZURE_IMAGE_API_VERSION")),
 	}
 

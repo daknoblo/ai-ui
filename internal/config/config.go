@@ -28,6 +28,7 @@ type Config struct {
 	EmbeddingAPIVersion string   `json:"embedding_api_version"` // optional; falls back to APIVersion
 	ImageEndpoint       string   `json:"image_endpoint"`        // optional; falls back to Endpoint
 	ImageDeployment     string   `json:"image_deployment"`      // deployment name of the image model
+	ImageModels         []string `json:"-"`                     // selectable image deployments; comes from AZURE_IMAGE_MODELS
 	ImageAPIVersion     string   `json:"image_api_version"`     // optional; falls back to APIVersion
 	ImageSize           string   `json:"image_size"`            // e.g. 1024x1024 or "auto"
 	ImageQuality        string   `json:"image_quality"`         // low | medium | high | auto
@@ -81,6 +82,7 @@ type Overrides struct {
 	EmbeddingAPIVersion string   // AZURE_EMBEDDING_API_VERSION
 	ImageEndpoint       string   // AZURE_IMAGE_ENDPOINT
 	ImageDeployment     string   // AZURE_IMAGE_DEPLOYMENT
+	ImageModels         []string // AZURE_IMAGE_MODELS (comma or newline separated)
 	ImageAPIVersion     string   // AZURE_IMAGE_API_VERSION
 }
 
@@ -118,6 +120,12 @@ func (o Overrides) apply(c Config) Config {
 	}
 	if o.ImageAPIVersion != "" {
 		c.ImageAPIVersion = o.ImageAPIVersion
+	}
+	// Without an explicit list the single configured deployment is the only
+	// choice, so the picker always has something to offer in image mode.
+	c.ImageModels = o.ImageModels
+	if len(c.ImageModels) == 0 && c.ImageDeployment != "" {
+		c.ImageModels = []string{c.ImageDeployment}
 	}
 	return c
 }

@@ -102,9 +102,10 @@
 					placeholder="preview"{{if .Locks.ImageAPIVersion}} disabled{{end}}>
 			</label>
 			{{end}}
-			<div class="config-secret {{if .HasImageKey}}ok{{else}}warn{{end}}">
+			<div class="config-secret {{if and .HasImageKey (not .ImageKeyMismatch)}}ok{{else}}warn{{end}}">
 				{{t "config.image_key"}}
-				{{if .HasOwnImageKey}}{{t "config.image_key_own"}}
+				{{if .ImageKeyMismatch}}{{t "config.image_key_cross"}}
+				{{else if .HasOwnImageKey}}{{t "config.image_key_own"}}
 				{{else if .HasImageKey}}{{t "config.image_key_inherit"}}
 				{{else}}{{t "config.image_key_missing"}}{{end}}
 			</div>

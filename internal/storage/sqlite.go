@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS chats (
 	id               INTEGER PRIMARY KEY AUTOINCREMENT,
 	title            TEXT NOT NULL,
 	model            TEXT NOT NULL DEFAULT '',
+	image_model      TEXT NOT NULL DEFAULT '',
 	mode             TEXT NOT NULL DEFAULT 'chat',
 	reasoning_effort TEXT NOT NULL DEFAULT 'auto',
 	created_at       TEXT NOT NULL,
@@ -165,6 +166,10 @@ CREATE INDEX IF NOT EXISTS idx_usage_kind_model ON usage_daily(kind, model);
 	}
 	if err := s.ensureColumn(ctx, `PRAGMA table_info(chats)`, "reasoning_effort",
 		`ALTER TABLE chats ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT 'auto'`); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, `PRAGMA table_info(chats)`, "image_model",
+		`ALTER TABLE chats ADD COLUMN image_model TEXT NOT NULL DEFAULT ''`); err != nil {
 		return err
 	}
 	if err := s.ensureColumn(ctx, `PRAGMA table_info(images)`, "kind",
@@ -250,7 +255,7 @@ func (s *Store) CreateChat(ctx context.Context, title, model, effort string) (in
 // ListChats returns all chats, most recently updated first.
 func (s *Store) ListChats(ctx context.Context) ([]Chat, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, title, model, mode, reasoning_effort, created_at, updated_at FROM chats ORDER BY updated_at DESC`)
+		`SELECT id, title, model, image_model, mode, reasoning_effort, created_at, updated_at FROM chats ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +265,7 @@ func (s *Store) ListChats(ctx context.Context) ([]Chat, error) {
 	for rows.Next() {
 		var c Chat
 		var created, updated string
-		if err := rows.Scan(&c.ID, &c.Title, &c.Model, &c.Mode, &c.ReasoningEffort, &created, &updated); err != nil {
+		if err := rows.Scan(&c.ID, &c.Title, &c.Model, &c.ImageModel, &c.Mode, &c.ReasoningEffort, &created, &updated); err != nil {
 			return nil, err
 		}
 		c.CreatedAt = parseTime(created)
@@ -275,8 +280,8 @@ func (s *Store) GetChat(ctx context.Context, id int64) (Chat, error) {
 	var c Chat
 	var created, updated string
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, title, model, mode, reasoning_effort, created_at, updated_at FROM chats WHERE id = ?`, id).
-		Scan(&c.ID, &c.Title, &c.Model, &c.Mode, &c.ReasoningEffort, &created, &updated)
+		`SELECT id, title, model, image_model, mode, reasoning_effort, created_at, updated_at FROM chats WHERE id = ?`, id).
+		Scan(&c.ID, &c.Title, &c.Model, &c.ImageModel, &c.Mode, &c.ReasoningEffort, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, ErrNotFound
 	}
@@ -297,6 +302,12 @@ func (s *Store) UpdateChatModel(ctx context.Context, id int64, model string) err
 // UpdateChatMode stores the answer mode of a chat.
 func (s *Store) UpdateChatMode(ctx context.Context, id int64, mode string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE chats SET mode = ? WHERE id = ?`, mode, id)
+	return err
+}
+
+// UpdateChatImageModel pins the image deployment of a chat.
+func (s *Store) UpdateChatImageModel(ctx context.Context, id int64, model string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE chats SET image_model = ? WHERE id = ?`, model, id)
 	return err
 }
 

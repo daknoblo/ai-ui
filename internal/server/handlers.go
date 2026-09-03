@@ -1219,7 +1219,8 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	imageMode := chat.Mode == storage.ChatModeImage && s.cfg.ImagesConfigured()
 	var (
 		images, docs []*multipart.FileHeader
-		rejected     []string
+		added        int
+		failures     []string
 	)
 	for _, header := range headers {
 		mime := uploadImageMIME(header)
@@ -1227,7 +1228,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		case mime != "" && imageMode:
 			images = append(images, header)
 		case mime != "":
-			rejected = append(rejected, s.t("upload.image_chat_mode", header.Filename))
+			failures = append(failures, s.t("upload.image_chat_mode", header.Filename))
 		default:
 			docs = append(docs, header)
 		}
@@ -1249,10 +1250,6 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var (
-		added    int
-		failures = rejected
-	)
 	for _, header := range images {
 		if header.Size > maxUploadBytes {
 			failures = append(failures, s.t("upload.too_large", header.Filename))

@@ -1,7 +1,7 @@
 key: documents
 title: Q3-Bericht — Kennzahlen
 model: claude-opus-4-7
-docs: quartalsbericht-q3.pdf:18, produkt-roadmap.md:6
+docs: quartalsbericht-q3.pdf:18, produkt-roadmap.md:6, kennzahlen-q3.xlsx:4
 ---
 @user
 Fasse die Kennzahlen des angehängten Berichts zusammen und nenne die drei

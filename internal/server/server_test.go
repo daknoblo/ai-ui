@@ -17,6 +17,18 @@ import (
 // newTestServer wires a server against a throwaway database.
 func newTestServer(t *testing.T, language string) (*Server, http.Handler) {
 	t.Helper()
+	return newConfiguredServer(t, language, config.Keys{}, config.Overrides{}, nil)
+}
+
+// newConfiguredServer wires a server whose configuration is complete before the
+// dependencies are built. Tests that need an endpoint have to go through this
+// rather than swapping the store afterwards: the LLM client and the ingestor
+// capture it at construction time, so a late swap would leave them pointing at
+// the empty configuration.
+func newConfiguredServer(t *testing.T, language string, keys config.Keys,
+	overrides config.Overrides, adjust func(*config.Config),
+) (*Server, http.Handler) {
+	t.Helper()
 	dir := t.TempDir()
 
 	store, err := storage.Open(filepath.Join(dir, "test.db"))
@@ -28,12 +40,15 @@ func newTestServer(t *testing.T, language string) (*Server, http.Handler) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	cfgStore := config.NewStore(filepath.Join(dir, "config.json"), config.Keys{}, config.Overrides{})
+	cfgStore := config.NewStore(filepath.Join(dir, "config.json"), keys, overrides)
 	if _, err := cfgStore.Load(); err != nil {
 		t.Fatalf("load config: %v", err)
 	}
 	cfg := cfgStore.Get()
 	cfg.Language = language
+	if adjust != nil {
+		adjust(&cfg)
+	}
 	if err := cfgStore.Save(cfg); err != nil {
 		t.Fatalf("save config: %v", err)
 	}

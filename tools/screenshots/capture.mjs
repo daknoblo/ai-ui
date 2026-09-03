@@ -99,7 +99,7 @@ const SHOTS = [
     meta: {
       en: {
         title: 'Documents as chat context (RAG)',
-        caption: 'Uploads are chunked, embedded and stored next to the chat; the attachments stay visible above the input.',
+        caption: 'PDF, Word, Excel, PowerPoint, text and code are parsed, chunked and embedded next to the chat; the attachments stay visible above the input.',
       },
     },
     capture: (page, ctx) => open(page, `/chat/${ctx.index.chats.documents}`),

@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/daknoblo/ai-ui/internal/config"
+	"github.com/daknoblo/ai-ui/internal/docparse"
 	"github.com/daknoblo/ai-ui/internal/i18n"
 	"github.com/daknoblo/ai-ui/internal/llm"
 	"github.com/daknoblo/ai-ui/internal/logbuf"
@@ -31,6 +32,12 @@ const (
 	// per-file limit bounds memory usage when several files arrive at once.
 	multipartMemoryBytes = 8 << 20 // 8 MiB
 	retrievalTopK        = 8
+	// maxContextImages bounds how many attached images travel with a chat
+	// request. Each of them is inlined as base64 and billed as prompt tokens.
+	maxContextImages = 8
+	// maxContextImageBytes bounds their total size before base64 encoding,
+	// which inflates the payload by roughly a third.
+	maxContextImageBytes = 16 << 20
 )
 
 // untitled is the title stored for a chat that has not been named yet. It is
@@ -70,6 +77,7 @@ type pageData struct {
 	Picker         modelPickerView
 	ChatMode       string
 	UploadsReady   bool
+	UploadAccept   string
 	SearchEnabled  bool
 	ImageEnabled   bool
 	ImageSize      string
@@ -143,6 +151,7 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		Configured:     s.cfg.IsConfigured(),
 		Picker:         pickerFor(0, cfg, current),
 		UploadsReady:   s.ready.uploadsAllowed(),
+		UploadAccept:   docparse.UploadAccept(),
 		SearchEnabled:  s.search.Enabled(),
 		ImageEnabled:   s.cfg.ImagesConfigured(),
 		ImageSize:      cfg.ImageSize,
@@ -515,6 +524,30 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	messages := s.buildLLMMessages(ctx, id, cfg, history, query, forceWeb)
 
+	// A picture is useless to a model that cannot see. Rather than failing the
+	// request, the answer is routed to a model that can - for this turn only, so
+	// the picker the user set stays where it is. The model tag of the answer
+	// names whatever actually replied.
+	if messagesCarryImages(messages) {
+		picked, ok := llm.VisionModel(opts.Model, cfg.ChatModels)
+		switch {
+		case !ok:
+			// Nothing configured can read images. Sending them anyway would be
+			// rejected with a 400 - and because the attachments are re-read on
+			// every turn, the chat would stay broken until the image is
+			// deleted. Dropping them keeps the conversation usable and says so.
+			slog.Warn("no vision capable deployment, answering without the attached images",
+				"chat", id, "model", opts.Model)
+			dropImages(messages)
+			_ = sse.send("tool", s.renderString("turn-note", s.t("stream.images_dropped")))
+		case picked != opts.Model:
+			slog.Info("switching to a vision capable model for the attachments",
+				"from", opts.Model, "to", picked)
+			opts.Model = picked
+			opts.ReasoningEffort = llm.NormalizeReasoningEffort(picked, cfg.ReasoningEffort)
+		}
+	}
+
 	var acc strings.Builder
 	onDelta := func(delta string) error {
 		acc.WriteString(delta)
@@ -657,12 +690,25 @@ func truncateRunes(s string, n int) string {
 	return string(r[:n])
 }
 
-// buildLLMMessages assembles the message list including RAG context and
-// optional web context (RAG is limited to the current chat).
+// buildLLMMessages assembles the message list including the attachments of the
+// chat, the RAG context and optional web context (both limited to this chat).
 func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.Config, history []storage.Message, query string, web bool) []llm.Message {
 	system := cfg.SystemPrompt
 	if strings.TrimSpace(system) == "" {
 		system = s.t("prompt.default_system")
+	}
+
+	// Files bound to the chat. Naming them in the prompt keeps a question like
+	// "what is in the attachment?" answerable even when the vector search finds
+	// nothing that matches the wording of the question.
+	att := s.attachmentsOf(ctx, chatID)
+	if len(att.names) > 0 {
+		var sb strings.Builder
+		sb.WriteString(s.t("prompt.files_intro"))
+		for _, name := range att.names {
+			sb.WriteString(s.t("prompt.files_item", name))
+		}
+		system += sb.String()
 	}
 
 	// Fetch relevant document sections (only if embeddings are configured).
@@ -702,7 +748,80 @@ func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.
 	for _, m := range history {
 		msgs = append(msgs, llm.Message{Role: m.Role, Content: m.Content})
 	}
+	attachImages(msgs, att.images)
 	return msgs
+}
+
+// chatAttachments is what the files of a chat contribute to a request: the
+// image payloads travel inline with the message, the names describe every
+// attachment the model has access to.
+type chatAttachments struct {
+	images []llm.ImageContent
+	names  []string
+}
+
+// attachmentsOf collects the files bound to a chat. Documents contribute their
+// name only - their text reaches the model through retrieval. Images are capped
+// in count and total size, because each of them is inlined as base64.
+func (s *Server) attachmentsOf(ctx context.Context, chatID int64) chatAttachments {
+	var att chatAttachments
+
+	docs, err := s.store.ListDocumentsByChat(ctx, chatID)
+	if err != nil {
+		slog.Warn("list attached documents", "chat", chatID, "err", err)
+	}
+	for _, doc := range docs {
+		att.names = append(att.names, doc.Name)
+	}
+
+	images, err := s.store.ImagesWithDataByKind(ctx, chatID, storage.ImageUpload, maxContextImages)
+	if err != nil {
+		slog.Warn("list attached images", "chat", chatID, "err", err)
+		return att
+	}
+	total := 0
+	for _, img := range images {
+		// An image that does not fit the budget is left out of the name list as
+		// well, so the model is never told about something it cannot see.
+		if total+len(img.Data) > maxContextImageBytes {
+			slog.Warn("attached image exceeds the context budget", "chat", chatID, "image", img.Name)
+			continue
+		}
+		total += len(img.Data)
+		att.names = append(att.names, img.Name)
+		att.images = append(att.images, llm.ImageContent{MIME: img.MIME, Data: img.Data})
+	}
+	return att
+}
+
+// attachImages hands the images to the most recent user message, which is the
+// one the model is answering.
+func attachImages(msgs []llm.Message, images []llm.ImageContent) {
+	if len(images) == 0 {
+		return
+	}
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" {
+			msgs[i].Images = images
+			return
+		}
+	}
+}
+
+// messagesCarryImages reports whether a request needs a model that can see.
+func messagesCarryImages(msgs []llm.Message) bool {
+	return slices.ContainsFunc(msgs, func(m llm.Message) bool {
+		return len(m.Images) > 0
+	})
+}
+
+// dropImages strips the attachments from a request that no configured model
+// could accept. The names stay in the system prompt, so the model still knows
+// something was attached and can say that it cannot look at it.
+func dropImages(msgs []llm.Message) {
+	for i := range msgs {
+		msgs[i].Images = nil
+	}
 }
 
 // maxToolIterations bounds the tool loop to prevent endless round trips.
@@ -1183,10 +1302,13 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Images become the source for image editing, everything else is ingested.
+	// Images become an attachment the model can look at (and the source for
+	// image editing); everything else is ingested as a document. That split does
+	// not depend on the image endpoint: an attachment only needs a vision
+	// capable chat model, which is configured elsewhere.
 	var images, docs []*multipart.FileHeader
 	for _, header := range headers {
-		if s.cfg.ImagesConfigured() && uploadImageMIME(header) != "" {
+		if uploadImageMIME(header) != "" {
 			images = append(images, header)
 			continue
 		}
@@ -1212,6 +1334,8 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	var (
 		added    int
 		failures []string
+		// transcribed names the scans that had to be read by the model.
+		transcribed []string
 	)
 	for _, header := range images {
 		if header.Size > maxUploadBytes {
@@ -1244,15 +1368,24 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		mime := header.Header.Get("Content-Type")
-		if _, _, err := s.ingestor.Ingest(ctx, chatID, header.Filename, mime, data); err != nil {
+		res, err := s.ingestor.Ingest(ctx, chatID, header.Filename, mime, data)
+		if err != nil {
 			slog.Error("ingest", "file", header.Filename, "err", err)
 			failures = append(failures, s.t("upload.item_failed", header.Filename, err.Error()))
 			continue
+		}
+		// A scan was read by the model rather than parsed. That is worth saying:
+		// a transcription can be imperfect in a way a parsed document is not.
+		if res.OCRPages > 0 {
+			transcribed = append(transcribed, s.t("upload.ocr_item", header.Filename, res.OCRPages))
 		}
 		added++
 	}
 
 	notice, isErr := s.uploadSummary(added, failures)
+	if len(transcribed) > 0 {
+		notice += " " + s.t("upload.ocr_used", strings.Join(transcribed, ", "))
+	}
 	s.renderDocList(w, r, chatID, notice, isErr)
 }
 

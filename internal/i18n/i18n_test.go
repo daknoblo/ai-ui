@@ -42,7 +42,7 @@ func TestTFallsBackToEnglish(t *testing.T) {
 	if got := T(DE, "does.not.exist"); got != "does.not.exist" {
 		t.Errorf("unknown key should return the key itself, got %q", got)
 	}
-	if got := T(EN, "upload.added_many", 3); got != "3 documents added." {
+	if got := T(EN, "upload.added_many", 3); got != "3 files added." {
 		t.Errorf("formatting failed: %q", got)
 	}
 }

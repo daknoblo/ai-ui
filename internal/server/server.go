@@ -66,10 +66,15 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 		ParseFS(web.TemplatesFS, "templates/*.html"))
 
 	return &Server{
-		cfg:       cfg,
-		store:     store,
-		llm:       client,
-		ingestor:  rag.NewIngestor(store, client),
+		cfg:   cfg,
+		store: store,
+		llm:   client,
+		ingestor: rag.NewIngestor(store, client, rag.Prompts{
+			OCRSystem: func() string { return i18n.T(cfg.Language(), "prompt.ocr_system") },
+			OCRPage: func(page, total int) string {
+				return i18n.T(cfg.Language(), "prompt.ocr_page", page, total)
+			},
+		}),
 		retriever: rag.NewRetriever(store, client),
 		search:    websearch.New(cfg),
 		tmpl:      tmpl,

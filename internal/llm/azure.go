@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,11 +24,70 @@ const maxErrorBodyBytes = 8 << 10
 // Message is a chat message in OpenAI format. Tool calling uses the additional
 // fields (ToolCalls for assistant requests, ToolCallID/Name for tool results).
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-	Name       string     `json:"name,omitempty"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
+	// Images are attachments the model should look at. They are not a field of
+	// the wire format: MarshalJSON turns them into multimodal content parts.
+	Images     []ImageContent `json:"-"`
+	ToolCalls  []ToolCall     `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Name       string         `json:"name,omitempty"`
+}
+
+// ImageContent is an image attached to a message. It is sent inline as a data
+// URL, so no endpoint has to be able to reach this instance.
+type ImageContent struct {
+	MIME string
+	Data []byte
+}
+
+// contentPart is one element of a multimodal content array.
+type contentPart struct {
+	Type     string        `json:"type"`
+	Text     string        `json:"text,omitempty"`
+	ImageURL *imageURLPart `json:"image_url,omitempty"`
+}
+
+// imageURLPart carries the data URL of an attached image.
+type imageURLPart struct {
+	URL string `json:"url"`
+}
+
+// MarshalJSON writes a message with attachments as a multimodal content array.
+// Without attachments the content stays a plain string, so the request body is
+// unchanged for endpoints that do not implement the vision schema.
+func (m Message) MarshalJSON() ([]byte, error) {
+	// plain drops the method set, which would otherwise recurse into this one.
+	type plain Message
+
+	if len(m.Images) == 0 {
+		return json.Marshal(plain(m))
+	}
+
+	parts := make([]contentPart, 0, len(m.Images)+1)
+	if m.Content != "" {
+		parts = append(parts, contentPart{Type: "text", Text: m.Content})
+	}
+	for _, img := range m.Images {
+		parts = append(parts, contentPart{
+			Type:     "image_url",
+			ImageURL: &imageURLPart{URL: dataURL(img.MIME, img.Data)},
+		})
+	}
+	// The outer Content sits at a shallower depth than the embedded one, so it
+	// replaces the string variant instead of colliding with it.
+	return json.Marshal(struct {
+		plain
+		Content []contentPart `json:"content"`
+	}{plain: plain(m), Content: parts})
+}
+
+// dataURL encodes image bytes as an inline data URL.
+func dataURL(mime string, data []byte) string {
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
 }
 
 // ToolCall describes a function call requested by the model.

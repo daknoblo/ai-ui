@@ -30,7 +30,7 @@
 
 		<div class="composer-tools">
 			<label class="tool-opt attach-opt" title="{{t "chat.attach_title"}}" aria-label="{{t "chat.attach_option"}}">
-				<input type="file" id="attach-input" accept=".txt,.md,.markdown,.json,.pdf,.docx,.png,.jpg,.jpeg,.webp" multiple
+				<input type="file" id="attach-input" accept="{{.UploadAccept}}" multiple
 					data-chat-id="{{.ChatID}}"
 					onchange="handleAttach(this)">
 				<span class="btn-icon" aria-hidden="true">📎</span><span class="btn-label">{{t "chat.attach_option"}}</span>
@@ -164,6 +164,9 @@
 
 {{/* tool-status: small status line for a running web search */}}
 {{define "tool-status"}}<div class="tool-status">{{t "tool.web_search_status" .}}</div>{{end}}
+
+{{/* turn-note: a plain notice about something that happened during this turn */}}
+{{define "turn-note"}}<div class="tool-status">{{.}}</div>{{end}}
 
 {{/* title-update: updates the header title and the sidebar via out-of-band swap */}}
 {{define "title-update"}}<h1 id="chat-title" hx-swap-oob="true">{{chatTitle .Title}}</h1><nav id="chat-list" class="chat-list" hx-swap-oob="true">{{template "chatnav-items" .}}</nav>{{end}}

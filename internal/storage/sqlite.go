@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -669,6 +670,48 @@ func (s *Store) ListImagesByKind(ctx context.Context, chatID int64, kind string)
 		out = append(out, img)
 	}
 	return out, rows.Err()
+}
+
+// ImagesWithDataByKind returns the images of a chat including their payload,
+// at most limit rows and in chronological order. When a chat holds more images
+// than the limit allows, the *newest* ones are kept: the picture a question is
+// about is the one that was just attached, so dropping the tail would discard
+// exactly the wrong end. ListImagesByKind is the cheaper choice whenever only
+// the metadata is needed; the payload is loaded here because attachments travel
+// inline with a chat request.
+func (s *Store) ImagesWithDataByKind(ctx context.Context, chatID int64, kind string, limit int) ([]Image, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, chat_id, kind, name, prompt, mime, data, created_at
+		 FROM images WHERE chat_id = ? AND kind = ? ORDER BY id DESC LIMIT ?`, chatID, kind, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []Image
+	for rows.Next() {
+		var (
+			img     Image
+			created string
+		)
+		if err := rows.Scan(&img.ID, &img.ChatID, &img.Kind, &img.Name, &img.Prompt,
+			&img.MIME, &img.Data, &created); err != nil {
+			return nil, err
+		}
+		img.CreatedAt = parseTime(created)
+		out = append(out, img)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// The query selected the newest first; hand them back oldest first so the
+	// order the user sees in the chat is the order the model gets.
+	slices.Reverse(out)
+	return out, nil
 }
 
 // DeleteImage removes a stored image.

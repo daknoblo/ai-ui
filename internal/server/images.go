@@ -44,6 +44,15 @@ var allowedImageMIME = map[string]bool{
 	"image/png":  true,
 	"image/jpeg": true,
 	"image/webp": true,
+	"image/gif":  true,
+}
+
+// editableImageMIME is the subset the image edit endpoint accepts as a source.
+// A GIF can be attached and looked at, but it cannot be edited.
+var editableImageMIME = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/webp": true,
 }
 
 // uploadImageMIME returns the content type when an upload is a supported image,
@@ -61,6 +70,8 @@ func uploadImageMIME(header *multipart.FileHeader) string {
 		return "image/jpeg"
 	case ".webp":
 		return "image/webp"
+	case ".gif":
+		return "image/gif"
 	}
 	return ""
 }
@@ -149,7 +160,14 @@ func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64
 	var src *storage.Image
 	if edit {
 		if img, lookupErr := s.store.LatestImage(ctx, chatID); lookupErr == nil {
-			src = &img
+			// A format the edit endpoint cannot read would fail the request; a
+			// fresh generation is the more useful outcome than an error.
+			if editableImageMIME[img.MIME] {
+				src = &img
+			} else {
+				slog.Info("latest image cannot be edited, generating instead",
+					"chat", chatID, "mime", img.MIME)
+			}
 		}
 	}
 

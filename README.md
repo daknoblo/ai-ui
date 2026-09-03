@@ -34,18 +34,35 @@ All screenshots are generated automatically from the demo instance
   survives switching chats
 - Reasoning effort selectable per chat next to the input field; the offered
   values follow the selected model
-- Document upload (text/Markdown, PDF, DOCX) as RAG context
-  (embeddings + brute-force cosine search)
-- Attach documents next to the input field (📎) or drag and drop them into the
-  chat window; attached documents are shown as chips above the input
+- Document upload as RAG context (embeddings + brute-force cosine search).
+  **PDF** (layout aware: lines and columns survive), **Word** (`.docx`, including
+  tables, headers, footers and footnotes - tracked deletions and field codes are
+  left out), **Excel** (`.xlsx`, sheet by sheet as tab separated rows),
+  **PowerPoint** (`.pptx`, slides plus speaker notes), **RTF**, HTML/XML,
+  Markdown, CSV, JSON, YAML and source code. Anything else that is textual is
+  recognized by its content, so a file without a useful name or type still works
+- **Scanned PDFs are read automatically**: a PDF without a text layer has its
+  pages transcribed by the vision model, one request per page, and the transcript
+  is embedded like any other document. The upload notice says which files were
+  read that way and how many pages, because a transcription can be imperfect in a
+  way a parsed document is not
+- Attach files next to the input field (📎) or drag and drop them into the
+  chat window; attachments are shown as chips above the input. Documents reach
+  the model as retrieved context sections, attached images are sent along with
+  the message so a vision capable model can look at them. The names of all
+  attachments are part of the prompt, so the model knows what it has
+- **The model follows the attachment**: a picture attached while a text-only
+  model is selected is answered by the first vision capable entry of
+  `AZURE_MODELS`. The switch applies to that one answer, the picker stays where
+  it is, and the model tag names whoever replied
 - Optional web search (🌐) per request: pulls in current online results as
   context - provider agnostic (Tavily, Brave Search, SearXNG)
 - Optional image generation (🖼): the toggle switches the next message from a
   chat answer to a generated image (Azure image models such as `gpt-image-2`);
-  images are stored in the database and shown inline. Attaching an image turns
-  the next prompt into an edit of that image. In image mode the model picker
+  images are stored in the database and shown inline. In image mode an attached
+  image turns the next prompt into an edit of that image. There the model picker
   offers the image deployments
-- Documents are bound to their chat and are removed together with it
+- Documents and images are bound to their chat and are removed together with it
   (including their embeddings)
 - Settings dialog in the UI (language, endpoints, deployments, API version,
   system prompt, temperature, default reasoning effort); the configured models
@@ -187,9 +204,13 @@ typo in the list shows up there instead of when that model is picked. **Check
 again** repeats it on demand.
 
 Document uploads are only enabled once storage and the embedding endpoint are
-green. A background check (`HEALTHCHECK_INTERVAL`) monitors the connection
-continuously - without the per-deployment probes - and reports failures through
-the sidebar status and the log.
+green, because a document is chunked and embedded on the way in. Attaching an
+image needs neither: it is stored as is and travels with the message. A scanned
+PDF additionally needs a vision capable entry in `AZURE_MODELS`; without one the
+upload fails with that reason instead of storing an empty document. A
+background check (`HEALTHCHECK_INTERVAL`) monitors the connection continuously -
+without the per-deployment probes - and reports failures through the sidebar
+status and the log.
 
 ### Web search (optional)
 
@@ -226,8 +247,10 @@ usually lives.
 - Defensive response headers on every request: `Content-Security-Policy`,
   `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
   `Cross-Origin-Opener-Policy` and `Permissions-Policy`
-- Uploads are limited to 25 MiB per file and 150 MiB per request; PDF and DOCX
-  parsing is bounded against decompression bombs
+- Uploads are limited to 25 MiB per file and 150 MiB per request; the extracted
+  text is capped, the OOXML formats (`.docx`, `.xlsx`, `.pptx`) are bounded
+  against decompression bombs, and the PDF reader is fed untrusted input behind
+  a panic guard
 - The app is meant to run inside a trusted network or behind a reverse
   proxy/VPN. It has no user accounts and should not be exposed to the internet
   unprotected

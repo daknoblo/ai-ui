@@ -1,7 +1,7 @@
 key: documents
 title: Q3 report — key figures
 model: claude-opus-4-7
-docs: quarterly-report-q3.pdf:18, product-roadmap.md:6
+docs: quarterly-report-q3.pdf:18, product-roadmap.md:6, key-figures-q3.xlsx:4
 ---
 @user
 Summarise the key figures of the attached report and list the three biggest

@@ -67,12 +67,55 @@ func (b *Backend) Close() error {
 
 // chatRequest is the part of the chat completions body the stub evaluates.
 type chatRequest struct {
-	Model    string `json:"model"`
-	Stream   bool   `json:"stream"`
-	Messages []struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	} `json:"messages"`
+	Model    string        `json:"model"`
+	Stream   bool          `json:"stream"`
+	Messages []chatMessage `json:"messages"`
+}
+
+// chatMessage is a message of that body reduced to role and text.
+type chatMessage struct {
+	Role    string
+	Content string
+}
+
+// UnmarshalJSON accepts both shapes of the content field: the plain string of
+// an ordinary message and the array of content parts a message with attached
+// images uses. Only the text parts are kept - the stub answers from canned
+// content and never looks at an image.
+func (m *chatMessage) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	m.Role = raw.Role
+	if len(raw.Content) == 0 {
+		return nil
+	}
+
+	var text string
+	if err := json.Unmarshal(raw.Content, &text); err == nil {
+		m.Content = text
+		return nil
+	}
+
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw.Content, &parts); err != nil {
+		return err
+	}
+	var sb strings.Builder
+	for _, part := range parts {
+		if part.Type == "text" {
+			sb.WriteString(part.Text)
+		}
+	}
+	m.Content = sb.String()
+	return nil
 }
 
 // handleChat answers a chat completion, streamed or in one piece.

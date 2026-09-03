@@ -164,6 +164,42 @@ func TestBackendChatStream(t *testing.T) {
 	}
 }
 
+// TestBackendAcceptsAttachments makes sure a message with an attached image
+// still reaches the stub: its content is an array of parts instead of a string.
+func TestBackendAcceptsAttachments(t *testing.T) {
+	backend, err := StartBackend("en")
+	if err != nil {
+		t.Fatalf("start backend: %v", err)
+	}
+	backend.streamDelay = 0
+	defer func() { _ = backend.Close() }()
+
+	body := strings.NewReader(`{"model":"gpt-5.5","stream":true,"messages":[
+		{"role":"system","content":"be brief"},
+		{"role":"user","content":[
+			{"type":"text","text":"what is on it?"},
+			{"type":"image_url","image_url":{"url":"data:image/png;base64,AQID"}}
+		]}
+	]}`)
+	resp, err := http.Post(backend.URL()+"/openai/deployments/model-router/chat/completions", "application/json", body)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status %d: %s", resp.StatusCode, raw)
+	}
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(raw), `"delta"`) {
+		t.Error("a message with an attachment produced no answer")
+	}
+}
+
 // TestBackendEmbeddings checks the vector length and the response shape.
 func TestBackendEmbeddings(t *testing.T) {
 	backend, err := StartBackend("en")

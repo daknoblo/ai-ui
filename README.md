@@ -301,8 +301,9 @@ changes on the host are required.
 labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
-`ghcr.io/daknoblo/ai-ui` by GitHub Actions (on pushes to `main` and on `v*`
-tags).
+`ghcr.io/daknoblo/ai-ui` by GitHub Actions: `latest` and `stable` from `main`,
+and the version tags (`1.1.0`, `1.1`) when a release is published. Note that the
+image tag carries no `v` prefix even though the git tag does.
 
 ## Development
 

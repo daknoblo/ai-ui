@@ -77,8 +77,11 @@ func TestChunkRoundTrip(t *testing.T) {
 		t.Fatalf("chunk texts: %v", err)
 	}
 	for i, id := range ids {
-		if got[id] != texts[i] {
-			t.Errorf("text of chunk %d = %q, want %q", id, got[id], texts[i])
+		if got[id].Text != texts[i] {
+			t.Errorf("text of chunk %d = %q, want %q", id, got[id].Text, texts[i])
+		}
+		if got[id].Document != "doc.txt" {
+			t.Errorf("document of chunk %d = %q, want %q", id, got[id].Document, "doc.txt")
 		}
 	}
 }
@@ -119,5 +122,47 @@ func TestDeleteChatCascades(t *testing.T) {
 	}
 	if n != 0 {
 		t.Errorf("documents remaining after deleting the chat: %d", n)
+	}
+}
+
+// TestDeleteEmptyChatsKeepsAttachments makes sure the cleanup of orphaned "new
+// chat" entries never removes a chat that already holds an attachment - neither
+// a document nor an uploaded source image.
+func TestDeleteEmptyChatsKeepsAttachments(t *testing.T) {
+	store := newTestStore(t)
+	ctx := t.Context()
+
+	withDoc, err := store.CreateChat(ctx, "", "", "auto")
+	if err != nil {
+		t.Fatalf("create chat: %v", err)
+	}
+	if _, err := store.CreateDocument(ctx, withDoc, "doc.txt", "text/plain"); err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+
+	withImage, err := store.CreateChat(ctx, "", "", "auto")
+	if err != nil {
+		t.Fatalf("create chat: %v", err)
+	}
+	if _, err := store.AddImage(ctx, withImage, ImageUpload, "photo.png", "", "image/png", []byte("x")); err != nil {
+		t.Fatalf("add image: %v", err)
+	}
+
+	empty, err := store.CreateChat(ctx, "", "", "auto")
+	if err != nil {
+		t.Fatalf("create chat: %v", err)
+	}
+
+	if _, err := store.DeleteEmptyChats(ctx, 0); err != nil {
+		t.Fatalf("delete empty chats: %v", err)
+	}
+
+	for _, id := range []int64{withDoc, withImage} {
+		if _, err := store.GetChat(ctx, id); err != nil {
+			t.Errorf("chat %d with an attachment was removed: %v", id, err)
+		}
+	}
+	if _, err := store.GetChat(ctx, empty); err == nil {
+		t.Error("an empty chat must still be cleaned up")
 	}
 }

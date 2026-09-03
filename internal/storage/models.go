@@ -63,3 +63,10 @@ type ChunkVector struct {
 	DocumentID int64
 	Embedding  []float32
 }
+
+// ChunkText is the content of a selected chunk together with the name of the
+// document it came from, so the retrieved context can name its source.
+type ChunkText struct {
+	Text     string
+	Document string
+}

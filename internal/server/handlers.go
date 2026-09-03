@@ -667,17 +667,7 @@ func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.
 
 	// Fetch relevant document sections (only if embeddings are configured).
 	if cfg.EmbeddingDeployment != "" && query != "" {
-		results, err := s.retriever.Retrieve(ctx, chatID, query, retrievalTopK)
-		if err != nil {
-			slog.Warn("retrieval failed", "err", err)
-		} else if len(results) > 0 {
-			var sb strings.Builder
-			sb.WriteString(s.t("prompt.rag_intro"))
-			for i, res := range results {
-				sb.WriteString(s.t("prompt.rag_item", i+1, res.Text))
-			}
-			system += sb.String()
-		}
+		system += s.documentContext(ctx, chatID, query)
 	}
 
 	// Include current web results when requested.
@@ -703,6 +693,44 @@ func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.
 		msgs = append(msgs, llm.Message{Role: m.Role, Content: m.Content})
 	}
 	return msgs
+}
+
+// documentContext builds the attachment part of the system prompt: the names of
+// every document attached to the chat plus the most relevant sections found for
+// the query. The names are always listed – even when retrieval finds nothing –
+// so the model knows which attachments exist and can say when a section is
+// missing instead of silently ignoring the upload.
+func (s *Server) documentContext(ctx context.Context, chatID int64, query string) string {
+	docs, err := s.store.ListDocumentsByChat(ctx, chatID)
+	if err != nil {
+		slog.Warn("list documents for context", "err", err)
+		return ""
+	}
+	if len(docs) == 0 {
+		return ""
+	}
+
+	results, err := s.retriever.Retrieve(ctx, chatID, query, retrievalTopK)
+	if err != nil {
+		slog.Warn("retrieval failed", "err", err)
+	}
+
+	names := make([]string, 0, len(docs))
+	for _, d := range docs {
+		names = append(names, d.Name)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(s.t("prompt.rag_intro"))
+	sb.WriteString(s.t("prompt.rag_files", strings.Join(names, ", ")))
+	for i, res := range results {
+		name := res.Document
+		if name == "" {
+			name = s.t("prompt.rag_unknown_source")
+		}
+		sb.WriteString(s.t("prompt.rag_item", i+1, name, res.Text))
+	}
+	return sb.String()
 }
 
 // maxToolIterations bounds the tool loop to prevent endless round trips.
@@ -1156,7 +1184,8 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if _, err := s.store.GetChat(ctx, chatID); err != nil {
+	chat, err := s.store.GetChat(ctx, chatID)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -1183,14 +1212,25 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Images become the source for image editing, everything else is ingested.
-	var images, docs []*multipart.FileHeader
+	// In image mode an uploaded image becomes the source for image editing. In
+	// chat mode it must not be swallowed by the image store: the chat context is
+	// built from ingested documents only, so an image kept as an edit source
+	// would never reach the model. It is rejected with a clear message instead.
+	imageMode := chat.Mode == storage.ChatModeImage && s.cfg.ImagesConfigured()
+	var (
+		images, docs []*multipart.FileHeader
+		rejected     []string
+	)
 	for _, header := range headers {
-		if s.cfg.ImagesConfigured() && uploadImageMIME(header) != "" {
+		mime := uploadImageMIME(header)
+		switch {
+		case mime != "" && imageMode:
 			images = append(images, header)
-			continue
+		case mime != "":
+			rejected = append(rejected, s.t("upload.image_chat_mode", header.Filename))
+		default:
+			docs = append(docs, header)
 		}
-		docs = append(docs, header)
 	}
 
 	// Document ingestion needs the embedding endpoint; images do not.
@@ -1211,7 +1251,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	var (
 		added    int
-		failures []string
+		failures = rejected
 	)
 	for _, header := range images {
 		if header.Size > maxUploadBytes {

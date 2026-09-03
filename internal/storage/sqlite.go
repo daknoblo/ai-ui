@@ -339,7 +339,7 @@ func (s *Store) DeleteChat(ctx context.Context, id int64) error {
 	return s.Vacuum(ctx)
 }
 
-// DeleteEmptyChats removes chats that contain neither messages nor documents
+// DeleteEmptyChats removes chats that contain neither messages nor attachments
 // (orphaned "new chat" entries). exceptID is kept (0 = keep none). It returns
 // the number of removed chats.
 func (s *Store) DeleteEmptyChats(ctx context.Context, exceptID int64) (int64, error) {
@@ -347,7 +347,8 @@ func (s *Store) DeleteEmptyChats(ctx context.Context, exceptID int64) (int64, er
 		`DELETE FROM chats
 		 WHERE id != ?
 		   AND id NOT IN (SELECT DISTINCT chat_id FROM messages)
-		   AND id NOT IN (SELECT chat_id FROM documents WHERE chat_id IS NOT NULL)`,
+		   AND id NOT IN (SELECT chat_id FROM documents WHERE chat_id IS NOT NULL)
+		   AND id NOT IN (SELECT chat_id FROM images WHERE chat_id IS NOT NULL)`,
 		exceptID)
 	if err != nil {
 		return 0, err
@@ -517,10 +518,11 @@ func (s *Store) EachChunkVector(ctx context.Context, chatID int64, fn func(Chunk
 	return rows.Err()
 }
 
-// ChunkTexts loads the text of the given chunk IDs.
-func (s *Store) ChunkTexts(ctx context.Context, ids []int64) (map[int64]string, error) {
+// ChunkTexts loads the text of the given chunk IDs together with the name of
+// the document each chunk belongs to.
+func (s *Store) ChunkTexts(ctx context.Context, ids []int64) (map[int64]ChunkText, error) {
 	if len(ids) == 0 {
-		return map[int64]string{}, nil
+		return map[int64]ChunkText{}, nil
 	}
 	// Only the number of placeholders is derived from the input; the IDs
 	// themselves are always passed as bound parameters.
@@ -528,7 +530,9 @@ func (s *Store) ChunkTexts(ctx context.Context, ids []int64) (map[int64]string, 
 	for i, id := range ids {
 		args[i] = id
 	}
-	query := `SELECT id, text FROM chunks WHERE id IN (?` + //#nosec G202 -- only "?" placeholders are concatenated, never user input
+	query := `SELECT c.id, c.text, d.name FROM chunks c
+		 JOIN documents d ON d.id = c.document_id
+		 WHERE c.id IN (?` + //#nosec G202 -- only "?" placeholders are concatenated, never user input
 		strings.Repeat(",?", len(ids)-1) + `)`
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -537,16 +541,16 @@ func (s *Store) ChunkTexts(ctx context.Context, ids []int64) (map[int64]string, 
 	}
 	defer func() { _ = rows.Close() }()
 
-	out := make(map[int64]string, len(ids))
+	out := make(map[int64]ChunkText, len(ids))
 	for rows.Next() {
 		var (
-			id   int64
-			text string
+			id    int64
+			chunk ChunkText
 		)
-		if err := rows.Scan(&id, &text); err != nil {
+		if err := rows.Scan(&id, &chunk.Text, &chunk.Document); err != nil {
 			return nil, err
 		}
-		out[id] = text
+		out[id] = chunk
 	}
 	return out, rows.Err()
 }

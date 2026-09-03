@@ -14,6 +14,9 @@ type Result struct {
 	Text       string
 	Score      float32
 	DocumentID int64
+	// Document is the file name the chunk was extracted from, so the prompt can
+	// name the source of every context section.
+	Document string
 }
 
 // candidate is a scored chunk before its text has been loaded.
@@ -103,11 +106,16 @@ func (r *Retriever) Retrieve(ctx context.Context, chatID int64, query string, to
 
 	out := make([]Result, 0, len(selected))
 	for _, c := range selected {
-		text, ok := texts[c.ID]
+		chunk, ok := texts[c.ID]
 		if !ok {
 			continue // deleted concurrently
 		}
-		out = append(out, Result{Text: text, Score: c.Score, DocumentID: c.DocumentID})
+		out = append(out, Result{
+			Text:       chunk.Text,
+			Score:      c.Score,
+			DocumentID: c.DocumentID,
+			Document:   chunk.Document,
+		})
 	}
 	return out, nil
 }

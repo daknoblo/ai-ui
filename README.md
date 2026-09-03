@@ -37,13 +37,17 @@ All screenshots are generated automatically from the demo instance
 - Document upload (text/Markdown, PDF, DOCX) as RAG context
   (embeddings + brute-force cosine search)
 - Attach documents next to the input field (📎) or drag and drop them into the
-  chat window; attached documents are shown as chips above the input
+  chat window; attached documents are shown as chips above the input. Every
+  attachment of the chat is named in the prompt together with the retrieved
+  sections, so the model can tell the sources apart
 - Optional web search (🌐) per request: pulls in current online results as
   context - provider agnostic (Tavily, Brave Search, SearXNG)
 - Optional image generation (🖼): the toggle switches the next message from a
   chat answer to a generated image (Azure image models such as `gpt-image-2`);
   images are stored in the database and shown inline. Attaching an image turns
-  the next prompt into an edit of that image. In image mode the model picker
+  the next prompt into an edit of that image. Images are only accepted in image
+  mode; in chat mode the upload is rejected with a note, because the chat
+  context is built from ingested documents only. In image mode the model picker
   offers the image deployments
 - Documents are bound to their chat and are removed together with it
   (including their embeddings)

@@ -79,8 +79,11 @@
 		dragDepth = 0;
 		hideOverlay();
 
-		// Not verified: ignore the drop (it is blocked server side anyway).
+		// Not verified: the upload is blocked server side anyway. Say so
+		// instead of dropping the files without any feedback.
 		if (!uploadsReady()) {
+			showProgress(t("uploadBlocked"));
+			finishProgress(t("uploadBlocked"), true);
 			return;
 		}
 

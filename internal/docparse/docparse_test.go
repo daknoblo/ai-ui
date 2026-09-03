@@ -44,7 +44,7 @@ func TestParseDOCX(t *testing.T) {
 // guard: a small archive that expands beyond the limit must be rejected instead
 // of being read into memory.
 func TestParseDOCXRejectsOversizedPart(t *testing.T) {
-	huge := strings.Repeat("a", maxDOCXPartBytes+1024)
+	huge := strings.Repeat("a", maxOOXMLPartBytes+1024)
 	data := buildDOCX(t, `<w:document><w:body><w:p><w:r><w:t>`+huge+`</w:t></w:r></w:p></w:body></w:document>`)
 
 	if _, err := Extract("bomb.docx", "", data); err == nil {

@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  # Publishing a release builds the tag as well. A tag often sits on the
+  # screenshot commit the docs workflow pushes, and that message carries
+  # [skip ci] - GitHub then skips the tag push, so the versioned images would
+  # never be built. This trigger does not go through that filter.
+  release:
+    types: [published]
   workflow_dispatch:
 
 env:

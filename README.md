@@ -8,8 +8,8 @@
 [![GHCR](https://img.shields.io/badge/ghcr.io-ai--ui-blue?logo=docker)](https://github.com/daknoblo/ai-ui/pkgs/container/ai-ui)
 
 A small, self-hosted ChatGPT-like web interface written in Go with document
-context (RAG), connected to an Azure Foundry model router (Azure OpenAI
-compatible).
+context (RAG), connected to Azure OpenAI-compatible deployments, with an
+optional identity-backed Microsoft Foundry deployment inventory.
 
 **Website with the full screenshot gallery:**
 <https://daknoblo.github.io/ai-ui/>
@@ -29,9 +29,14 @@ All screenshots are generated automatically from the demo instance
 
 - Chat interface with a sidebar, multiple conversations and history
 - Answer streaming (token by token) via server-sent events
-- Model picker in the top right of the chat window ("Auto" lets the router
-  decide). The list comes from `AZURE_MODELS`; the selection is global and
-  survives switching chats
+- Model picker in the top right of the chat window. In manual mode its list
+  comes from `AZURE_MODELS`; in Foundry mode it comes from supported deployments
+  in the resource inventory. Manual mode offers "Auto" for the configured chat
+  default; Foundry mode selects deployments explicitly, including a model
+  router when available. The selection survives switching chats
+- Optional Foundry inventory with metadata-only **Refresh** and separate defaults
+  for chat, embeddings, images and vision. Deployment aliases are mapped to
+  canonical model metadata; unsupported deployments remain visible
 - Reasoning effort selectable per chat next to the input field; the offered
   values follow the selected model
 - Document upload as RAG context (embeddings + brute-force cosine search).
@@ -53,8 +58,9 @@ All screenshots are generated automatically from the demo instance
   attachments are part of the prompt, so the model knows what it has
 - **The model follows the attachment**: a picture attached while a text-only
   model is selected is answered by the first vision capable entry of
-  `AZURE_MODELS`. The switch applies to that one answer, the picker stays where
-  it is, and the model tag names whoever replied
+  `AZURE_MODELS` in manual mode, or the configured vision fallback in Foundry
+  mode. The switch applies to that one answer, the picker stays where it is,
+  and the model tag names whoever replied
 - Optional web search (🌐) per request: pulls in current online results as
   context - provider agnostic (Tavily, Brave Search, SearXNG)
 - Optional image generation (🖼): the toggle switches the next message from a
@@ -64,21 +70,26 @@ All screenshots are generated automatically from the demo instance
   offers the image deployments
 - Documents and images are bound to their chat and are removed together with it
   (including their embeddings)
-- Settings dialog in the UI (language, endpoints, deployments, API version,
-  system prompt, temperature, default reasoning effort); the configured models
-  are listed read-only
+- Settings dialog in the UI (language, deployment defaults, system prompt,
+  temperature, default reasoning effort). Manual mode also exposes endpoints
+  and API versions; Foundry mode shows the resource and discovered endpoint
+  read-only
+- Explicit, staged document reindexing when changing the embedding model in
+  Foundry mode, with progress and a cost warning; a failed rebuild leaves the
+  previous index intact
 - User interface available in **English and German**, switchable in the settings
 - Readiness/connection check: uploads are only possible once storage and the
   embedding endpoint are verified; checked at start-up and periodically in the
   background, with a status indicator in the sidebar
-- API key exclusively via the `AZURE_API_KEY` environment variable
+- Credentials exclusively through environment variables: API keys in manual
+  mode, or a tenant/client/client-secret identity in Foundry mode
 - Persistence in SQLite under the mounted data path
 - Single binary, single Docker image (distroless, non-root), designed to run
   behind a reverse proxy such as Traefik
 
 ## Architecture
 
-- **Go** + `chi` router, `html/template` + **HTMX** (server rendered)
+- **Go 1.26** + `chi` router, `html/template` + **HTMX** (server rendered)
 - **SQLite** (`modernc.org/sqlite`, CGO free) for chats, messages, documents
   and embeddings
 - **goldmark** for Markdown rendering (raw HTML is escaped, never rendered)
@@ -88,18 +99,25 @@ All screenshots are generated automatically from the demo instance
 
 | Variable        | Default  | Description                                   |
 | --------------- | -------- | --------------------------------------------- |
-| `AZURE_API_KEY` | –        | **Secret.** API key of the AI endpoint (chat). |
-| `AZURE_EMBEDDING_API_KEY` | – | **Secret, optional.** Dedicated key if embeddings live on a separate Azure resource. Empty ⇒ `AZURE_API_KEY` is used. |
+| `AZURE_RESOURCE_ID` | – | Optional. Opts into Foundry inventory for exactly one account resource; see [Foundry inventory & identity](#foundry-inventory--identity-optional). |
+| `AZURE_TENANT_ID` | – | Tenant ID of the service principal; required in Foundry mode. |
+| `AZURE_CLIENT_ID` | – | Application/client ID of the service principal; required in Foundry mode. |
+| `AZURE_CLIENT_SECRET` | – | **Secret.** Service-principal secret; required in Foundry mode, environment only. |
+| `AZURE_API_KEY` | – | **Secret.** AI endpoint key in manual mode; not required or used for Foundry identity authentication. |
+| `AZURE_EMBEDDING_API_KEY` | – | **Secret, optional, manual mode.** Dedicated key if embeddings live on a separate Azure resource. Empty ⇒ `AZURE_API_KEY` is used. |
+| `AZURE_IMAGE_API_KEY` | – | **Secret, optional, manual mode.** Dedicated image endpoint key. Empty ⇒ `AZURE_API_KEY` is used. |
 | `SEARCH_API_KEY` | – | **Secret, optional.** API key for web search (Tavily or Brave). Not required for SearXNG. |
 | `DATA_DIR`      | `/appdata` | Persistent data path. The SQLite database is stored directly in it, the UI settings in `<DATA_DIR>/appdata/config.json`. |
 | `PORT`          | `8080`   | HTTP port.                                    |
 | `HEALTHCHECK_INTERVAL` | `60s` | Interval of the periodic connection check (Go duration, e.g. `30s`, `2m`). `0` or `off` disables the periodic check (the start-up check still runs). |
 | `TZ`            | –        | IANA time zone name. The binary bundles `time/tzdata`, so this works in the distroless image. |
 
-All remaining settings are configured in the UI dialog and stored in
+Remaining settings are configured in the UI dialog and stored in
 `<DATA_DIR>/appdata/config.json` (without secrets). The general AI endpoint and
-the embeddings can use separate endpoints, deployments and API versions; empty
-embedding fields fall back to the values of the AI endpoint.
+the embeddings can use separate endpoints, deployments and API versions in
+manual mode; empty embedding fields fall back to the values of the AI endpoint.
+When `AZURE_RESOURCE_ID` is absent, this existing API-key/manual mode is retained.
+Setting a resource ID without a valid identity does not fall back to API keys.
 
 Two endpoint schemas are detected automatically: the classic Azure OpenAI format
 (`https://<resource>.openai.azure.com`, deployment in the path, `api-version`
@@ -107,9 +125,96 @@ required) and the new OpenAI compatible **v1 format** of Azure AI Foundry,
 recognizable by the `/openai/v1` path
 (`https://<resource>.services.ai.azure.com/openai/v1`). With the v1 format the
 deployment is passed as `model` in the request and `api-version` is optional.
-The chat and embedding endpoints may use different schemas.
+The chat and embedding endpoints may use different schemas in manual mode.
 
-### Several deployments, one configuration
+### Foundry inventory & identity (optional)
+
+For an installation **outside Azure**, provide these four environment settings
+for an existing service principal and one existing Foundry/Azure OpenAI account:
+
+```sh
+export AZURE_RESOURCE_ID='/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>'
+export AZURE_TENANT_ID='<tenant-id>'
+export AZURE_CLIENT_ID='<application-client-id>'
+export AZURE_CLIENT_SECRET='<service-principal-secret>'
+CGO_ENABLED=0 DATA_DIR=./data PORT=8080 go run .
+```
+
+Inject the real secret through your deployment environment or secret manager,
+not through `config.json` or committed files. The resource ID only opts in; it
+does **not** authenticate the application by itself. The endpoint is derived
+from valid account metadata returned by Azure Resource Manager (ARM).
+`AZURE_ENDPOINT` is an optional explicit OpenAI-compatible `/openai/v1` endpoint
+override, for example when metadata does not provide a usable endpoint. Thus
+the automatic-endpoint setup needs four settings, or five with an override.
+The distroless image remains a single static, non-root Go binary: it contains
+no Azure CLI and requires no interactive login.
+
+Have an administrator assign **Cognitive Services OpenAI User**, scoped to that
+one resource, as a starting role. Verify that the identity has the required
+account/deployment metadata read permissions and the data-plane permissions for
+the operations you will use. Some model types or operations, including image
+operations, may need additional operation-specific permissions; this role is
+not a promise that every Foundry model or protocol is usable. Inventory visibility
+alone does not prove inference permission. The app never grants roles.
+
+Discovery issues ARM `GET` requests for that account and its deployments only.
+It does not scan subscriptions, read account keys, create deployments or
+provision resources. A data-plane `/models` list alone is insufficient to
+establish deployment capabilities. The inventory classifies canonical model
+name, version, format, provisioning state, SKU and available capabilities, not
+guesses based on an arbitrary deployment alias. Unsupported models, native
+Anthropic deployments and batch-only deployments remain visible with a reason,
+but cannot be used by the pickers. The current client routes OpenAI-compatible
+chat completions, embeddings, image generation and image edits; discovery is
+not universal Foundry protocol support.
+
+The supported-model mapping includes GPT chat models, model router,
+OpenAI text embeddings and GPT-Image generation/editing. DALL-E image options
+and Cohere embedding request formats need separate adapters and are not
+selectable in Foundry mode. New model families remain visible until their
+operation support is implemented; a capability flag alone does not authorize
+an unknown model protocol.
+
+In **Settings**, use **Refresh**, select the chat, embedding, image and optional
+vision defaults, **Save**, then run **Check again**. Refresh fetches metadata
+only: it neither invokes models nor changes role defaults. A failed refresh
+keeps the last successful inventory and displays the failure. Connection
+verification is separate and can consume chat/embedding tokens.
+
+All identity-backed roles belong to this one resource and endpoint. Remove
+dedicated embedding/image endpoint overrides that point to another resource;
+use manual mode for a multi-resource API-key setup. `AZURE_MODELS` and
+`AZURE_IMAGE_MODELS`, when supplied in Foundry mode, restrict the discovered
+supported choices; they cannot turn an unsupported or undiscovered deployment
+into a supported one.
+
+### Switching the embedding model
+
+In Foundry mode an index records its resource, endpoint, deployment, canonical
+model/version and vector dimensions. Saving a different embedding default
+does **not** relabel or mix existing vectors. A legacy corpus with no known
+embedding profile also needs an explicit rebuild before it can be used safely.
+
+Save the new embedding selection, review the document/chunk counts and cost
+warning, then explicitly consent to **Rebuild embedding index** in Settings.
+Rebuilding embeds the stored chunk texts into a staged index; it does not
+reparse the original files or repeat OCR. It can process the whole corpus and
+incur embedding API charges, so consider its size and your provider's current
+pricing before confirming. No monetary estimate is guessed by the app.
+
+Progress is shown in the dialog. Corpus mutations such as uploads and
+document/chat deletion are temporarily blocked while the rebuild runs. Only a
+complete successful rebuild becomes active; failure leaves the previous index
+intact. The old profile remains separate from the newly selected default until
+the switch succeeds, rather than silently querying old vectors with a new model.
+
+The **Rebuild options** section also permits an explicitly confirmed rebuild
+of the current profile, for example to repair an index or regenerate changed
+vector dimensions. Out-of-band deployment changes are detected when inventory
+metadata is refreshed; refresh after changing deployments in Azure.
+
+### Several deployments, one configuration (manual mode)
 
 All deployments of a resource share its endpoint and API key, so `AZURE_MODELS`
 is all it takes to offer several models: list the deployment names, and the
@@ -146,8 +251,8 @@ the request is repeated without it, the same way an unsupported temperature is.
 
 ### Pinning the endpoint via environment variables (optional)
 
-The endpoint settings can be provided entirely through environment variables
-instead of the UI dialog. When one of these variables is set, its value takes
+In manual mode the endpoint settings can be provided entirely through
+environment variables instead of the UI dialog. When one of these variables is set, its value takes
 precedence over `config.json` and the matching field in the settings dialog is
 shown but disabled (not editable through the UI):
 
@@ -158,9 +263,9 @@ General AI endpoint:
 
 | Variable        | Setting                                       |
 | --------------- | --------------------------------------------- |
-| `AZURE_ENDPOINT` | Endpoint URL of the AI endpoint.             |
+| `AZURE_ENDPOINT` | Endpoint URL of the AI endpoint. In Foundry mode, an optional explicit override of the discovered endpoint. |
 | `AZURE_DEPLOYMENT` | Deployment name of the chat model.         |
-| `AZURE_MODELS` | Selectable models (comma or newline separated), e.g. `model-router,gpt-5.1,o4-mini`. The only source of the list; the settings dialog shows it read-only. The entries are **deployment names of the same resource**, and the first one is the default for new chats. |
+| `AZURE_MODELS` | Selectable models (comma or newline separated), e.g. `model-router,gpt-5.1,o4-mini`. In manual mode this is the source of the list, shown read-only; its entries are **deployment names of the same resource**. In Foundry mode it is an optional allow-list intersected with supported inventory entries. |
 | `AZURE_API_VERSION` | API version of the AI endpoint. Only used by the classic schema; with a `/openai/v1` endpoint the client picks it and the field disappears from the settings dialog. |
 
 Embeddings (fall back to the AI endpoint when empty):
@@ -177,15 +282,15 @@ Image generation (fall back to the AI endpoint when empty):
 | --------------- | --------------------------------------------- |
 | `AZURE_IMAGE_ENDPOINT` | Image endpoint URL, e.g. `https://my-resource.services.ai.azure.com/openai/v1`. |
 | `AZURE_IMAGE_DEPLOYMENT` | Deployment name of the image model, e.g. `gpt-image-2`. |
-| `AZURE_IMAGE_MODELS` | Selectable image deployments (comma or newline separated). Empty ⇒ only `AZURE_IMAGE_DEPLOYMENT`. In image mode the picker in the top right offers these instead of the chat models. |
+| `AZURE_IMAGE_MODELS` | Selectable image deployments (comma or newline separated). In manual mode, empty ⇒ only `AZURE_IMAGE_DEPLOYMENT`; in Foundry mode, empty ⇒ supported inventory entries, otherwise an allow-list. In image mode the picker offers these instead of the chat models. |
 | `AZURE_IMAGE_API_VERSION` | Image API version.                    |
 
 The key is `AZURE_IMAGE_API_KEY`; when it is empty `AZURE_API_KEY` is used.
 **A dedicated key is required as soon as the image endpoint belongs to a
 different resource** - the chat key is rejected there with HTTP 401. The
 settings dialog points that out, and the connection check probes the image
-deployments as well (with an intentionally incomplete request, so it costs
-nothing and generates no image).
+deployments as well with an intentionally incomplete validation request rather
+than generating an image.
 Size, quality and file format are chosen in the settings dialog.
 
 The matching secrets are `AZURE_API_KEY` and `AZURE_EMBEDDING_API_KEY`
@@ -196,18 +301,21 @@ Variables that are not set stay editable in the UI. Empty values count as
 
 ### Readiness & connection check
 
-The connection check sits at the top of the settings dialog and runs on its own:
-once when the container starts and again in the dialog whenever the
-configuration changed. It probes storage (data path writable), the chat and
-embedding endpoint and every deployment from `AZURE_MODELS` individually - a
-typo in the list shows up there instead of when that model is picked. **Check
-again** repeats it on demand.
+The connection check sits at the top of the settings dialog and runs at startup.
+In manual mode it also runs in the dialog after configuration changes; in
+Foundry mode save the role selections and explicitly choose **Check again**.
+It probes storage (data path writable), chat and embeddings, and the selectable
+chat deployments individually. A typo in a manual `AZURE_MODELS` list or an
+inference permission error therefore appears before that model is picked.
+**Refresh** in Foundry mode is a separate metadata-only operation.
 
 Document uploads are only enabled once storage and the embedding endpoint are
 green, because a document is chunked and embedded on the way in. Attaching an
 image needs neither: it is stored as is and travels with the message. A scanned
-PDF additionally needs a vision capable entry in `AZURE_MODELS`; without one the
-upload fails with that reason instead of storing an empty document. A
+PDF additionally needs a supported vision deployment (a vision-capable
+`AZURE_MODELS` entry in manual mode, or the selected chat/vision role in Foundry
+mode); without one the upload fails with that reason instead of storing an
+empty document. A
 background check (`HEALTHCHECK_INTERVAL`) monitors the connection continuously -
 without the per-deployment probes - and reports failures through the sidebar
 status and the log.
@@ -324,18 +432,36 @@ The repository contains a demo instance that needs neither an API key nor any
 Azure resources: [internal/demo](internal/demo) provides a stub of the
 Azure-compatible endpoints (chat streaming, embeddings, images) and seeds the
 database with conversations, documents, a generated image and token statistics.
+The legacy manual demo remains available. `-foundry` opts into the new inventory
+using a fake identity and loopback-only v1 endpoints, never an Azure credential
+or resource. Aliases such as `chat-primary`, `docs-primary` and `canvas` map to
+canonical GPT-4o, text-embedding-3-large and gpt-image-1 metadata; native and
+batch-only examples are visible but unusable. Refresh, role defaults and
+reindexing operate on the local fixture.
 
 ```sh
-go run ./cmd/demo             # http://localhost:8080
-go run ./cmd/demo -lang de    # German interface
+go run ./cmd/demo -data ./data/demo                        # Manual demo
+go run ./cmd/demo -foundry -data ./data/demo-foundry        # Foundry demo
+go run ./cmd/demo -foundry -data ./data/demo-foundry-de -lang de
+# http://localhost:8080
 ```
 
-The demo is also the source of the screenshots. They are captured with
-Playwright and written to `docs/screenshots`, together with a manifest that
-describes every shot:
+Use separate data paths for the two modes, or `-reset` to discard a previous
+demo fixture. Embeddings are deterministic hashed demo vectors, not real model
+output. The Foundry fixture initializes its profile through the same staged
+reindex workflow over stored texts, rather than relabeling legacy vectors. A
+second local embedding alias lets you try the consent and rebuild flow without
+API costs. Web search remains a display-only placeholder in the demo.
+
+The demo is also the source of the screenshots. The capture script starts it
+with `-foundry`, exercises the local inventory, role defaults and reindex consent
+views, and captures those sections with Playwright. The resource and endpoint
+remain truthful read-only demo values; it does not replace them with real Azure
+URLs or contact real services. Screenshots are written to `docs/screenshots`,
+together with a manifest describing every shot:
 
 ```sh
-go build -o bin/ai-ui-demo ./cmd/demo
+CGO_ENABLED=0 go build -o bin/ai-ui-demo ./cmd/demo
 cd tools/screenshots && npm ci && npx playwright install chromium
 node capture.mjs --bin=../../bin/ai-ui-demo --out=../../docs/screenshots
 ```

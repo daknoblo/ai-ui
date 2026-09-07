@@ -41,6 +41,10 @@ func StartBackend(lang string) (*Backend, error) {
 	mux.HandleFunc("POST /openai/deployments/{deployment}/embeddings", b.handleEmbeddings)
 	mux.HandleFunc("POST /openai/deployments/{deployment}/images/generations", b.handleImage)
 	mux.HandleFunc("POST /openai/deployments/{deployment}/images/edits", b.handleImageEdit)
+	mux.HandleFunc("POST /openai/v1/chat/completions", b.handleChat)
+	mux.HandleFunc("POST /openai/v1/embeddings", b.handleEmbeddings)
+	mux.HandleFunc("POST /openai/v1/images/generations", b.handleImage)
+	mux.HandleFunc("POST /openai/v1/images/edits", b.handleImageEdit)
 
 	b.server = &http.Server{
 		Handler:           mux,

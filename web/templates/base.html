@@ -83,7 +83,13 @@
 			// Read from the DOM instead of a server rendered flag: attaching or
 			// removing a file and finishing a generation all happen without a reload.
 			var hasImage = !!document.querySelector('#doc-list .source-chip, #messages .bubble img');
-			var edit = image && hasImage && editEnabled();
+			var picker = document.getElementById('model-picker');
+			var selectedModel = document.querySelector('#model-select option:checked');
+			if (box && picker && picker.dataset.imageMode === '1' && selectedModel) {
+				box.dataset.imageEdits = selectedModel.dataset.imageEdits || '0';
+			}
+			var supportsEdits = !!box && box.dataset.imageEdits === '1';
+			var edit = image && hasImage && supportsEdits && editEnabled();
 
 			document.querySelectorAll('.mode-opt').forEach(function (btn) {
 				var on = (btn.dataset.mode === 'image') === image;
@@ -102,7 +108,7 @@
 			var editCheck = document.getElementById('edit-check');
 			if (editCheck) editCheck.checked = edit;
 			var editOption = document.getElementById('edit-option');
-			if (editOption) editOption.hidden = !(image && hasImage);
+			if (editOption) editOption.hidden = !(image && hasImage && supportsEdits);
 			var params = document.getElementById('image-params');
 			if (params) params.hidden = !image;
 

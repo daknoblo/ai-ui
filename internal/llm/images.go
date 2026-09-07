@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/daknoblo/ai-ui/internal/config"
+	"github.com/daknoblo/ai-ui/internal/foundry"
 )
 
 // maxImageBodyBytes caps the response of an image request. A base64 encoded
@@ -112,8 +113,8 @@ func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOpt
 	if endpoint == "" || deployment == "" {
 		return ImageResult{}, fmt.Errorf("image endpoint and deployment are required")
 	}
-	if !c.store.HasImageAPIKey() {
-		return ImageResult{}, fmt.Errorf("no API key set (AZURE_IMAGE_API_KEY)")
+	if !c.store.HasImageCredentials() {
+		return ImageResult{}, fmt.Errorf("no image credentials configured")
 	}
 
 	reqBody := imageRequest{
@@ -144,7 +145,9 @@ func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOpt
 		return ImageResult{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", c.store.ImageAPIKey())
+	if err := c.store.Authorize(req, foundry.Images, deployment); err != nil {
+		return ImageResult{}, err
+	}
 
 	return c.sendImageRequest(req, url, deployment, opts.Format)
 }
@@ -164,8 +167,8 @@ func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, 
 	if endpoint == "" || deployment == "" {
 		return ImageResult{}, fmt.Errorf("image endpoint and deployment are required")
 	}
-	if !c.store.HasImageAPIKey() {
-		return ImageResult{}, fmt.Errorf("no API key set (AZURE_IMAGE_API_KEY)")
+	if !c.store.HasImageCredentials() {
+		return ImageResult{}, fmt.Errorf("no image credentials configured")
 	}
 	if len(src.Data) == 0 {
 		return ImageResult{}, fmt.Errorf("no source image")
@@ -219,7 +222,9 @@ func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, 
 		return ImageResult{}, err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.Header.Set("api-key", c.store.ImageAPIKey())
+	if err := c.store.Authorize(req, foundry.ImageEdits, deployment); err != nil {
+		return ImageResult{}, err
+	}
 
 	return c.sendImageRequest(req, url, deployment, opts.Format)
 }
@@ -235,8 +240,8 @@ func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
 	if endpoint == "" || deployment == "" {
 		return fmt.Errorf("image endpoint and deployment are required")
 	}
-	if !c.store.HasImageAPIKey() {
-		return fmt.Errorf("no API key set (AZURE_IMAGE_API_KEY)")
+	if !c.store.HasImageCredentials() {
+		return fmt.Errorf("no image credentials configured")
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -252,7 +257,9 @@ func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", c.store.ImageAPIKey())
+	if err := c.store.Authorize(req, foundry.Images, deployment); err != nil {
+		return err
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {

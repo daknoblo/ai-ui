@@ -1,0 +1,83 @@
+{{define "foundry-settings"}}
+<div class="config-section-head">{{t "foundry.title"}}</div>
+<div class="config-full">
+	<p class="hint">{{t "foundry.identity_hint"}}</p>
+	<p class="foundry-resource"><strong>{{t "foundry.resource"}}</strong><br><code>{{.ResourceID}}</code></p>
+	<p class="foundry-resource"><strong>{{t "config.endpoint"}}</strong><br>{{if .Catalog.Endpoint}}<code>{{.Catalog.Endpoint}}</code>{{else}}{{t "foundry.not_discovered"}}{{end}}</p>
+	{{if .IdentityError}}<div class="config-notice-err">{{t "foundry.identity_error" .IdentityError}}</div>{{end}}
+	{{if .RefreshError}}<div class="config-notice-err">{{t "foundry.stale" .RefreshError}}</div>{{end}}
+	<p class="hint">{{if .UpdatedAt}}{{t "foundry.updated_at" .UpdatedAt}}{{else}}{{t "foundry.not_discovered"}}{{end}}</p>
+	<button type="button" class="btn btn-ghost" hx-post="/config/deployments/refresh"
+		hx-target="#modal-root" hx-swap="innerHTML" hx-params="none"
+		hx-disabled-elt="this" hx-indicator="#foundry-refresh-indicator">
+		{{t "foundry.refresh"}}
+	</button>
+	<span id="foundry-refresh-indicator" class="htmx-indicator hint">{{t "foundry.refreshing"}}</span>
+</div>
+{{if .Deployments}}
+<div class="config-full foundry-inventory">
+	<table class="foundry-table">
+		<thead><tr>
+			<th>{{t "foundry.deployment"}}</th><th>{{t "foundry.model"}}</th>
+			<th>{{t "foundry.version"}}</th><th>{{t "foundry.state"}}</th><th>{{t "foundry.support"}}</th>
+		</tr></thead>
+		<tbody>{{range .Deployments}}<tr>
+			<td>{{.Name}}</td><td>{{.Model}}</td><td>{{.Version}}</td><td>{{.State}}</td><td>{{.Support}}</td>
+		</tr>{{end}}</tbody>
+	</table>
+</div>
+{{else}}<p class="hint config-full">{{t "foundry.no_deployments"}}</p>{{end}}
+<div class="config-section-head">{{t "foundry.roles"}}</div>
+<p class="hint config-full">{{t "foundry.roles_hint"}}</p>
+{{range .Fields}}{{template "deployment-field" .}}{{end}}
+<div class="config-full">{{template "embedding-index" .Index}}</div>
+{{end}}
+
+{{define "deployment-field"}}
+<label>
+	{{t .LabelKey}}
+	{{if .Locked}}<span class="hint">{{t "config.set_via" .Env}}</span>{{end}}
+	<select name="{{.Name}}"{{if .Locked}} disabled{{end}}>
+		<option value=""{{if eq .Current ""}} selected{{end}}>{{t .EmptyKey}}</option>
+		{{if and .Current (not .CurrentAvailable)}}
+		<option value="{{.Current}}" selected>{{t "foundry.unavailable_selection" .Current}}</option>
+		{{end}}
+		{{range .Choices}}<option value="{{.Name}}"{{if eq .Name $.Current}} selected{{end}}>{{.Label}}</option>{{end}}
+	</select>
+</label>
+{{end}}
+
+{{define "embedding-index"}}
+<div id="embedding-index" hx-target="this"{{if .Running}} hx-get="/config/embeddings/status" hx-trigger="every 2s"
+	hx-swap="outerHTML"{{end}}>
+	{{if .Enabled}}
+	<p class="hint">{{t "foundry.active_index" .Active}}</p>
+	{{if .Error}}<div class="config-notice-err">{{.Error}}</div>{{end}}
+	{{if .Running}}
+	<p role="status">{{t "foundry.reindex_progress" .Completed .Chunks}}</p>
+	<p class="hint">{{t "foundry.reindex_busy"}}</p>
+	{{else}}
+	{{if eq .Status "succeeded"}}<p class="config-saved">{{t "foundry.reindex_done"}}</p>{{end}}
+	{{if .CanReindex}}
+	<details{{if or .NeedsReindex (eq .Status "failed")}} open{{end}}>
+	<summary>{{t "foundry.reindex_options"}}</summary>
+	{{if .NeedsReindex}}
+	<p class="warn-text">{{t "foundry.reindex_warning" .Documents .Chunks}}</p>
+	{{else}}<p class="warn-text">{{t "foundry.reindex_repeat_warning" .Documents .Chunks}}</p>{{end}}
+	<p class="hint">{{t "foundry.reindex_hint"}}</p>
+	<label class="config-check">
+		<input type="checkbox" name="confirm_reindex" value="yes">
+		<span>{{t "foundry.reindex_consent"}}</span>
+	</label>
+	<input type="hidden" name="reindex_target" value="{{.Target}}">
+	<button type="button" class="btn btn-ghost" hx-post="/config/embeddings/reindex"
+		hx-target="#modal-root" hx-swap="innerHTML" hx-include="#embedding-index"
+		hx-params="confirm_reindex,reindex_target" hx-disabled-elt="this">
+		{{t "foundry.reindex"}}
+	</button>
+	</details>
+	{{end}}
+	{{end}}
+	{{end}}
+</div>
+{{end}}

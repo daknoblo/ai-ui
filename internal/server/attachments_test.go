@@ -100,7 +100,10 @@ func TestAttachedImagesReachTheModel(t *testing.T) {
 	}
 	// An empty embedding deployment skips retrieval, which would need an
 	// endpoint; the attachment handling has to work regardless.
-	msgs := srv.buildLLMMessages(ctx, chatID, srv.cfg.Get(), history, "I attached something", false)
+	msgs, err := srv.buildLLMMessages(ctx, chatID, srv.cfg.Get(), history, "I attached something", false)
+	if err != nil {
+		t.Fatalf("build messages: %v", err)
+	}
 
 	if len(msgs) != len(history)+1 {
 		t.Fatalf("got %d messages, want system + %d history entries", len(msgs), len(history))

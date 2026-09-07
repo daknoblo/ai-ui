@@ -9,7 +9,7 @@
 		<form hx-post="/config" hx-target="#modal-root" hx-swap="innerHTML" class="config-form">
 			<div class="config-section-head">{{t "config.section_readiness"}}</div>
 			<div id="verify-results" class="config-full"
-				{{if not .Results}}hx-post="/verify" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-indicator="#verify-indicator"{{end}}>
+				{{if and (not .Results) (not .Foundry.Enabled)}}hx-post="/verify" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-indicator="#verify-indicator"{{end}}>
 				{{if .Results}}{{template "check-list" .}}{{end}}
 			</div>
 			<div id="verify-indicator" class="htmx-indicator hint config-full">{{t "config.verify_running"}}</div>
@@ -34,6 +34,9 @@
 				</select>
 			</label>
 
+			{{if .Foundry.Enabled}}
+			{{template "foundry-settings" .Foundry}}
+			{{else}}
 			<div class="config-section-head">{{t "config.section_chat"}}</div>
 			{{if .Locks.Any}}<div class="config-secret ok">{{t "config.locks_notice"}}</div>{{end}}
 			<label>
@@ -63,7 +66,6 @@
 				<p class="hint config-hint-tight">{{t "config.models_empty"}}</p>
 				{{end}}
 			</div>
-			{{if .Notice}}<div class="config-{{if .NoticeErr}}notice-err{{else}}saved{{end}}">{{.Notice}}</div>{{end}}
 
 			<div class="config-section-head">{{t "config.section_embeddings"}}</div>
 			<label>
@@ -110,6 +112,8 @@
 				{{else}}{{t "config.image_key_missing"}}{{end}}
 			</div>
 			<p class="hint config-hint-tight">{{t "config.image_params_hint"}}</p>
+			{{end}}
+			{{if .Notice}}<div class="config-{{if .NoticeErr}}notice-err{{else}}saved{{end}}">{{.Notice}}</div>{{end}}
 
 			<div class="config-section-head">{{t "config.section_search"}}</div>
 			<label>
@@ -163,6 +167,7 @@
 				</select>
 			</label>
 
+			{{if not .Foundry.Enabled}}
 			<div class="config-secret {{if .HasKey}}ok{{else}}warn{{end}}">
 				{{t "config.chat_key"}}
 				{{if .HasKey}}{{t "config.chat_key_set"}}{{else}}{{t "config.chat_key_missing"}}{{end}}
@@ -174,6 +179,7 @@
 				{{else}}{{t "config.embedding_key_missing"}}{{end}}
 			</div>
 
+			{{end}}
 			{{if .Saved}}<div class="config-saved">{{t "config.saved"}}</div>{{end}}
 
 			<div class="modal-actions">

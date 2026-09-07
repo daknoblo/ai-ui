@@ -45,17 +45,21 @@ func Config(lang, endpoint string) config.Config {
 // database, seeds it when it is still empty and stores the section index. The
 // caller owns the returned store and has to close it.
 func Setup(ctx context.Context, dataDir, lang, endpoint string) (*config.Store, *storage.Store, Index, error) {
+	return setup(ctx, dataDir, lang, Config(lang, endpoint),
+		config.Keys{API: "demo-key"}, config.Overrides{ChatModels: Models})
+}
+
+func setup(ctx context.Context, dataDir, lang string, cfg config.Config, keys config.Keys, overrides config.Overrides) (*config.Store, *storage.Store, Index, error) {
 	appDataDir := filepath.Join(dataDir, "appdata")
 	if err := os.MkdirAll(appDataDir, 0o750); err != nil {
 		return nil, nil, Index{}, err
 	}
 
-	cfgStore := config.NewStore(filepath.Join(appDataDir, "config.json"),
-		config.Keys{API: "demo-key"}, config.Overrides{ChatModels: Models})
+	cfgStore := config.NewStore(filepath.Join(appDataDir, "config.json"), keys, overrides)
 	if _, err := cfgStore.Load(); err != nil {
 		return nil, nil, Index{}, err
 	}
-	if err := cfgStore.Save(Config(lang, endpoint)); err != nil {
+	if err := cfgStore.Save(cfg); err != nil {
 		return nil, nil, Index{}, err
 	}
 

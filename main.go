@@ -15,6 +15,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/daknoblo/ai-ui/internal/config"
+	"github.com/daknoblo/ai-ui/internal/foundry"
 	"github.com/daknoblo/ai-ui/internal/logbuf"
 	"github.com/daknoblo/ai-ui/internal/server"
 	"github.com/daknoblo/ai-ui/internal/storage"
@@ -81,6 +82,20 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if resourceID := strings.TrimSpace(os.Getenv("AZURE_RESOURCE_ID")); resourceID != "" {
+		client, identityErr := foundry.New(foundry.Identity{
+			ResourceID:   resourceID,
+			TenantID:     strings.TrimSpace(os.Getenv("AZURE_TENANT_ID")),
+			ClientID:     strings.TrimSpace(os.Getenv("AZURE_CLIENT_ID")),
+			ClientSecret: os.Getenv("AZURE_CLIENT_SECRET"),
+		})
+		if identityErr != nil {
+			cfgStore.ConfigureFoundry(resourceID, nil, identityErr)
+			slog.Error("Foundry identity configuration failed", "err", identityErr)
+		} else {
+			cfgStore.ConfigureFoundry(resourceID, client, nil)
+		}
+	}
 	logs.SetLevel(logbuf.ParseLevel(cfg.LogLevel))
 
 	// Open the SQLite database in the data path.
@@ -97,6 +112,7 @@ func run() error {
 
 	// Start the HTTP server.
 	srv := server.New(cfgStore, store, logs)
+	defer srv.Close()
 	httpServer := &http.Server{
 		Addr:              ":" + port,
 		Handler:           srv.Routes(),

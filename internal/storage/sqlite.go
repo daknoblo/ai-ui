@@ -11,6 +11,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -20,6 +21,11 @@ import (
 type Store struct {
 	db   *sql.DB
 	path string
+
+	// Always acquire the corpus lock before the embedding lock when both are
+	// needed. Neither lock replaces the database's transactional guarantees.
+	corpusMu    sync.RWMutex
+	embeddingMu sync.RWMutex
 }
 
 // Open opens (or creates) the SQLite database at the given path.
@@ -85,7 +91,8 @@ func (s *Store) Ping(ctx context.Context) error {
 	return nil
 }
 
-// Migrate creates the schema if it does not exist yet.
+// Migrate creates the schema and recovers interrupted reindex jobs. It must run
+// at startup, before serving requests or starting reindex workers.
 func (s *Store) Migrate(ctx context.Context) error {
 	const schema = `
 CREATE TABLE IF NOT EXISTS chats (
@@ -148,6 +155,10 @@ CREATE TABLE IF NOT EXISTS usage_daily (
 );
 -- UsageByModel filters on kind and groups by model.
 CREATE INDEX IF NOT EXISTS idx_usage_kind_model ON usage_daily(kind, model);
+CREATE TABLE IF NOT EXISTS model_catalog (
+	resource_id TEXT PRIMARY KEY,
+	snapshot    TEXT NOT NULL
+);
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return err
@@ -179,6 +190,9 @@ CREATE INDEX IF NOT EXISTS idx_usage_kind_model ON usage_daily(kind, model);
 	}
 	if err := s.ensureColumn(ctx, `PRAGMA table_info(images)`, "name",
 		`ALTER TABLE images ADD COLUMN name TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := s.migrateEmbeddings(ctx); err != nil {
 		return err
 	}
 	// Older databases were created without auto_vacuum. The connection pragma

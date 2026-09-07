@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/daknoblo/ai-ui/internal/config"
 	"github.com/daknoblo/ai-ui/internal/docparse"
+	"github.com/daknoblo/ai-ui/internal/foundry"
 	"github.com/daknoblo/ai-ui/internal/i18n"
 	"github.com/daknoblo/ai-ui/internal/llm"
 	"github.com/daknoblo/ai-ui/internal/logbuf"
@@ -64,30 +66,31 @@ func isUntitled(title string) bool {
 
 // pageData bundles all data needed to render a full page.
 type pageData struct {
-	Title          string
-	Chats          []storage.Chat
-	CurrentChat    *storage.Chat
-	Messages       []storage.Message
-	Documents      []storage.Document
-	SourceImages   []storage.Image
-	Configured     bool
-	ChatID         int64
-	Notice         string
-	NoticeErr      bool
-	Picker         modelPickerView
-	ChatMode       string
-	UploadsReady   bool
-	UploadAccept   string
-	SearchEnabled  bool
-	ImageEnabled   bool
-	ImageSize      string
-	ImageQuality   string
-	ImageFormat    string
-	ImageSizes     []string
-	ImageQualities []string
-	ImageFormats   []string
-	Reasoning      reasoningView
-	StatusBadge    statusBadge
+	Title             string
+	Chats             []storage.Chat
+	CurrentChat       *storage.Chat
+	Messages          []storage.Message
+	Documents         []storage.Document
+	SourceImages      []storage.Image
+	Configured        bool
+	ChatID            int64
+	Notice            string
+	NoticeErr         bool
+	Picker            modelPickerView
+	ChatMode          string
+	UploadsReady      bool
+	UploadAccept      string
+	SearchEnabled     bool
+	ImageEnabled      bool
+	ImageEditsEnabled bool
+	ImageSize         string
+	ImageQuality      string
+	ImageFormat       string
+	ImageSizes        []string
+	ImageQualities    []string
+	ImageFormats      []string
+	Reasoning         reasoningView
+	StatusBadge       statusBadge
 }
 
 // reasoningView is the model of the reasoning effort picker in the composer.
@@ -104,27 +107,42 @@ type reasoningView struct {
 // offers the image deployments instead of the chat models, so switching the
 // mode re-renders it out of band.
 type modelPickerView struct {
-	ChatID    int64
-	Models    []string
-	Current   string
-	AllowAuto bool // only the chat models can leave the choice to the router
-	OOB       bool
+	ChatID           int64
+	Models           []string
+	Current          string
+	AllowAuto        bool // only the chat models can leave the choice to the router
+	CurrentAvailable bool
+	ImageMode        bool
+	EditSupport      map[string]bool
+	OOB              bool
 }
 
 // pickerFor builds the header picker for a mode.
 func pickerFor(chatID int64, cfg config.Config, chat *storage.Chat) modelPickerView {
 	if chat != nil && chat.Mode == storage.ChatModeImage {
+		current := imageModelOf(cfg, chat)
+		edits := make(map[string]bool, len(cfg.ImageModels))
+		for _, name := range cfg.ImageModels {
+			edits[name] = !cfg.Foundry || slices.Contains(cfg.ImageEditModels, name)
+		}
 		return modelPickerView{
-			ChatID:  chatID,
-			Models:  cfg.ImageModels,
-			Current: imageModelOf(cfg, chat),
+			ChatID:           chatID,
+			Models:           cfg.ImageModels,
+			Current:          current,
+			CurrentAvailable: slices.Contains(cfg.ImageModels, current),
+			ImageMode:        true,
+			EditSupport:      edits,
 		}
 	}
 	current := cfg.ChatModel
 	if chat != nil {
 		current = chat.Model
 	}
-	return modelPickerView{ChatID: chatID, Models: cfg.ChatModels, Current: current, AllowAuto: true}
+	if cfg.Foundry && current == "" {
+		current = cfg.ChatDeployment
+	}
+	return modelPickerView{ChatID: chatID, Models: cfg.ChatModels, Current: current, AllowAuto: !cfg.Foundry,
+		CurrentAvailable: slices.Contains(cfg.ChatModels, current)}
 }
 
 // imageModelOf returns the image deployment a chat generates with.
@@ -145,26 +163,27 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 	cfg := s.cfg.Get()
 
 	pd := pageData{
-		Title:          "AI UI",
-		Chats:          chats,
-		CurrentChat:    current,
-		Configured:     s.cfg.IsConfigured(),
-		Picker:         pickerFor(0, cfg, current),
-		UploadsReady:   s.ready.uploadsAllowed(),
-		UploadAccept:   docparse.UploadAccept(),
-		SearchEnabled:  s.search.Enabled(),
-		ImageEnabled:   s.cfg.ImagesConfigured(),
-		ImageSize:      cfg.ImageSize,
-		ImageQuality:   cfg.ImageQuality,
-		ImageFormat:    cfg.ImageFormat,
-		ImageSizes:     imageSizes,
-		ImageQualities: imageQualities,
-		ImageFormats:   imageFormats,
-		StatusBadge:    s.statusData(),
+		Title:             "AI UI",
+		Chats:             chats,
+		CurrentChat:       current,
+		Configured:        s.cfg.IsConfigured(),
+		Picker:            pickerFor(0, cfg, current),
+		UploadsReady:      s.ready.uploadsAllowed(),
+		UploadAccept:      docparse.UploadAccept(),
+		SearchEnabled:     s.search.Enabled(),
+		ImageEnabled:      s.cfg.ImagesConfigured(),
+		ImageEditsEnabled: !cfg.Foundry || slices.Contains(cfg.ImageEditModels, imageModelOf(cfg, current)),
+		ImageSize:         cfg.ImageSize,
+		ImageQuality:      cfg.ImageQuality,
+		ImageFormat:       cfg.ImageFormat,
+		ImageSizes:        imageSizes,
+		ImageQualities:    imageQualities,
+		ImageFormats:      imageFormats,
+		StatusBadge:       s.statusData(),
 	}
 	pd.Reasoning = reasoningView{
-		Efforts: llm.ReasoningEfforts(pd.Picker.Current),
-		Current: llm.NormalizeReasoningEffort(pd.Picker.Current, cfg.ReasoningEffort),
+		Efforts: llm.ReasoningEfforts(s.cfg.ModelIdentity(pd.Picker.Current)),
+		Current: llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(pd.Picker.Current), cfg.ReasoningEffort),
 	}
 	if current != nil {
 		msgs, err := s.store.ListMessages(ctx, current.ID)
@@ -188,8 +207,8 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		pd.Picker = pickerFor(current.ID, cfg, current)
 		pd.Reasoning = reasoningView{
 			ChatID:  current.ID,
-			Efforts: llm.ReasoningEfforts(current.Model),
-			Current: llm.NormalizeReasoningEffort(current.Model, current.ReasoningEffort),
+			Efforts: llm.ReasoningEfforts(s.cfg.ModelIdentity(current.Model)),
+			Current: llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(current.Model), current.ReasoningEffort),
 		}
 	}
 	return pd, nil
@@ -212,6 +231,9 @@ func (s *Server) defaultChatModel() string {
 	if cfg.ChatModel != "" {
 		return cfg.ChatModel
 	}
+	if cfg.Foundry {
+		return cfg.ChatDeployment
+	}
 	if len(cfg.ChatModels) > 0 {
 		return cfg.ChatModels[0]
 	}
@@ -222,7 +244,7 @@ func (s *Server) defaultChatModel() string {
 func (s *Server) newChat(ctx context.Context) (int64, error) {
 	model := s.defaultChatModel()
 	return s.store.CreateChat(ctx, untitled, model,
-		llm.NormalizeReasoningEffort(model, s.cfg.Get().ReasoningEffort))
+		llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(model), s.cfg.Get().ReasoningEffort))
 }
 
 // handleIndex always opens a fresh chat and cleans up orphaned empty ones.
@@ -287,8 +309,10 @@ func (s *Server) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.DeleteChat(r.Context(), id); err != nil {
-		s.httpError(w, err)
+	if err := s.store.WithCorpusMutation(r.Context(), func() error {
+		return s.store.DeleteChat(r.Context(), id)
+	}); err != nil {
+		s.corpusError(w, err)
 		return
 	}
 	redirect(w, r, "/")
@@ -418,7 +442,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	// Only honor web search when it was requested AND is configured.
 	web := r.FormValue("web") == "1" && s.search.Enabled()
 	// Image mode replaces the chat answer with a generated image.
-	image := r.FormValue("mode") == "image" && s.cfg.ImagesConfigured()
+	image := r.FormValue("mode") == "image"
 	if image {
 		web = false
 	}
@@ -518,20 +542,29 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	if chat, err := s.store.GetChat(ctx, id); err == nil {
 		opts = llm.ChatOptions{
 			Model:           chat.Model,
-			ReasoningEffort: llm.NormalizeReasoningEffort(chat.Model, chat.ReasoningEffort),
+			ReasoningEffort: llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(chat.Model), chat.ReasoningEffort),
 		}
 	}
 
-	messages := s.buildLLMMessages(ctx, id, cfg, history, query, forceWeb)
+	messages, err := s.buildLLMMessages(ctx, id, cfg, history, query, forceWeb)
+	if err != nil {
+		slog.Warn("document retrieval failed", "chat", id, "err", err)
+		fail(s.t("stream.retrieval_failed", err.Error()))
+		return
+	}
 
 	// A picture is useless to a model that cannot see. Rather than failing the
 	// request, the answer is routed to a model that can - for this turn only, so
 	// the picker the user set stays where it is. The model tag of the answer
 	// names whatever actually replied.
 	if messagesCarryImages(messages) {
-		picked, ok := llm.VisionModel(opts.Model, cfg.ChatModels)
+		picked, ok := s.llm.VisionDeployment(opts.Model)
 		switch {
 		case !ok:
+			if cfg.Foundry {
+				fail(s.t("stream.vision_missing"))
+				return
+			}
 			// Nothing configured can read images. Sending them anyway would be
 			// rejected with a 400 - and because the attachments are re-read on
 			// every turn, the chat would stay broken until the image is
@@ -544,7 +577,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 			slog.Info("switching to a vision capable model for the attachments",
 				"from", opts.Model, "to", picked)
 			opts.Model = picked
-			opts.ReasoningEffort = llm.NormalizeReasoningEffort(picked, cfg.ReasoningEffort)
+			opts.ReasoningEffort = llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(picked), cfg.ReasoningEffort)
 		}
 	}
 
@@ -692,7 +725,7 @@ func truncateRunes(s string, n int) string {
 
 // buildLLMMessages assembles the message list including the attachments of the
 // chat, the RAG context and optional web context (both limited to this chat).
-func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.Config, history []storage.Message, query string, web bool) []llm.Message {
+func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.Config, history []storage.Message, query string, web bool) ([]llm.Message, error) {
 	system := cfg.SystemPrompt
 	if strings.TrimSpace(system) == "" {
 		system = s.t("prompt.default_system")
@@ -715,7 +748,7 @@ func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.
 	if cfg.EmbeddingDeployment != "" && query != "" {
 		results, err := s.retriever.Retrieve(ctx, chatID, query, retrievalTopK)
 		if err != nil {
-			slog.Warn("retrieval failed", "err", err)
+			return nil, err
 		} else if len(results) > 0 {
 			var sb strings.Builder
 			sb.WriteString(s.t("prompt.rag_intro"))
@@ -749,7 +782,7 @@ func (s *Server) buildLLMMessages(ctx context.Context, chatID int64, cfg config.
 		msgs = append(msgs, llm.Message{Role: m.Role, Content: m.Content})
 	}
 	attachImages(msgs, att.images)
-	return msgs
+	return msgs, nil
 }
 
 // chatAttachments is what the files of a chat contribute to a request: the
@@ -972,41 +1005,44 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 		s.httpError(w, err)
 		return
 	}
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 	cfg := s.cfg.Get()
 	previousLanguage := cfg.Language
+	previousEmbedding := cfg.EmbeddingDeployment
 	locks := s.cfg.Locks()
 	// Endpoint fields locked via environment variables are disabled in the form
 	// (and therefore not submitted); they must not be cleared. Save() protects
 	// them as well, this only avoids blanking them here.
-	if !locks.Endpoint {
+	if !cfg.Foundry && !locks.Endpoint {
 		cfg.Endpoint = strings.TrimSpace(r.FormValue("endpoint"))
 	}
 	if !locks.ChatDeployment {
 		cfg.ChatDeployment = strings.TrimSpace(r.FormValue("chat_deployment"))
 	}
-	if !locks.APIVersion {
+	if !cfg.Foundry && !locks.APIVersion {
 		if v, ok := submitted(r, "api_version"); ok {
 			cfg.APIVersion = v
 		}
 	}
-	if !locks.EmbeddingEndpoint {
+	if !cfg.Foundry && !locks.EmbeddingEndpoint {
 		cfg.EmbeddingEndpoint = strings.TrimSpace(r.FormValue("embedding_endpoint"))
 	}
 	if !locks.EmbeddingDeployment {
 		cfg.EmbeddingDeployment = strings.TrimSpace(r.FormValue("embedding_deployment"))
 	}
-	if !locks.EmbeddingAPIVersion {
+	if !cfg.Foundry && !locks.EmbeddingAPIVersion {
 		if v, ok := submitted(r, "embedding_api_version"); ok {
 			cfg.EmbeddingAPIVersion = v
 		}
 	}
-	if !locks.ImageEndpoint {
+	if !cfg.Foundry && !locks.ImageEndpoint {
 		cfg.ImageEndpoint = strings.TrimSpace(r.FormValue("image_endpoint"))
 	}
 	if !locks.ImageDeployment {
 		cfg.ImageDeployment = strings.TrimSpace(r.FormValue("image_deployment"))
 	}
-	if !locks.ImageAPIVersion {
+	if !cfg.Foundry && !locks.ImageAPIVersion {
 		if v, ok := submitted(r, "image_api_version"); ok {
 			cfg.ImageAPIVersion = v
 		}
@@ -1034,6 +1070,25 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	}
 	if effort := strings.ToLower(strings.TrimSpace(r.FormValue("reasoning_effort"))); slices.Contains(reasoningEfforts, effort) {
 		cfg.ReasoningEffort = effort
+	}
+	if cfg.Foundry {
+		cfg.VisionDeployment = strings.TrimSpace(r.FormValue("vision_deployment"))
+		if err := s.cfg.ValidateRoleSelections(cfg); err != nil {
+			s.renderConfigNotice(w, s.t("foundry.invalid_selection", err.Error()), true)
+			return
+		}
+		if cfg.EmbeddingDeployment != previousEmbedding {
+			job, exists, err := s.store.LatestReindex(r.Context())
+			if err != nil {
+				s.httpError(w, err)
+				return
+			}
+			if exists && job.Status == "running" {
+				s.renderConfigNotice(w, s.t("foundry.reindex_busy"), true)
+				return
+			}
+		}
+		cfg.ChatModel = cfg.ChatDeployment
 	}
 
 	if err := s.cfg.Save(cfg); err != nil {
@@ -1174,6 +1229,13 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, s.t("error.invalid_model"), http.StatusBadRequest)
 			return
 		}
+		if cfg.Foundry {
+			if _, err := s.cfg.ResolveDeployment(foundry.Chat, model); err != nil {
+				slog.Warn("chat deployment selection rejected", "err", err)
+				http.Error(w, s.t("error.invalid_model"), http.StatusBadRequest)
+				return
+			}
+		}
 		if err := s.store.UpdateChatImageModel(r.Context(), chatID, model); err != nil {
 			s.httpError(w, err)
 			return
@@ -1194,14 +1256,14 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 
 	// The offered efforts belong to the model, so the picker is re-rendered and
 	// a value the new model does not know falls back to "auto".
-	effort := llm.NormalizeReasoningEffort(model, chat.ReasoningEffort)
+	effort := llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(model), chat.ReasoningEffort)
 	if err := s.store.UpdateChatReasoningEffort(r.Context(), chatID, effort); err != nil {
 		s.httpError(w, err)
 		return
 	}
 	s.render(w, "reasoning-opt", reasoningView{
 		ChatID:  chatID,
-		Efforts: llm.ReasoningEfforts(model),
+		Efforts: llm.ReasoningEfforts(s.cfg.ModelIdentity(model)),
 		Current: effort,
 		OOB:     true,
 	})
@@ -1224,7 +1286,7 @@ func (s *Server) handleSetReasoning(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	effort := llm.NormalizeReasoningEffort(chat.Model, r.FormValue("reasoning_effort"))
+	effort := llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(chat.Model), r.FormValue("reasoning_effort"))
 	if err := s.store.UpdateChatReasoningEffort(r.Context(), chatID, effort); err != nil {
 		s.httpError(w, err)
 		return
@@ -1325,7 +1387,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ecfg := s.cfg.Get()
-		if ecfg.EmbeddingDeployment == "" || ecfg.EmbeddingHost() == "" || !s.cfg.HasEmbeddingAPIKey() {
+		if ecfg.EmbeddingDeployment == "" || ecfg.EmbeddingHost() == "" || !s.cfg.HasEmbeddingCredentials() {
 			s.renderDocList(w, r, chatID, s.t("upload.embedding_missing"), true)
 			return
 		}
@@ -1432,11 +1494,22 @@ func (s *Server) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.DeleteDocument(r.Context(), docID); err != nil {
-		s.httpError(w, err)
+	if err := s.store.WithCorpusMutation(r.Context(), func() error {
+		return s.store.DeleteDocument(r.Context(), docID)
+	}); err != nil {
+		s.corpusError(w, err)
 		return
 	}
 	s.renderDocList(w, r, chatID, "", false)
+}
+
+func (s *Server) corpusError(w http.ResponseWriter, err error) {
+	if errors.Is(err, storage.ErrReindexInProgress) {
+		slog.Info("document mutation deferred during reindex")
+		http.Error(w, s.t("foundry.reindex_busy"), http.StatusConflict)
+		return
+	}
+	s.httpError(w, err)
 }
 
 // ---- render helpers ----
@@ -1471,6 +1544,7 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 	results, checkedAt := s.ready.lastResults()
 	data := struct {
 		Config             config.Config
+		Foundry            foundryView
 		Locks              config.Locks
 		Languages          []i18n.Option
 		HasKey             bool
@@ -1497,6 +1571,7 @@ func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice stri
 		NoticeErr               bool
 	}{
 		Config:                  cfg,
+		Foundry:                 s.foundryData(s.ctx),
 		Locks:                   s.cfg.Locks(),
 		Languages:               i18n.Options(),
 		ShowAPIVersion:          !llm.IsV1Endpoint(cfg.Endpoint),

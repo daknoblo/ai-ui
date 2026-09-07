@@ -67,14 +67,16 @@
 			{{end}}
 		</div>
 
-		<div class="composer" data-mode="{{if eq .ChatMode "image"}}image{{else}}chat{{end}}">
-			{{if .ImageEnabled}}
+		<div class="composer" data-mode="{{if eq .ChatMode "image"}}image{{else}}chat{{end}}"
+			data-image-edits="{{if .ImageEditsEnabled}}1{{else}}0{{end}}">
+			{{if or .ImageEnabled (eq .ChatMode "image")}}
 			<div class="mode-switch" id="mode-switch" role="group" aria-label="{{t "chat.mode_label"}}">
 				<button type="button" class="mode-opt" data-mode="chat" onclick="setMode('chat')"
 					hx-post="/chat/{{.ChatID}}/mode" hx-vals='{"mode":"chat"}' hx-swap="none"
 					title="{{t "chat.mode_chat"}}" aria-label="{{t "chat.mode_chat"}}">💬</button>
 				<button type="button" class="mode-opt" data-mode="image" onclick="setMode('image')"
 					hx-post="/chat/{{.ChatID}}/mode" hx-vals='{"mode":"image"}' hx-swap="none"
+					{{if not .ImageEnabled}}disabled{{end}}
 					title="{{t "chat.mode_image"}}" aria-label="{{t "chat.mode_image"}}">🖼️</button>
 			</div>
 			{{end}}
@@ -116,11 +118,13 @@
      image deployments, so the mode switch swaps it out of band. */}}
 {{define "model-picker"}}
 <form class="model-picker" id="model-picker" hx-post="/chat/{{.ChatID}}/model" hx-trigger="change" hx-swap="none"
-	{{if .OOB}}hx-swap-oob="true"{{end}}{{if not .Models}} hidden{{end}}>
+	data-image-mode="{{if .ImageMode}}1{{else}}0{{end}}"
+	{{if .OOB}}hx-swap-oob="true"{{end}}{{if and (not .Models) (not .Current)}} hidden{{end}}>
 	<label class="model-label" for="model-select">{{t "chat.model_label"}}</label>
-	<select id="model-select" name="model">
+	<select id="model-select" name="model" onchange="applyComposerState()">
 		{{if .AllowAuto}}<option value="" {{if eq .Current ""}}selected{{end}}>{{t "chat.model_auto"}}</option>{{end}}
-		{{range .Models}}<option value="{{.}}" {{if eq . $.Current}}selected{{end}}>{{.}}</option>{{end}}
+		{{if and .Current (not .CurrentAvailable)}}<option value="{{.Current}}" selected>{{t "foundry.unavailable_selection" .Current}}</option>{{end}}
+		{{range .Models}}<option value="{{.}}" data-image-edits="{{if index $.EditSupport .}}1{{else}}0{{end}}" {{if eq . $.Current}}selected{{end}}>{{.}}</option>{{end}}
 	</select>
 </form>
 {{end}}

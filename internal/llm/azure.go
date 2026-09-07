@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/daknoblo/ai-ui/internal/config"
+	"github.com/daknoblo/ai-ui/internal/foundry"
 )
 
 // maxErrorBodyBytes limits how much of an error response is read before it is
@@ -145,6 +146,12 @@ func New(store *config.Store) *Client {
 			// Long timeout: a streamed answer can legitimately take minutes.
 			Timeout:   5 * time.Minute,
 			Transport: transport,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 || (len(via) > 0 && req.URL.Host != via[0].URL.Host) {
+					return fmt.Errorf("inference redirect is not allowed")
+				}
+				return nil
+			},
 		},
 		metrics: &Metrics{},
 	}
@@ -244,7 +251,7 @@ type TurnResult struct {
 // classic Azure OpenAI schema applies
 // (/openai/deployments/{deployment}/...?api-version=...).
 func IsV1Endpoint(endpoint string) bool {
-	return strings.Contains(strings.TrimRight(endpoint, "/"), "/openai/v1")
+	return foundry.IsV1Endpoint(endpoint)
 }
 
 // apiVersionFor resolves the api-version of a request. On the v1 surface the
@@ -284,6 +291,9 @@ func embeddingsURL(endpoint, deployment, apiVersion string) string {
 func chatModelField(cfg config.Config, override string) string {
 	if override != "" {
 		return override
+	}
+	if cfg.Foundry {
+		return cfg.ChatDeployment
 	}
 	if cfg.ChatModel != "" {
 		return cfg.ChatModel
@@ -333,11 +343,11 @@ func (c *Client) ChatStreamWithTools(ctx context.Context, opts ChatOptions, mess
 func (c *Client) streamTurn(ctx context.Context, opts ChatOptions, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
 	var result TurnResult
 	cfg := c.store.Get()
-	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || cfg.APIVersion == "" {
+	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || (!IsV1Endpoint(cfg.Endpoint) && cfg.APIVersion == "") {
 		return result, fmt.Errorf("incomplete configuration: endpoint, chat deployment and api version are required")
 	}
-	if !c.store.HasAPIKey() {
-		return result, fmt.Errorf("no API key set (AZURE_API_KEY)")
+	if !c.store.HasChatCredentials() {
+		return result, fmt.Errorf("no chat credentials configured")
 	}
 
 	url := chatCompletionsURL(cfg.Endpoint, chatDeployment(cfg, opts.Model), cfg.APIVersion)
@@ -478,11 +488,11 @@ func (c *Client) VerifyChat(ctx context.Context) error {
 // uses the configured default, which is what VerifyChat does.
 func (c *Client) VerifyDeployment(ctx context.Context, deployment string) error {
 	cfg := c.store.Get()
-	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || cfg.APIVersion == "" {
+	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || (!IsV1Endpoint(cfg.Endpoint) && cfg.APIVersion == "") {
 		return fmt.Errorf("endpoint, chat deployment and api version are required")
 	}
-	if !c.store.HasAPIKey() {
-		return fmt.Errorf("no API key set (AZURE_API_KEY)")
+	if !c.store.HasChatCredentials() {
+		return fmt.Errorf("no chat credentials configured")
 	}
 
 	url := chatCompletionsURL(cfg.Endpoint, chatDeployment(cfg, deployment), cfg.APIVersion)
@@ -505,7 +515,9 @@ func (c *Client) VerifyDeployment(ctx context.Context, deployment string) error 
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", c.store.APIKey())
+	if err := c.store.Authorize(req, foundry.Chat, chatDeployment(cfg, deployment)); err != nil {
+		return err
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -569,12 +581,15 @@ type embeddingResponse struct {
 
 // Embed creates embeddings for the given texts.
 func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error) {
-	cfg := c.store.Get()
+	return c.embed(ctx, c.store.Get(), inputs)
+}
+
+func (c *Client) embed(ctx context.Context, cfg config.Config, inputs []string) ([][]float32, error) {
 	if cfg.EmbeddingDeployment == "" {
 		return nil, fmt.Errorf("no embedding deployment configured")
 	}
-	if !c.store.HasEmbeddingAPIKey() {
-		return nil, fmt.Errorf("no API key set (AZURE_API_KEY or AZURE_EMBEDDING_API_KEY)")
+	if !c.store.HasEmbeddingCredentials() {
+		return nil, fmt.Errorf("no embedding credentials configured")
 	}
 
 	url := embeddingsURL(cfg.EmbeddingHost(), cfg.EmbeddingDeployment, cfg.EmbeddingVersion())
@@ -594,7 +609,9 @@ func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", c.store.EmbeddingAPIKey())
+	if err := c.store.Authorize(req, foundry.Embeddings, cfg.EmbeddingDeployment); err != nil {
+		return nil, err
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -652,7 +669,9 @@ func (c *Client) postChat(ctx context.Context, url string, reqBody chatRequest) 
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", c.store.APIKey())
+	if err := c.store.Authorize(req, foundry.Chat, reqBody.Model); err != nil {
+		return nil, err
+	}
 	req.Header.Set("Accept", "text/event-stream")
 	return c.http.Do(req)
 }

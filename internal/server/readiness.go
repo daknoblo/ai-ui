@@ -19,11 +19,13 @@ type checkResult struct {
 // embeddings have been verified. Every configuration change resets the state so
 // that a new check is required.
 type readiness struct {
-	mu          sync.RWMutex
-	storageOK   bool
-	chatOK      bool
-	embeddingOK bool
-	checkedAt   time.Time
+	mu                sync.RWMutex
+	storageOK         bool
+	chatOK            bool
+	embeddingOK       bool
+	embeddingOptional bool
+	generation        uint64
+	checkedAt         time.Time
 	// results of the last full check, so the settings dialog can show it
 	// without probing every deployment again.
 	results   []checkResult
@@ -34,6 +36,7 @@ type readiness struct {
 func (r *readiness) invalidate() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.generation++
 	r.storageOK = false
 	r.chatOK = false
 	r.embeddingOK = false
@@ -42,12 +45,25 @@ func (r *readiness) invalidate() {
 	r.resultsAt = time.Time{}
 }
 
-// setResults stores the outcome of a full check.
-func (r *readiness) setResults(results []checkResult) {
+func (r *readiness) epoch() uint64 {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.generation
+}
+
+func (r *readiness) finish(generation uint64, storageOK, chatOK, embeddingOK, optional bool, results []checkResult, deep bool) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.results = results
-	r.resultsAt = time.Now()
+	if r.generation != generation {
+		return false
+	}
+	r.storageOK, r.chatOK, r.embeddingOK = storageOK, chatOK, embeddingOK
+	r.embeddingOptional = optional
+	r.checkedAt = time.Now()
+	if deep {
+		r.results, r.resultsAt = results, r.checkedAt
+	}
+	return true
 }
 
 // lastResults returns the outcome of the last full check and when it ran.
@@ -79,7 +95,7 @@ func (r *readiness) uploadsAllowed() bool {
 func (r *readiness) verified() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return !r.checkedAt.IsZero() && r.storageOK && r.chatOK && r.embeddingOK
+	return !r.checkedAt.IsZero() && r.storageOK && r.chatOK && (r.embeddingOK || r.embeddingOptional)
 }
 
 // statusSnapshot describes the current connection state for display.
@@ -103,7 +119,7 @@ func (r *readiness) snapshot() statusSnapshot {
 		StorageOK:   r.storageOK,
 		ChatOK:      r.chatOK,
 		EmbeddingOK: r.embeddingOK,
-		AllOK:       checked && r.storageOK && r.chatOK && r.embeddingOK,
+		AllOK:       checked && r.storageOK && r.chatOK && (r.embeddingOK || r.embeddingOptional),
 		Uploads:     r.storageOK && r.embeddingOK,
 		CheckedAt:   r.checkedAt,
 	}
@@ -115,6 +131,9 @@ func (r *readiness) snapshot() statusSnapshot {
 // the button in the settings dialog is for.
 func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 	results := make([]checkResult, 0, 4)
+	generation := s.ready.epoch()
+	cfg := s.cfg.Get()
+	embeddingOptional := cfg.Foundry && cfg.EmbeddingDeployment == ""
 
 	// 1. Storage reachable & writable.
 	storageOK := true
@@ -137,7 +156,10 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 	// 3. Embedding endpoint reachable & returning vectors.
 	embeddingOK := true
 	embeddingDetail := s.t("check.reachable")
-	if err := s.llm.VerifyEmbedding(ctx); err != nil {
+	if embeddingOptional {
+		embeddingOK = false
+		embeddingDetail = s.t("foundry.not_configured")
+	} else if err := s.verifyActiveEmbedding(ctx); err != nil {
 		embeddingOK = false
 		embeddingDetail = err.Error()
 	}
@@ -157,7 +179,7 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 
 	// 5. Every selectable deployment (informational as well): a typo in
 	//    AZURE_MODELS would otherwise only surface when that model is picked.
-	if deep && chatOK {
+	if deep && chatOK && !cfg.Foundry {
 		for _, model := range s.cfg.Get().ChatModels {
 			detail := s.t("check.reachable")
 			ok := true
@@ -172,7 +194,11 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 	// 6. Image deployments. The probe sends an incomplete request on purpose, so
 	//    it costs nothing but still proves endpoint, deployment and key.
 	if deep && s.cfg.ImagesConfigured() {
-		for _, model := range s.cfg.Get().ImageModels {
+		models := cfg.ImageModels
+		if cfg.Foundry {
+			models = []string{cfg.ImageDeployment}
+		}
+		for _, model := range models {
 			detail := s.t("check.reachable")
 			ok := true
 			if err := s.llm.VerifyImage(ctx, model); err != nil {
@@ -183,9 +209,8 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 		}
 	}
 
-	s.ready.set(storageOK, chatOK, embeddingOK)
-	if deep {
-		s.ready.setResults(results)
+	if !s.ready.finish(generation, storageOK, chatOK, embeddingOK, embeddingOptional, results, deep) {
+		results = append(results, checkResult{Name: s.t("config.title"), Detail: s.t("foundry.check_changed")})
 	}
 	return results
 }
@@ -195,6 +220,14 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 // otherwise the check is skipped until the app has been configured.
 // The function blocks until ctx is canceled (e.g. on shutdown).
 func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
+	stopCancel := context.AfterFunc(ctx, s.cancel)
+	defer stopCancel()
+	if s.cfg.FoundryStatus().Enabled {
+		// Discovery must also work before any role has been selected.
+		if err := s.refreshFoundry(ctx); err != nil {
+			slog.Warn("initial deployment discovery failed", "err", err)
+		}
+	}
 	check := func(reason string, deep bool) {
 		// Without the minimum configuration an endpoint check is pointless.
 		if !s.cfg.IsConfigured() {

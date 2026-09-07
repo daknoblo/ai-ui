@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/daknoblo/ai-ui/internal/foundry"
 	"github.com/daknoblo/ai-ui/internal/i18n"
 )
 
@@ -17,11 +18,13 @@ import (
 // deliberately NOT stored here; they are read at runtime from environment
 // variables only.
 type Config struct {
-	Language            string   `json:"language"`              // UI language: "en" or "de"
-	Endpoint            string   `json:"endpoint"`              // chat, e.g. https://my-router.openai.azure.com
-	ChatDeployment      string   `json:"chat_deployment"`       // deployment name of the chat model (or router)
-	ChatModel           string   `json:"chat_model"`            // optional; pins a model instead of letting the router choose
-	ChatModels          []string `json:"-"`                     // offered in the header menu; comes from AZURE_MODELS only
+	Language            string   `json:"language"`        // UI language: "en" or "de"
+	Endpoint            string   `json:"endpoint"`        // chat, e.g. https://my-router.openai.azure.com
+	ChatDeployment      string   `json:"chat_deployment"` // deployment name of the chat model (or router)
+	ChatModel           string   `json:"chat_model"`      // optional; pins a model instead of letting the router choose
+	ChatModels          []string `json:"-"`               // offered in the header menu; comes from AZURE_MODELS only
+	Foundry             bool     `json:"-"`
+	VisionDeployment    string   `json:"vision_deployment,omitempty"`
 	APIVersion          string   `json:"api_version"`           // e.g. 2024-08-01-preview
 	EmbeddingEndpoint   string   `json:"embedding_endpoint"`    // optional; falls back to Endpoint
 	EmbeddingDeployment string   `json:"embedding_deployment"`  // deployment name of the embedding model
@@ -29,16 +32,17 @@ type Config struct {
 	ImageEndpoint       string   `json:"image_endpoint"`        // optional; falls back to Endpoint
 	ImageDeployment     string   `json:"image_deployment"`      // deployment name of the image model
 	ImageModels         []string `json:"-"`                     // selectable image deployments; comes from AZURE_IMAGE_MODELS
-	ImageAPIVersion     string   `json:"image_api_version"`     // optional; falls back to APIVersion
-	ImageSize           string   `json:"image_size"`            // e.g. 1024x1024 or "auto"
-	ImageQuality        string   `json:"image_quality"`         // low | medium | high | auto
-	ImageFormat         string   `json:"image_format"`          // png | jpeg | webp
-	SearchProvider      string   `json:"search_provider"`       // "", "tavily", "brave", "searxng"
-	SearchEndpoint      string   `json:"search_endpoint"`       // base URL of the SearXNG instance
-	SearchMaxResults    int      `json:"search_max_results"`    // number of results (default 5)
-	SearchAuto          bool     `json:"search_auto"`           // allow the model to trigger a web search via tool calling
-	SystemPrompt        string   `json:"system_prompt"`         // empty means "use the localized default"
-	LogLevel            string   `json:"log_level"`             // debug | info | warn | error
+	ImageEditModels     []string `json:"-"`
+	ImageAPIVersion     string   `json:"image_api_version"`  // optional; falls back to APIVersion
+	ImageSize           string   `json:"image_size"`         // e.g. 1024x1024 or "auto"
+	ImageQuality        string   `json:"image_quality"`      // low | medium | high | auto
+	ImageFormat         string   `json:"image_format"`       // png | jpeg | webp
+	SearchProvider      string   `json:"search_provider"`    // "", "tavily", "brave", "searxng"
+	SearchEndpoint      string   `json:"search_endpoint"`    // base URL of the SearXNG instance
+	SearchMaxResults    int      `json:"search_max_results"` // number of results (default 5)
+	SearchAuto          bool     `json:"search_auto"`        // allow the model to trigger a web search via tool calling
+	SystemPrompt        string   `json:"system_prompt"`      // empty means "use the localized default"
+	LogLevel            string   `json:"log_level"`          // debug | info | warn | error
 	Temperature         float64  `json:"temperature"`
 	ReasoningEffort     string   `json:"reasoning_effort"` // "auto" leaves the decision to the model
 }
@@ -227,8 +231,13 @@ type Store struct {
 	overrides       Overrides // endpoint values pinned via environment variables
 	locks           Locks     // derived from overrides: which fields are read-only
 
-	mu  sync.RWMutex
-	cur Config // stored raw configuration (without overrides applied)
+	mu             sync.RWMutex
+	cur            Config // stored raw configuration (without overrides applied)
+	identity       FoundrySource
+	resourceID     string
+	identityError  string
+	discoveryError string
+	catalog        foundry.Snapshot
 }
 
 // Keys bundles the secrets read from the environment. Empty dedicated keys fall
@@ -288,7 +297,7 @@ func (s *Store) Load() (Config, error) {
 func (s *Store) Get() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.overrides.apply(s.cur)
+	return s.effectiveLocked()
 }
 
 // Language returns the normalized UI language. It is called on every template
@@ -308,6 +317,9 @@ func (s *Store) Locks() Locks {
 // Save writes the configuration to disk atomically. Fields locked via the
 // environment keep their stored raw value and cannot be changed through the UI.
 func (s *Store) Save(cfg Config) error {
+	if err := s.ValidateRoleSelections(cfg); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cfg.Language = i18n.Normalize(cfg.Language)
@@ -323,6 +335,12 @@ func (s *Store) Save(cfg Config) error {
 // raw value already on disk and are not overwritten by UI input or by the
 // override value itself. Callers must hold s.mu.
 func (s *Store) keepLockedLocked(cfg *Config) {
+	if s.resourceID != "" {
+		// Discovered connection metadata must not overwrite the manual setup.
+		cfg.Endpoint = s.cur.Endpoint
+		cfg.EmbeddingEndpoint = s.cur.EmbeddingEndpoint
+		cfg.ImageEndpoint = s.cur.ImageEndpoint
+	}
 	if s.locks.Endpoint {
 		cfg.Endpoint = s.cur.Endpoint
 	}
@@ -360,8 +378,7 @@ func (s *Store) SetChatModel(model string) error {
 	defer s.mu.Unlock()
 
 	if model != "" {
-		// Only models provided through AZURE_MODELS can be pinned.
-		if !slices.Contains(s.overrides.ChatModels, model) {
+		if !slices.Contains(s.effectiveLocked().ChatModels, model) {
 			return fmt.Errorf("unknown model: %s", model)
 		}
 	}
@@ -426,7 +443,14 @@ func (s *Store) HasOwnImageAPIKey() bool {
 // ImagesConfigured reports whether image generation can be used.
 func (s *Store) ImagesConfigured() bool {
 	c := s.Get()
-	return c.ImageDeployment != "" && c.ImageHost() != "" && s.HasImageAPIKey()
+	if c.ImageDeployment == "" || c.ImageHost() == "" || !s.HasImageCredentials() {
+		return false
+	}
+	if c.Foundry {
+		_, err := s.ResolveDeployment(foundry.Images, c.ImageDeployment)
+		return err == nil
+	}
+	return true
 }
 
 // SearchAPIKey returns the web search API key loaded from the environment.
@@ -442,7 +466,15 @@ func (s *Store) HasSearchAPIKey() bool {
 // IsConfigured checks whether the minimum settings for chat requests are present.
 func (s *Store) IsConfigured() bool {
 	c := s.Get()
-	return c.Endpoint != "" && c.ChatDeployment != "" && c.APIVersion != "" && s.apiKey != ""
+	if c.Endpoint == "" || c.ChatDeployment == "" || !s.HasChatCredentials() ||
+		(!foundry.IsV1Endpoint(c.Endpoint) && c.APIVersion == "") {
+		return false
+	}
+	if c.Foundry {
+		_, err := s.ResolveDeployment(foundry.Chat, c.ChatDeployment)
+		return err == nil
+	}
+	return true
 }
 
 // writeLocked serializes cfg and replaces the config file atomically. Callers

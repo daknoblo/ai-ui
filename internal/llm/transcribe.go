@@ -25,10 +25,10 @@ const maxConsecutiveFailures = 3
 // needs the chat endpoint, a key and a deployment that can see.
 func (c *Client) CanTranscribe() bool {
 	cfg := c.store.Get()
-	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || !c.store.HasAPIKey() {
+	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || !c.store.HasChatCredentials() {
 		return false
 	}
-	_, ok := VisionModel(cfg.ChatModel, cfg.ChatModels)
+	_, ok := c.VisionDeployment(cfg.ChatModel)
 	return ok
 }
 
@@ -50,7 +50,7 @@ func (c *Client) Transcribe(ctx context.Context, prompt string, pageLabel func(p
 	}
 
 	cfg := c.store.Get()
-	model, ok := VisionModel(cfg.ChatModel, cfg.ChatModels)
+	model, ok := c.VisionDeployment(cfg.ChatModel)
 	if !ok {
 		return result, fmt.Errorf("no vision capable deployment configured")
 	}

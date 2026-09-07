@@ -51,6 +51,29 @@ func NewIngestor(store *storage.Store, client *llm.Client, prompts Prompts) *Ing
 // Ingest processes a single document and returns what was stored. The document
 // is attached to the given chat.
 func (in *Ingestor) Ingest(ctx context.Context, chatID int64, filename, mime string, data []byte) (IngestResult, error) {
+	var result IngestResult
+	err := in.store.WithCorpusMutation(ctx, func() error {
+		return in.store.WithEmbeddingProfile(ctx, func(profile storage.EmbeddingProfile, known bool) error {
+			if in.llm.UsesFoundry() && !known {
+				return storage.ErrReindexRequired
+			}
+			embed := in.llm.Embed
+			if known {
+				embed = func(ctx context.Context, inputs []string) ([][]float32, error) {
+					return in.llm.EmbedProfile(ctx, profile, inputs)
+				}
+			}
+			var err error
+			result, err = in.ingest(ctx, chatID, filename, mime, data, embed)
+			return err
+		})
+	})
+	return result, err
+}
+
+func (in *Ingestor) ingest(ctx context.Context, chatID int64, filename, mime string, data []byte,
+	embed func(context.Context, []string) ([][]float32, error),
+) (IngestResult, error) {
 	var res IngestResult
 
 	text, err := docparse.Extract(filename, mime, data)
@@ -74,7 +97,7 @@ func (in *Ingestor) Ingest(ctx context.Context, chatID int64, filename, mime str
 	for start := 0; start < len(chunks); start += embedBatchSize {
 		end := min(start+embedBatchSize, len(chunks))
 		batch := chunks[start:end]
-		vecs, err := in.llm.Embed(ctx, batch)
+		vecs, err := embed(ctx, batch)
 		if err != nil {
 			return res, fmt.Errorf("embedding failed: %w", err)
 		}

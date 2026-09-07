@@ -3,6 +3,7 @@
 // automated documentation screenshots as well as a quick way to try the UI:
 //
 //	go run ./cmd/demo            # http://localhost:8080
+//	go run ./cmd/demo -foundry -data ./data/demo-foundry
 package main
 
 import (
@@ -28,15 +29,16 @@ func main() {
 	dataDir := flag.String("data", filepath.Join(os.TempDir(), "ai-ui-demo"), "data path of the demo instance")
 	lang := flag.String("lang", "en", "interface language of the demo content (en or de)")
 	reset := flag.Bool("reset", false, "delete the database in the data path before seeding")
+	foundry := flag.Bool("foundry", false, "show the identity-backed deployment inventory using only the local stub")
 	flag.Parse()
 
-	if err := run(*port, *dataDir, *lang, *reset); err != nil {
+	if err := run(*port, *dataDir, *lang, *reset, *foundry); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(port, dataDir, lang string, reset bool) error {
+func run(port, dataDir, lang string, reset, foundry bool) error {
 	logs := logbuf.New(2000)
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.MultiWriter(os.Stdout, logs),
 		&slog.HandlerOptions{Level: logs.LevelVar()})))
@@ -56,13 +58,18 @@ func run(port, dataDir, lang string, reset bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	cfgStore, store, idx, err := demo.Setup(ctx, dataDir, lang, backend.URL())
+	setup := demo.Setup
+	if foundry {
+		setup = demo.SetupFoundry
+	}
+	cfgStore, store, idx, err := setup(ctx, dataDir, lang, backend.URL())
 	if err != nil {
 		return err
 	}
 	defer func() { _ = store.Close() }()
 
 	srv := server.New(cfgStore, store, logs)
+	defer srv.Close()
 	httpServer := &http.Server{
 		Addr:              ":" + port,
 		Handler:           srv.Routes(),

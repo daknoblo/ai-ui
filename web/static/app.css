@@ -667,6 +667,10 @@ html, body {
 /* Read-only list of the models handed in via AZURE_MODELS. */
 .config-form .config-label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 5px; }
 .model-list { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.foundry-resource { overflow-wrap: anywhere; }
+.foundry-inventory { overflow-x: auto; min-width: 0; }
+.foundry-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.foundry-table th, .foundry-table td { padding: 8px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .model-list li {
 	background: var(--bg);
 	border: 1px solid var(--border);
@@ -1001,4 +1005,3 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
 	.sidebar { transition: none; }
 }
-

@@ -29,6 +29,7 @@ type Index struct {
 	Lang         string           `json:"lang"`
 	Chats        map[string]int64 `json:"chats"`
 	StreamPrompt string           `json:"stream_prompt"`
+	Foundry      bool             `json:"foundry,omitempty"`
 }
 
 // WriteIndex stores the index next to the demo database.

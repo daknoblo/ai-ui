@@ -54,6 +54,7 @@ func newConfiguredServer(t *testing.T, language string, keys config.Keys,
 	}
 
 	srv := New(cfgStore, store, logbuf.New(50))
+	t.Cleanup(srv.Close)
 	return srv, srv.Routes()
 }
 

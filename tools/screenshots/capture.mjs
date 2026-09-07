@@ -6,13 +6,12 @@
 //
 //   node capture.mjs --bin=../../bin/ai-ui-demo --out=../../docs/screenshots
 //
-// The demo needs no credentials: it runs against the stub backend in
-// internal/demo.
+// The Foundry demo needs no credentials: inventory, identity and inference all
+// use the local fixture in internal/demo.
 
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
@@ -43,17 +42,6 @@ const MOBILE = {
   deviceScaleFactor: 2,
   isMobile: true,
   hasTouch: true,
-};
-
-// Endpoint values shown in the settings dialog. The demo really talks to a stub
-// on 127.0.0.1 with a random port, which says nothing about the product, so the
-// fields are filled with the values a real installation would hold. Nothing is
-// saved: this is display only.
-const SETTINGS_DISPLAY = {
-  endpoint: 'https://my-foundry.services.ai.azure.com/openai/v1',
-  embedding_endpoint: 'https://my-embeddings.openai.azure.com',
-  image_endpoint: 'https://my-images.openai.azure.com',
-  search_endpoint: 'https://searxng.internal.example',
 };
 
 /** The sections that are captured, in gallery order. */
@@ -136,27 +124,65 @@ const SHOTS = [
     langs: ['en', 'de'],
     meta: {
       en: {
-        title: 'Settings dialog',
-        caption: 'Language, endpoints, deployments, image parameters, web search and log level - all in the UI. API keys stay in the environment.',
+        title: 'Foundry deployment inventory',
+        caption: 'Refresh reads metadata for one resource. Canonical models and capabilities explain which deployment aliases are usable; the local demo needs no credentials.',
       },
       de: {
-        title: 'Einstellungsdialog',
-        caption: 'Sprache, Endpunkte, Deployments, Bildparameter, Websuche und Log-Level - alles in der Oberfläche. API-Schlüssel bleiben in der Umgebung.',
+        title: 'Foundry-Deployment-Inventar',
+        caption: 'Aktualisieren liest Metadaten einer Ressource. Kanonische Modelle und Fähigkeiten zeigen, welche Deployment-Aliase nutzbar sind; die lokale Demo braucht keine Zugangsdaten.',
       },
     },
     capture: async (page, ctx) => {
-      await open(page, `/chat/${ctx.index.chats.chat}`);
-      await page.click('.btn-config[hx-get="/config"]');
-      await page.waitForSelector('.modal-overlay .modal');
-      for (const [name, value] of Object.entries(SETTINGS_DISPLAY)) {
-        const field = page.locator(`.config-form input[name="${name}"]`);
-        if ((await field.count()) > 0) {
-          await field.fill(value);
-        }
-      }
-      // Filling the fields scrolls the dialog; the shot should start at the top.
-      await page.locator('.modal-overlay .modal').evaluate((modal) => modal.scrollTo(0, 0));
-      await sleep(200);
+      await openSettings(page, ctx);
+      await submitSettings(page, '[hx-post="/config/deployments/refresh"]', '/config/deployments/refresh');
+      await scrollSettingsTo(page, '.foundry-resource');
+    },
+  },
+  {
+    id: 'model-defaults',
+    langs: ['en', 'de'],
+    meta: {
+      en: {
+        title: 'Defaults for each operation',
+        caption: 'Chat, embedding, image and vision defaults use supported inventory entries. The active embedding profile and completed local rebuild are shown below.',
+      },
+      de: {
+        title: 'Standard-Deployments je Aufgabe',
+        caption: 'Chat, Embeddings, Bilder und Vision verwenden unterstützte Inventar-Einträge. Darunter stehen das aktive Embedding-Profil und der abgeschlossene lokale Neuaufbau.',
+      },
+    },
+    capture: async (page, ctx) => {
+      await openSettings(page, ctx);
+      await page.locator('#embedding-index .config-saved').waitFor();
+      await scrollSettingsTo(page, 'select[name="chat_deployment"]');
+    },
+  },
+  {
+    id: 'embedding-reindex',
+    langs: ['en', 'de'],
+    meta: {
+      en: {
+        title: 'Embedding changes require consent',
+        caption: 'Saving a new embedding default does not relabel the old vectors. The staged rebuild requires explicit consent after showing corpus counts and an API cost warning.',
+      },
+      de: {
+        title: 'Embedding-Wechsel mit Bestätigung',
+        caption: 'Ein neuer Embedding-Standard ändert bestehende Vektoren nicht. Der getrennte Neuaufbau erfordert eine Bestätigung mit Dokumentanzahl und Hinweis auf API-Kosten.',
+      },
+    },
+    capture: async (page, ctx) => {
+      await openSettings(page, ctx);
+      const embedding = page.locator('.config-form select[name="embedding_deployment"]');
+      const current = await embedding.inputValue();
+      const alternative = await embedding.locator('option').evaluateAll(
+        (options, selected) => options.map((option) => option.value).find((value) => value && value !== selected),
+        current,
+      );
+      if (!alternative) throw new Error('Foundry demo has no alternative embedding deployment');
+      await embedding.selectOption(alternative);
+      await submitSettings(page, '.config-form button[type="submit"]', '/config');
+      await page.locator('#embedding-index input[name="confirm_reindex"]').waitFor();
+      await scrollSettingsTo(page, 'select[name="chat_deployment"]');
     },
   },
   {
@@ -205,9 +231,53 @@ async function open(page, path) {
   await page.evaluate(() => document.fonts.ready);
 }
 
+async function openSettings(page, ctx) {
+  if (!ctx.index.foundry) throw new Error('Settings screenshots require the Foundry demo fixture');
+  await open(page, `/chat/${ctx.index.chats.chat}`);
+  await page.click('.btn-config[hx-get="/config"]');
+  await page.locator('.foundry-inventory').waitFor();
+  const resources = page.locator('.config-form .foundry-resource code');
+  if ((await resources.count()) !== 2) throw new Error('Foundry resource and endpoint must be visible');
+  if (!(await resources.nth(1).innerText()).startsWith('http://127.0.0.1:')) {
+    throw new Error('Settings demo must keep its real loopback endpoint');
+  }
+  for (const name of ['chat_deployment', 'embedding_deployment', 'image_deployment', 'vision_deployment']) {
+    const field = page.locator(`.config-form select[name="${name}"]`);
+    await field.waitFor();
+    if (!(await field.inputValue())) throw new Error(`Foundry demo default is missing: ${name}`);
+  }
+  // Foundry renders connection metadata read-only, not as per-role URL inputs.
+  if (await page.locator('.config-form input[name="endpoint"], .config-form input[name="embedding_endpoint"], .config-form input[name="image_endpoint"]').count()) {
+    throw new Error('Foundry settings unexpectedly contain editable inference endpoints');
+  }
+  await page.locator('#embedding-index').waitFor();
+}
+
+async function submitSettings(page, selector, path) {
+  const responsePromise = page.waitForResponse(
+    (response) => response.url() === base + path && response.request().method() === 'POST',
+  );
+  await page.locator(selector).click();
+  const response = await responsePromise;
+  if (!response.ok()) throw new Error(`Settings request failed: ${path} (${response.status()})`);
+  await page.waitForFunction(() => !document.querySelector('#modal-root .htmx-request'));
+  if (await page.locator('.config-notice-err').count()) {
+    throw new Error(`Settings request reported an error: ${path}`);
+  }
+}
+
+async function scrollSettingsTo(page, selector) {
+  await page.locator(`.config-form ${selector}`).first().evaluate((element) => {
+    const anchor = element.closest('label') ?? element;
+    const modal = element.closest('.modal');
+    modal.scrollTop += anchor.getBoundingClientRect().top - modal.getBoundingClientRect().top - 90;
+  });
+  await sleep(200);
+}
+
 /** Starts the demo binary on a scratch data path. */
 function startDemo(dataDir, lang) {
-  const proc = spawn(binary, ['-port', String(port), '-data', dataDir, '-lang', lang, '-reset'], {
+  const proc = spawn(binary, ['-port', String(port), '-data', dataDir, '-lang', lang, '-reset', '-foundry'], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   proc.stderr.on('data', (chunk) => process.stderr.write(`[demo] ${chunk}`));
@@ -215,8 +285,11 @@ function startDemo(dataDir, lang) {
 }
 
 /** Waits until the demo answers on /healthz. */
-async function waitForDemo() {
+async function waitForDemo(proc) {
   for (let attempt = 0; attempt < 100; attempt++) {
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      throw new Error(`demo exited before startup (${proc.exitCode ?? proc.signalCode})`);
+    }
     try {
       const response = await fetch(`${base}/healthz`);
       if (response.ok) return;
@@ -233,10 +306,10 @@ async function main() {
   const manifest = [];
 
   for (const lang of languages) {
-    const dataDir = await mkdtemp(join(tmpdir(), `ai-ui-demo-${lang}-`));
+    const dataDir = await mkdtemp(resolve(`.ai-ui-demo-${lang}-`));
     const demo = startDemo(dataDir, lang);
     try {
-      await waitForDemo();
+      await waitForDemo(demo);
       const index = JSON.parse(await readFile(join(dataDir, 'demo-index.json'), 'utf8'));
       const browser = await chromium.launch(launchOptions);
       try {
@@ -274,8 +347,10 @@ async function main() {
         await browser.close();
       }
     } finally {
-      demo.kill('SIGTERM');
-      await once(demo, 'exit');
+      if (demo.exitCode === null && demo.signalCode === null) {
+        demo.kill('SIGTERM');
+        await once(demo, 'exit');
+      }
       await rm(dataDir, { recursive: true, force: true });
     }
   }

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -33,10 +34,27 @@ type Server struct {
 	tmpl      *template.Template
 	ready     *readiness
 	logs      *logbuf.Buffer
+	ctx       context.Context
+	cancel    context.CancelFunc
+	jobs      sync.WaitGroup
+	refreshMu sync.Mutex
+	configMu  sync.Mutex
+	closing   bool // guarded by configMu
 }
 
 // New creates a server and parses the templates.
 func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
+	ctx, cancel := context.WithCancel(context.Background())
+	if status := cfg.FoundryStatus(); status.Enabled {
+		snapshot, ok, err := store.LoadCatalog(ctx, status.ResourceID)
+		if err == nil && ok {
+			err = cfg.SetCatalog(snapshot)
+		}
+		if err != nil {
+			cfg.SetDiscoveryError(err)
+			slog.Warn("load deployment catalog", "err", err)
+		}
+	}
 	client := llm.New(cfg)
 	// Persist token usage in the database.
 	client.SetUsageRecorder(usageRecorder{store: store})
@@ -66,6 +84,7 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 		ParseFS(web.TemplatesFS, "templates/*.html"))
 
 	return &Server{
+		ctx: ctx, cancel: cancel,
 		cfg:   cfg,
 		store: store,
 		llm:   client,
@@ -81,6 +100,26 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 		ready:     &readiness{},
 		logs:      logs,
 	}
+}
+
+// Close cancels in-flight indexing work before its database is closed.
+func (s *Server) Close() {
+	s.cancel()
+	// A reindex handler must finish registering its job before Wait starts.
+	s.configMu.Lock()
+	s.closing = true
+	s.configMu.Unlock()
+	s.jobs.Wait()
+}
+
+func (s *Server) requestContext(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithCancel(r.Context())
+		stop := context.AfterFunc(s.ctx, cancel)
+		defer stop()
+		defer cancel()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // t translates a key into the configured UI language.
@@ -110,6 +149,7 @@ func (u usageRecorder) RecordUsage(kind, model string, usage llm.Usage) {
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
+	r.Use(s.requestContext)
 	// middleware.RealIP is deliberately not used: it trusts X-Forwarded-For and
 	// friends unconditionally, which allows a client to spoof its address
 	// (GHSA-3fxj-6jh8-hvhx). Nothing here reads r.RemoteAddr, and the reverse
@@ -153,6 +193,9 @@ func (s *Server) Routes() http.Handler {
 
 	r.Get("/config", s.handleConfigGet)
 	r.Post("/config", s.handleConfigPost)
+	r.Post("/config/deployments/refresh", s.handleDeploymentRefresh)
+	r.Post("/config/embeddings/reindex", s.handleReindex)
+	r.Get("/config/embeddings/status", s.handleReindexStatus)
 	r.Post("/chat/{id}/model", s.handleSetModel)
 	r.Post("/chat/{id}/mode", s.handleSetMode)
 	r.Post("/chat/{id}/reasoning", s.handleSetReasoning)

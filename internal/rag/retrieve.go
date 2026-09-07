@@ -2,6 +2,7 @@ package rag
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 
@@ -43,6 +44,27 @@ func NewRetriever(store *storage.Store, client *llm.Client) *Retriever {
 // the handful of selected hits only, which keeps peak memory independent of the
 // corpus size.
 func (r *Retriever) Retrieve(ctx context.Context, chatID int64, query string, topK int) ([]Result, error) {
+	var result []Result
+	err := r.store.WithEmbeddingProfile(ctx, func(profile storage.EmbeddingProfile, known bool) error {
+		embed := func(ctx context.Context, inputs []string) ([][]float32, error) {
+			if known {
+				return r.llm.EmbedProfile(ctx, profile, inputs)
+			}
+			if r.llm.UsesFoundry() {
+				return nil, storage.ErrReindexRequired
+			}
+			return r.llm.Embed(ctx, inputs)
+		}
+		var err error
+		result, err = r.retrieve(ctx, chatID, query, topK, embed, known)
+		return err
+	})
+	return result, err
+}
+
+func (r *Retriever) retrieve(ctx context.Context, chatID int64, query string, topK int,
+	embed func(context.Context, []string) ([][]float32, error), knownProfile bool,
+) ([]Result, error) {
 	count, err := r.store.CountChunksByChat(ctx, chatID)
 	if err != nil {
 		return nil, err
@@ -51,7 +73,7 @@ func (r *Retriever) Retrieve(ctx context.Context, chatID int64, query string, to
 		return nil, nil
 	}
 
-	vecs, err := r.llm.Embed(ctx, []string{query})
+	vecs, err := embed(ctx, []string{query})
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +89,9 @@ func (r *Retriever) Retrieve(ctx context.Context, chatID int64, query string, to
 	scored := make([]candidate, 0, count)
 	err = r.store.EachChunkVector(ctx, chatID, func(cv storage.ChunkVector) error {
 		if len(cv.Embedding) != len(qv) {
+			if knownProfile {
+				return fmt.Errorf("stored vectors do not match the active embedding profile")
+			}
 			return nil // skip incompatible dimensions (e.g. after a model change)
 		}
 		scored = append(scored, candidate{

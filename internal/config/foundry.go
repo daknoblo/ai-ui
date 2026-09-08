@@ -15,6 +15,7 @@ import (
 // FoundrySource is implemented by the Azure client and the credential-free demo.
 type FoundrySource interface {
 	Refresh(context.Context, string) (foundry.Snapshot, error)
+	ImageModels(context.Context, string) ([]foundry.Deployment, error)
 	Authorize(*http.Request) error
 }
 
@@ -81,7 +82,39 @@ func (s *Store) Discover(ctx context.Context) (foundry.Snapshot, error) {
 	if source == nil {
 		return foundry.Snapshot{}, fmt.Errorf("no Foundry identity configured")
 	}
-	return source.Refresh(ctx, override)
+	snapshot, err := source.Refresh(ctx, override)
+	if err != nil {
+		return foundry.Snapshot{}, err
+	}
+	images, imageErr := source.ImageModels(ctx, snapshot.Endpoint)
+	if err := ctx.Err(); err != nil {
+		return foundry.Snapshot{}, err
+	}
+	snapshot.ImageCatalogChecked = true
+	if imageErr != nil {
+		images = nil
+		snapshot.ImageCatalogError = imageErr.Error()
+		previous := s.FoundryStatus().Catalog
+		if strings.EqualFold(previous.ResourceID, snapshot.ResourceID) && previous.Endpoint == snapshot.Endpoint {
+			for _, model := range previous.Deployments {
+				if model.Source == foundry.ModelsAPISource {
+					images = append(images, model)
+				}
+			}
+		}
+	}
+	for _, image := range images {
+		if image.Source != foundry.ModelsAPISource || !image.Supports(foundry.Images) {
+			return foundry.Snapshot{}, fmt.Errorf("image catalog returned an invalid model reference")
+		}
+		exists := slices.ContainsFunc(snapshot.Deployments, func(deployment foundry.Deployment) bool {
+			return strings.EqualFold(deployment.Name, image.Name)
+		})
+		if !exists {
+			snapshot.Deployments = append(snapshot.Deployments, image)
+		}
+	}
+	return snapshot, nil
 }
 
 func (s *Store) SetDiscoveryError(err error) {

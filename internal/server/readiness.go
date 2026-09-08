@@ -5,13 +5,31 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/daknoblo/ai-ui/internal/foundry"
 )
 
 // checkResult is the outcome of a single readiness check.
 type checkResult struct {
-	Name   string
-	OK     bool
-	Detail string
+	Name    string
+	OK      bool
+	Detail  string
+	Target  string
+	Skipped bool
+	Info    bool
+}
+
+func (r checkResult) State() string {
+	if r.Skipped {
+		return "skipped"
+	}
+	if !r.OK {
+		return "err"
+	}
+	if r.Info {
+		return "info"
+	}
+	return "ok"
 }
 
 // readiness holds the verified state of the required dependencies (storage,
@@ -51,7 +69,7 @@ func (r *readiness) epoch() uint64 {
 	return r.generation
 }
 
-func (r *readiness) finish(generation uint64, storageOK, chatOK, embeddingOK, optional bool, results []checkResult, deep bool) bool {
+func (r *readiness) finish(generation uint64, storageOK, chatOK, embeddingOK, optional bool, results []checkResult, recordResults bool) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.generation != generation {
@@ -60,7 +78,7 @@ func (r *readiness) finish(generation uint64, storageOK, chatOK, embeddingOK, op
 	r.storageOK, r.chatOK, r.embeddingOK = storageOK, chatOK, embeddingOK
 	r.embeddingOptional = optional
 	r.checkedAt = time.Now()
-	if deep {
+	if recordResults {
 		r.results, r.resultsAt = results, r.checkedAt
 	}
 	return true
@@ -144,26 +162,69 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 	}
 	results = append(results, checkResult{Name: s.t("check.storage"), OK: storageOK, Detail: storageDetail})
 
-	// 2. Chat endpoint reachable.
+	if status := s.cfg.FoundryStatus(); status.Enabled {
+		catalog := checkResult{Name: s.t("check.foundry_inventory"), Info: true}
+		switch {
+		case status.IdentityError != "":
+			catalog.Detail = status.IdentityError
+		case status.RefreshError != "":
+			catalog.Detail = status.RefreshError
+		case status.Catalog.RefreshedAt.IsZero():
+			catalog.Skipped, catalog.Detail = true, s.t("check.refresh_first")
+		default:
+			catalog.OK, catalog.Detail = true, s.t("check.catalog_cached", formatCheckTime(status.Catalog.RefreshedAt))
+		}
+		results = append(results, catalog)
+		images := checkResult{Name: s.t("check.image_catalog"), Info: true}
+		switch {
+		case status.Catalog.ImageCatalogError != "":
+			images.Detail = status.Catalog.ImageCatalogError
+		case !status.Catalog.ImageCatalogChecked:
+			images.Skipped, images.Detail = true, s.t("check.refresh_first")
+		default:
+			images.OK, images.Detail = true, s.t("check.image_catalog_listed")
+		}
+		results = append(results, images)
+	}
+
+	// 2. Check saved selections, not unsaved values in the settings form.
 	chatOK := true
 	chatDetail := s.t("check.reachable")
-	if err := s.llm.VerifyChat(ctx); err != nil {
+	chatSkipped := cfg.ChatDeployment == ""
+	if chatSkipped {
+		chatOK, chatDetail = false, s.t("check.select_model")
+	} else if err := s.llm.VerifyChat(ctx); err != nil {
 		chatOK = false
 		chatDetail = err.Error()
 	}
-	results = append(results, checkResult{Name: s.t("check.chat_endpoint"), OK: chatOK, Detail: chatDetail})
+	results = append(results, checkResult{Name: s.t("check.chat_endpoint"), Target: cfg.ChatDeployment,
+		OK: chatOK, Detail: chatDetail, Skipped: chatSkipped})
 
 	// 3. Embedding endpoint reachable & returning vectors.
 	embeddingOK := true
 	embeddingDetail := s.t("check.reachable")
-	if embeddingOptional {
+	embeddingSkipped := cfg.EmbeddingDeployment == ""
+	embeddingTarget := cfg.EmbeddingDeployment
+	if embeddingSkipped {
 		embeddingOK = false
-		embeddingDetail = s.t("foundry.not_configured")
+		embeddingDetail = s.t("check.optional_not_configured")
 	} else if err := s.verifyActiveEmbedding(ctx); err != nil {
 		embeddingOK = false
 		embeddingDetail = err.Error()
 	}
-	results = append(results, checkResult{Name: s.t("check.embedding_endpoint"), OK: embeddingOK, Detail: embeddingDetail})
+	if cfg.Foundry && !embeddingSkipped {
+		active, known, err := s.store.ActiveEmbeddingProfile(ctx)
+		if err != nil {
+			embeddingOK, embeddingDetail = false, err.Error()
+		} else if known {
+			embeddingTarget = active.Deployment
+			if embeddingOK && active.Deployment != cfg.EmbeddingDeployment {
+				embeddingDetail = s.t("check.embedding_active", cfg.EmbeddingDeployment)
+			}
+		}
+	}
+	results = append(results, checkResult{Name: s.t("check.embedding_endpoint"), Target: embeddingTarget,
+		OK: embeddingOK, Detail: embeddingDetail, Skipped: embeddingSkipped})
 
 	// 4. Web search (informational only; it never blocks uploads). Checked only
 	//    when a provider is configured.
@@ -191,25 +252,68 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 		}
 	}
 
-	// 6. Image deployments. The probe sends an incomplete request on purpose, so
-	//    it costs nothing but still proves endpoint, deployment and key.
-	if deep && s.cfg.ImagesConfigured() {
+	if cfg.Foundry {
+		vision := checkResult{Name: s.t("check.vision_endpoint"), Target: cfg.VisionDeployment, Info: true}
+		if vision.Target == "" {
+			if _, err := s.cfg.ResolveDeployment(foundry.Vision, cfg.ChatDeployment); err == nil {
+				vision.Target = cfg.ChatDeployment
+			}
+		}
+		switch {
+		case vision.Target == "":
+			vision.Skipped, vision.Detail = true, s.t("check.optional_not_configured")
+		case !deep:
+			vision.Skipped, vision.Detail = true, s.t("check.manual_only")
+		default:
+			_, err := s.cfg.ResolveDeployment(foundry.Vision, vision.Target)
+			if err == nil {
+				if vision.Target == cfg.ChatDeployment {
+					vision.OK = chatOK
+					vision.Detail = chatDetail
+				} else if err := s.llm.VerifyDeployment(ctx, vision.Target); err != nil {
+					vision.Detail = err.Error()
+				} else {
+					vision.OK = true
+				}
+			} else {
+				vision.Detail = err.Error()
+			}
+			if vision.OK {
+				vision.Detail = s.t("check.vision_metadata_only")
+			}
+		}
+		results = append(results, vision)
+	}
+
+	// An incomplete image request must never be presented as a successful generation.
+	if cfg.ImageDeployment == "" {
+		if cfg.Foundry {
+			results = append(results, checkResult{Name: s.t("check.image_endpoint"),
+				Skipped: true, Detail: s.t("check.optional_not_configured")})
+		}
+	} else if !deep {
+		if cfg.Foundry {
+			results = append(results, checkResult{Name: s.t("check.image_endpoint"), Target: cfg.ImageDeployment,
+				Skipped: true, Detail: s.t("check.manual_only")})
+		}
+	} else {
 		models := cfg.ImageModels
 		if cfg.Foundry {
 			models = []string{cfg.ImageDeployment}
 		}
 		for _, model := range models {
-			detail := s.t("check.reachable")
+			detail := s.t("check.image_probe_only")
 			ok := true
 			if err := s.llm.VerifyImage(ctx, model); err != nil {
 				ok = false
 				detail = err.Error()
 			}
-			results = append(results, checkResult{Name: s.t("check.image_deployment", model), OK: ok, Detail: detail})
+			results = append(results, checkResult{Name: s.t("check.image_endpoint"), Target: model,
+				OK: ok, Detail: detail, Info: true})
 		}
 	}
 
-	if !s.ready.finish(generation, storageOK, chatOK, embeddingOK, embeddingOptional, results, deep) {
+	if !s.ready.finish(generation, storageOK, chatOK, embeddingOK, embeddingOptional, results, true) {
 		results = append(results, checkResult{Name: s.t("config.title"), Detail: s.t("foundry.check_changed")})
 	}
 	return results
@@ -230,7 +334,7 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 	}
 	check := func(reason string, deep bool) {
 		// Without the minimum configuration an endpoint check is pointless.
-		if !s.cfg.IsConfigured() {
+		if !s.cfg.IsConfigured() && !s.cfg.FoundryStatus().Enabled {
 			slog.Info("connection check skipped (not configured)", "reason", reason)
 			return
 		}
@@ -244,7 +348,7 @@ func (s *Server) Monitor(ctx context.Context, interval time.Duration) {
 			slog.Info("connection ready", "reason", reason)
 		case !cur.AllOK:
 			for _, r := range results {
-				if !r.OK {
+				if !r.OK && !r.Skipped {
 					slog.Warn("connection check failed", "reason", reason, "check", r.Name, "detail", r.Detail)
 				}
 			}

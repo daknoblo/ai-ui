@@ -257,14 +257,22 @@ func (c *Client) paginationURL(current, raw string) (string, error) {
 }
 
 func (c *Client) getJSON(ctx context.Context, endpoint, action string, target any, budget *int64) error {
+	return c.getJSONWithScope(ctx, endpoint, "ARM "+action, armScope, target, budget)
+}
+
+func (c *Client) getJSONWithScope(ctx context.Context, endpoint, action, scope string, target any, budget *int64) error {
+	authentication := "management authentication"
+	if scope == inferenceScope {
+		authentication = "inference authentication"
+	}
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		token, err := c.token(ctx, armScope, "management authentication")
+		token, err := c.token(ctx, scope, authentication)
 		if err != nil {
 			return err
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
-			return errors.New("azure ARM request construction failed")
+			return errors.New("azure " + action + " request construction failed")
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Accept", "application/json")
@@ -273,10 +281,10 @@ func (c *Client) getJSON(ctx context.Context, endpoint, action string, target an
 		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 		response, err := client.Do(req)
 		if err != nil {
-			return safeError(ctx, err, "azure ARM "+action+" request")
+			return safeError(ctx, err, "azure "+action+" request")
 		}
 		if response.StatusCode != http.StatusOK {
-			err := responseError("azure ARM "+action, response.StatusCode, response.Header)
+			err := responseError("azure "+action, response.StatusCode, response.Header)
 			// Error bodies may contain sensitive details; do not read or propagate them.
 			_ = response.Body.Close()
 			if !retryable(response.StatusCode) || attempt+1 >= maxAttempts {
@@ -293,7 +301,7 @@ func (c *Client) getJSON(ctx context.Context, endpoint, action string, target an
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				return fmt.Errorf("azure ARM retry interrupted: %w", ctx.Err())
+				return fmt.Errorf("azure %s retry interrupted: %w", action, ctx.Err())
 			case <-timer.C:
 			}
 			continue
@@ -304,11 +312,11 @@ func (c *Client) getJSON(ctx context.Context, endpoint, action string, target an
 		}
 		*budget -= int64(len(body))
 		if err := json.Unmarshal(body, target); err != nil {
-			return errors.New("azure ARM response is not a valid JSON document with the expected field types")
+			return errors.New("azure " + action + " response is not valid JSON with the expected field types")
 		}
 		return nil
 	}
-	return errors.New("azure ARM retry limit exceeded")
+	return errors.New("azure " + action + " retry limit exceeded")
 }
 
 func readResponse(ctx context.Context, response *http.Response, budget int64) ([]byte, error) {
@@ -318,14 +326,14 @@ func readResponse(ctx context.Context, response *http.Response, budget int64) ([
 	}()
 	limit := min(int64(maxResponseBytes), budget)
 	if response.ContentLength > limit {
-		return nil, errors.New("azure ARM response exceeds the catalog size limit")
+		return nil, errors.New("azure response exceeds the catalog size limit")
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
-		return nil, safeError(ctx, err, "azure ARM response read")
+		return nil, safeError(ctx, err, "azure response read")
 	}
 	if int64(len(body)) > limit {
-		return nil, errors.New("azure ARM response exceeds the catalog size limit")
+		return nil, errors.New("azure response exceeds the catalog size limit")
 	}
 	return body, nil
 }

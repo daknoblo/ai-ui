@@ -25,7 +25,15 @@ type deploymentChoice struct {
 }
 
 type deploymentRow struct {
-	Name, Model, Version, State, Support string
+	Name, Model, Version, Format, State, Source, Detail string
+	Operations                                          []string
+	APIModel, Ready                                     bool
+}
+
+type deploymentGroup struct {
+	Title       string
+	Models      []deploymentRow
+	Unsupported bool
 }
 
 type deploymentField struct {
@@ -37,11 +45,12 @@ type deploymentField struct {
 type foundryView struct {
 	config.FoundryStatus
 	ChatChoices, EmbeddingChoices, ImageChoices, VisionChoices []deploymentChoice
-	Deployments                                                []deploymentRow
+	Groups                                                     []deploymentGroup
 	Fields                                                     []deploymentField
 	UpdatedAt                                                  string
 	Index                                                      embeddingIndexView
 	ChatFilterActive, ImageFilterActive                        bool
+	EmptyImageInventory                                        bool
 }
 
 type embeddingIndexView struct {
@@ -99,6 +108,9 @@ func (s *Server) refreshFoundry(ctx context.Context) error {
 		slog.Warn("deployment refresh failed", "err", err)
 		return err
 	}
+	if snapshot.ImageCatalogError != "" {
+		slog.Warn("image model catalog unavailable", "err", snapshot.ImageCatalogError)
+	}
 	if changed {
 		s.ready.invalidate()
 	}
@@ -113,6 +125,10 @@ func (s *Server) handleDeploymentRefresh(w http.ResponseWriter, r *http.Request)
 	}
 	if err := s.refreshFoundry(r.Context()); err != nil {
 		s.renderConfigNotice(w, s.t("foundry.refresh_failed", err.Error()), true)
+		return
+	}
+	if message := s.cfg.FoundryStatus().Catalog.ImageCatalogError; message != "" {
+		s.renderConfigNotice(w, s.t("foundry.partial_refresh", message), true)
 		return
 	}
 	s.renderConfigNotice(w, s.t("foundry.refreshed"), false)
@@ -132,9 +148,11 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 			if err != nil {
 				continue // An explicit environment list may exclude this deployment.
 			}
-			choices = append(choices, deploymentChoice{
-				Name: name, Label: name + " (" + deployment.ModelName + ")",
-			})
+			label := name
+			if deployment.ModelName != "" && deployment.ModelName != name {
+				label += " (" + deployment.ModelName + ")"
+			}
+			choices = append(choices, deploymentChoice{Name: name, Label: label})
 		}
 		return choices
 	}
@@ -158,6 +176,12 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 			}
 		}
 	}
+	view.Groups = []deploymentGroup{
+		{Title: s.t("foundry.chat")},
+		{Title: s.t("foundry.embeddings")},
+		{Title: s.t("foundry.images")},
+		{Title: s.t("foundry.unsupported_group"), Unsupported: true},
+	}
 	for _, deployment := range status.Catalog.Deployments {
 		var support []string
 		for _, capability := range []struct {
@@ -172,15 +196,41 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 				support = append(support, s.t(capability.key))
 			}
 		}
-		supportText := strings.Join(support, ", ")
-		if supportText == "" {
-			supportText = s.t("foundry.unsupported_detail", deployment.UnsupportedReason(foundry.Chat))
-		}
-		view.Deployments = append(view.Deployments, deploymentRow{
+		row := deploymentRow{
 			Name: deployment.Name, Model: deployment.ModelName, Version: deployment.ModelVersion,
-			State: deployment.ProvisioningState, Support: supportText,
-		})
+			Format: deployment.ModelFormat, Operations: support,
+			APIModel: deployment.Source == foundry.ModelsAPISource,
+		}
+		if row.APIModel {
+			row.Source = s.t("foundry.source_models_api")
+			row.State = s.t("foundry.image_not_tested")
+		} else {
+			row.Source = s.t("foundry.source_deployment")
+			row.State = deployment.ProvisioningState
+			row.Ready = strings.EqualFold(deployment.ProvisioningState, "Succeeded")
+			if row.Ready {
+				row.State = s.t("foundry.deployment_ready")
+			}
+		}
+		if row.Version == "" {
+			row.Version = s.t("foundry.version_default")
+		}
+		group := 3
+		switch {
+		case deployment.Supports(foundry.Images):
+			group = 2
+		case deployment.Supports(foundry.Embeddings):
+			group = 1
+		case deployment.Supports(foundry.Chat):
+			group = 0
+		}
+		if group == 3 {
+			row.Detail = deployment.UnsupportedReason(foundry.Chat)
+			row.Ready = false
+		}
+		view.Groups[group].Models = append(view.Groups[group].Models, row)
 	}
+	view.EmptyImageInventory = len(view.Groups[2].Models) == 0
 	view.Index = s.embeddingIndexData(ctx)
 	return view
 }

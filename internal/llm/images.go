@@ -229,10 +229,8 @@ func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, 
 	return c.sendImageRequest(req, url, deployment, opts.Format)
 }
 
-// VerifyImage checks endpoint, deployment and key of the image surface without
-// generating anything: the request is deliberately incomplete, so a rejected
-// payload (400) proves that the call arrived authenticated, while 401 or 404
-// point at the key or the deployment.
+// VerifyImage checks for the expected missing-prompt validation response without
+// generating an image. This does not prove generation permission or model access.
 func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
 	cfg := c.store.Get()
 	endpoint := cfg.ImageHost()
@@ -247,9 +245,15 @@ func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	body := []byte(`{}`)
+	model := ""
 	if IsV1Endpoint(endpoint) {
-		body, _ = json.Marshal(imageRequest{Model: deployment})
+		model = deployment
+	}
+	body, err := json.Marshal(struct {
+		Model string `json:"model,omitempty"`
+	}{Model: model})
+	if err != nil {
+		return err
 	}
 	url := imagesURL(endpoint, deployment, imageAPIVersion(cfg))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
@@ -267,10 +271,35 @@ func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusBadRequest {
+	message := errorBody(resp)
+	if resp.StatusCode == http.StatusBadRequest && missingImagePrompt(message) {
 		return nil
 	}
-	return fmt.Errorf("%s: %w", url, readError(resp))
+	return fmt.Errorf("image API probe returned HTTP %d instead of the expected missing-prompt response: %s", resp.StatusCode, message)
+}
+
+func missingImagePrompt(body string) bool {
+	var payload struct {
+		Error struct {
+			Code    string `json:"code"`
+			Param   string `json:"param"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		return false
+	}
+	if payload.Error.Param != "" && payload.Error.Param != "prompt" {
+		return false
+	}
+	switch strings.ToLower(payload.Error.Code) {
+	case "", "invalid_request_error", "missing_required_parameter", "invalidpayload", "invalidrequest":
+	default:
+		return false
+	}
+	message := strings.ToLower(payload.Error.Message)
+	return strings.Contains(message, "prompt") &&
+		(strings.Contains(message, "missing") || strings.Contains(message, "required"))
 }
 
 // sourceFileName keeps the extension the endpoint uses to detect the format.

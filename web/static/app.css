@@ -667,10 +667,28 @@ html, body {
 /* Read-only list of the models handed in via AZURE_MODELS. */
 .config-form .config-label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 5px; }
 .model-list { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
-.foundry-resource { overflow-wrap: anywhere; }
-.foundry-inventory { overflow-x: auto; min-width: 0; }
-.foundry-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.foundry-table th, .foundry-table td { padding: 8px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.foundry-connection { display: grid; gap: 14px; margin: 14px 0; min-width: 0; }
+.foundry-resource { min-width: 0; }
+.config-form .config-readonly { font: inherit; line-height: 1.5; color: var(--text-dim); }
+.config-form textarea.config-readonly { field-sizing: content; resize: vertical; overflow-wrap: anywhere; min-height: 4.5em; }
+.foundry-inventory { display: grid; gap: 18px; min-width: 0; }
+.foundry-model-group h3, .foundry-model-group summary { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--text); }
+.foundry-model-group summary { cursor: pointer; }
+.foundry-count { display: inline-block; margin-left: 5px; padding: 1px 6px; border-radius: 8px; background: var(--bg); font-size: 11px; color: var(--text-dim); }
+.foundry-model-list { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.foundry-model { padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); min-width: 0; }
+.foundry-model-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.foundry-model-head strong { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.foundry-state { font-size: 11px; color: var(--text-dim); }
+.foundry-state.ok { color: var(--accent); }
+.foundry-state.warn { color: var(--warn); }
+.foundry-model-meta { display: flex; flex-wrap: wrap; gap: 5px 18px; margin: 8px 0; font-size: 12px; color: var(--text-dim); }
+.foundry-model-meta div { display: flex; gap: 5px; min-width: 0; }
+.foundry-model-meta dt { opacity: .7; }
+.foundry-model-meta dd { margin: 0; overflow-wrap: anywhere; }
+.foundry-capabilities { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 0; }
+.foundry-capabilities li { padding: 3px 7px; border-radius: 5px; background: rgba(16,163,127,.10); color: var(--accent); font-size: 11px; }
+.foundry-model-note, .foundry-empty { margin: 8px 0 0; font-size: 12px; color: var(--text-dim); overflow-wrap: anywhere; }
 .model-list li {
 	background: var(--bg);
 	border: 1px solid var(--border);
@@ -746,7 +764,7 @@ html, body {
 .check-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .check {
 	display: grid;
-	grid-template-columns: auto auto 1fr;
+	grid-template-columns: auto minmax(0, 1fr);
 	gap: 8px;
 	align-items: baseline;
 	font-size: 13px;
@@ -758,7 +776,11 @@ html, body {
 .check-icon { font-weight: 700; }
 .check.ok .check-icon { color: var(--accent); }
 .check.err .check-icon { color: var(--danger); }
-.check-name { color: var(--text); white-space: nowrap; }
+.check.info .check-icon, .check.skipped .check-icon { color: var(--text-dim); }
+.check-body { min-width: 0; display: grid; gap: 4px; }
+.check-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.check-name { color: var(--text); }
+.check-target { color: var(--text-dim); font-size: 12px; overflow-wrap: anywhere; }
 .check-detail { color: var(--text-dim); overflow-wrap: anywhere; }
 
 /* ---------- Statistics page ---------- */

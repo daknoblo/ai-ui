@@ -20,6 +20,10 @@ import (
 
 type llmIdentity struct{}
 
+func (llmIdentity) ImageModels(context.Context, string) ([]foundry.Deployment, error) {
+	return nil, nil
+}
+
 func (llmIdentity) Refresh(context.Context, string) (foundry.Snapshot, error) {
 	return foundry.Snapshot{}, fmt.Errorf("discovery is not used by inference")
 }

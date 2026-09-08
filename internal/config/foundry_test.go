@@ -16,6 +16,10 @@ import (
 
 type testFoundrySource struct{}
 
+func (testFoundrySource) ImageModels(context.Context, string) ([]foundry.Deployment, error) {
+	return nil, nil
+}
+
 func (testFoundrySource) Refresh(context.Context, string) (foundry.Snapshot, error) {
 	return foundry.Snapshot{}, errors.New("offline")
 }

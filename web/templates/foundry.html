@@ -2,10 +2,19 @@
 <div class="config-section-head">{{t "foundry.title"}}</div>
 <div class="config-full">
 	<p class="hint">{{t "foundry.identity_hint"}}</p>
-	<p class="foundry-resource"><strong>{{t "foundry.resource"}}</strong><br><code>{{.ResourceID}}</code></p>
-	<p class="foundry-resource"><strong>{{t "config.endpoint"}}</strong><br>{{if .Catalog.Endpoint}}<code>{{.Catalog.Endpoint}}</code>{{else}}{{t "foundry.not_discovered"}}{{end}}</p>
+	<div class="foundry-connection">
+		<label class="foundry-resource" for="foundry-resource-id">
+			{{t "foundry.resource"}}
+			<textarea id="foundry-resource-id" class="config-readonly" rows="3" readonly spellcheck="false">{{.ResourceID}}</textarea>
+		</label>
+		<label class="foundry-resource" for="foundry-endpoint">
+			{{t "config.endpoint"}}
+			<input id="foundry-endpoint" class="config-readonly" type="text" readonly value="{{.Catalog.Endpoint}}" placeholder="{{t "foundry.not_discovered"}}">
+		</label>
+	</div>
 	{{if .IdentityError}}<div class="config-notice-err">{{t "foundry.identity_error" .IdentityError}}</div>{{end}}
 	{{if .RefreshError}}<div class="config-notice-err">{{t "foundry.stale" .RefreshError}}</div>{{end}}
+	{{if .Catalog.ImageCatalogError}}<div class="config-notice-err">{{t "foundry.image_catalog_error" .Catalog.ImageCatalogError}}</div>{{end}}
 	<p class="hint">{{if .UpdatedAt}}{{t "foundry.updated_at" .UpdatedAt}}{{else}}{{t "foundry.not_discovered"}}{{end}}</p>
 	<button type="button" class="btn btn-ghost" hx-post="/config/deployments/refresh"
 		hx-target="#modal-root" hx-swap="innerHTML" hx-params="none"
@@ -14,25 +23,51 @@
 	</button>
 	<span id="foundry-refresh-indicator" class="htmx-indicator hint">{{t "foundry.refreshing"}}</span>
 </div>
-{{if .Deployments}}
 <div class="config-full foundry-inventory">
-	<table class="foundry-table">
-		<thead><tr>
-			<th>{{t "foundry.deployment"}}</th><th>{{t "foundry.model"}}</th>
-			<th>{{t "foundry.version"}}</th><th>{{t "foundry.state"}}</th><th>{{t "foundry.support"}}</th>
-		</tr></thead>
-		<tbody>{{range .Deployments}}<tr>
-			<td>{{.Name}}</td><td>{{.Model}}</td><td>{{.Version}}</td><td>{{.State}}</td><td>{{.Support}}</td>
-		</tr>{{end}}</tbody>
-	</table>
+	{{range .Groups}}{{if .Models}}
+	{{if .Unsupported}}
+	<details class="foundry-model-group">
+		<summary>{{.Title}} <span class="foundry-count">{{len .Models}}</span></summary>
+		{{template "foundry-model-list" .}}
+	</details>
+	{{else}}
+	<section class="foundry-model-group">
+		<h3>{{.Title}} <span class="foundry-count">{{len .Models}}</span></h3>
+		{{template "foundry-model-list" .}}
+	</section>
+	{{end}}
+	{{end}}{{end}}
+	{{if .EmptyImageInventory}}<p class="hint foundry-empty">{{t "foundry.no_image_models"}}</p>{{end}}
 </div>
-{{else}}<p class="hint config-full">{{t "foundry.no_deployments"}}</p>{{end}}
 <div class="config-section-head">{{t "foundry.roles"}}</div>
 <p class="hint config-full">{{t "foundry.roles_hint"}}</p>
 {{if .ChatFilterActive}}<p class="warn-text config-full">{{t "foundry.chat_filter_hint"}}</p>{{end}}
 {{if .ImageFilterActive}}<p class="warn-text config-full">{{t "foundry.image_filter_hint"}}</p>{{end}}
 {{range .Fields}}{{template "deployment-field" .}}{{end}}
 <div class="config-full">{{template "embedding-index" .Index}}</div>
+{{end}}
+
+{{define "foundry-model-list"}}
+<ul class="foundry-model-list">
+	{{range .Models}}
+	<li class="foundry-model">
+		<div class="foundry-model-head">
+			<strong>{{.Name}}</strong>
+			<span class="foundry-state {{if .APIModel}}info{{else if .Ready}}ok{{else}}warn{{end}}">{{.State}}</span>
+		</div>
+		<dl class="foundry-model-meta">
+			{{if ne .Model .Name}}<div><dt>{{t "foundry.model"}}</dt><dd>{{.Model}}</dd></div>{{end}}
+			<div><dt>{{t "foundry.version"}}</dt><dd>{{.Version}}</dd></div>
+			<div><dt>{{t "foundry.format"}}</dt><dd>{{.Format}}</dd></div>
+			<div><dt>{{t "foundry.source"}}</dt><dd>{{.Source}}</dd></div>
+		</dl>
+		{{if .Operations}}<ul class="foundry-capabilities" aria-label="{{t "foundry.support"}}">
+			{{range .Operations}}<li>{{.}}</li>{{end}}
+		</ul>{{end}}
+		{{if .Detail}}<p class="foundry-model-note">{{.Detail}}</p>{{end}}
+	</li>
+	{{end}}
+</ul>
 {{end}}
 
 {{define "deployment-field"}}

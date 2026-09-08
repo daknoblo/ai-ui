@@ -154,16 +154,26 @@ operations, may need additional operation-specific permissions; this role is
 not a promise that every Foundry model or protocol is usable. Inventory visibility
 alone does not prove inference permission. The app never grants roles.
 
-Discovery issues ARM `GET` requests for that account and its deployments only.
-It does not scan subscriptions, read account keys, create deployments or
-provision resources. A data-plane `/models` list alone is insufficient to
-establish deployment capabilities. The inventory classifies canonical model
+Discovery reads ARM metadata for that account and its deployments, plus
+`/openai/v1/models?api-version=preview` on the same inference endpoint for
+known GPT-Image model IDs. It does not scan subscriptions, read account keys,
+create deployments or provision resources. A data-plane model list alone is
+insufficient to establish chat/embedding deployment capabilities.
+The inventory classifies canonical model
 name, version, format, provisioning state, SKU and available capabilities, not
 guesses based on an arbitrary deployment alias. Unsupported models, native
 Anthropic deployments and batch-only deployments remain visible with a reason,
 but cannot be used by the pickers. The current client routes OpenAI-compatible
 chat completions, embeddings, image generation and image edits; discovery is
 not universal Foundry protocol support.
+
+The inventory groups chat, embeddings, and image models and shows their
+capabilities, version, format, and source. **Models API** image entries can be
+available by name without appearing as ARM deployments. Provider aliases are
+preferred over duplicate dated image variants, and an ARM deployment always
+wins a name collision. Listing a model does not prove generation permission.
+If the image catalog cannot be read, the ARM inventory still updates and any
+previous image entries for the same resource/endpoint are retained with a warning.
 
 The supported-model mapping includes GPT chat models, model router,
 OpenAI text embeddings and GPT-Image generation/editing. DALL-E image options
@@ -364,6 +374,14 @@ It probes storage (data path writable), chat and embeddings, and the selectable
 chat deployments individually. A typo in a manual `AZURE_MODELS` list or an
 inference permission error therefore appears before that model is picked.
 **Refresh** in Foundry mode is a separate metadata-only operation.
+Checks use the saved settings and name the model being tested. Unconfigured
+optional features and checks not run by the periodic monitor are shown as
+skipped, not as failures. Cached inventory checks are labeled as metadata.
+The vision check verifies the chat route, not image understanding. The image
+check sends no prompt: only the expected missing-prompt response is accepted,
+and the result explicitly says that generation is untested. An arbitrary 400,
+such as `unknown_model`, is an error, not a green check. Use a real image request
+when you want to verify generation, bearing in mind the associated charges.
 
 Document uploads are only enabled once storage and the embedding endpoint are
 green, because a document is chunked and embedded on the way in. Attaching an

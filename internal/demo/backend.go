@@ -264,6 +264,14 @@ func (b *Backend) handleImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if strings.TrimSpace(req.Prompt) == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, map[string]any{"error": map[string]string{
+			"code": "missing_required_parameter", "param": "prompt", "message": "Missing required parameter: prompt",
+		}})
+		return
+	}
 	b.writeImage(w, req.Prompt, req.OutputFormat)
 }
 

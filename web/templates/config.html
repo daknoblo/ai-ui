@@ -10,10 +10,11 @@
 			<div class="config-section-head">{{t "config.section_readiness"}}</div>
 			<div id="verify-results" class="config-full"
 				{{if and (not .Results) (not .Foundry.Enabled)}}hx-post="/verify" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-indicator="#verify-indicator"{{end}}>
-				{{if .Results}}{{template "check-list" .}}{{end}}
+				{{if .Results}}{{template "check-list" .}}{{else}}<p class="hint">{{t "config.verify_pending"}}</p>{{end}}
 			</div>
 			<div id="verify-indicator" class="htmx-indicator hint config-full">{{t "config.verify_running"}}</div>
 			<div class="config-full">
+				<p class="hint">{{t "config.verify_saved_hint"}}</p>
 				<button type="button" class="btn btn-ghost"
 					hx-post="/verify"
 					hx-target="#verify-results"
@@ -197,10 +198,12 @@
 {{define "check-list"}}
 <ul class="check-list">
 	{{range .Results}}
-	<li class="check {{if .OK}}ok{{else}}err{{end}}">
-		<span class="check-icon">{{if .OK}}✓{{else}}✗{{end}}</span>
-		<span class="check-name">{{.Name}}</span>
-		<span class="check-detail">{{.Detail}}</span>
+	<li class="check {{.State}}">
+		<span class="check-icon">{{if .Skipped}}—{{else if not .OK}}✗{{else if .Info}}i{{else}}✓{{end}}</span>
+		<div class="check-body">
+			<div class="check-heading"><span class="check-name">{{.Name}}</span>{{if .Target}}<span class="check-target">{{.Target}}</span>{{end}}</div>
+			<span class="check-detail">{{.Detail}}</span>
+		</div>
 	</li>
 	{{end}}
 </ul>

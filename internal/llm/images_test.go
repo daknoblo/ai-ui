@@ -23,6 +23,46 @@ func TestImagesURL(t *testing.T) {
 	}
 }
 
+func TestVerifyImageDoesNotAcceptArbitraryBadRequests(t *testing.T) {
+	for _, test := range []struct {
+		name, body string
+		status     int
+		ok         bool
+	}{
+		{"missing prompt", `{"error":{"code":"missing_required_parameter","param":"prompt","message":"Missing required parameter: prompt"}}`, 400, true},
+		{"prompt required", `{"error":{"message":"prompt is required"}}`, 400, true},
+		{"unknown model", `{"error":{"code":"unknown_model","message":"Unknown model; check the prompt"}}`, 400, false},
+		{"invalid model", `{"error":{"code":"invalid_request_error","param":"model","message":"model is required"}}`, 400, false},
+		{"generic invalid payload", `{"error":{"code":"invalid_request_error","message":"invalid payload"}}`, 400, false},
+		{"permission", `{"error":{"message":"prompt is required"}}`, 403, false},
+		{"unexpected success", `{"data":[]}`, 200, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if len(body) != 1 || body["model"] != "gpt-image-2" {
+					t.Errorf("probe must omit prompt and generation parameters: %v", body)
+				}
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(test.body)) // Local fixture response only.
+			}))
+			defer server.Close()
+			store := config.NewStore(filepath.Join(t.TempDir(), "config.json"), config.Keys{API: "test-key"}, config.Overrides{})
+			cfg := config.Defaults()
+			cfg.Endpoint, cfg.ImageDeployment = server.URL+"/openai/v1", "gpt-image-2"
+			if err := store.Save(cfg); err != nil {
+				t.Fatal(err)
+			}
+			if err := New(store).VerifyImage(t.Context(), ""); (err == nil) != test.ok {
+				t.Errorf("VerifyImage = %v, expected success %v", err, test.ok)
+			}
+		})
+	}
+}
+
 // TestImageAPIVersion checks that a v1 endpoint defaults to the preview surface
 // instead of inheriting the dated chat version.
 func TestImageAPIVersion(t *testing.T) {

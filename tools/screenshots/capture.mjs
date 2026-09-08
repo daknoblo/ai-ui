@@ -236,9 +236,15 @@ async function openSettings(page, ctx) {
   await open(page, `/chat/${ctx.index.chats.chat}`);
   await page.click('.btn-config[hx-get="/config"]');
   await page.locator('.foundry-inventory').waitFor();
-  const resources = page.locator('.config-form .foundry-resource code');
-  if ((await resources.count()) !== 2) throw new Error('Foundry resource and endpoint must be visible');
-  if (!(await resources.nth(1).innerText()).startsWith('http://127.0.0.1:')) {
+  const resource = page.locator('#foundry-resource-id');
+  const endpoint = page.locator('#foundry-endpoint');
+  if (!(await resource.inputValue()).includes('/providers/Microsoft.CognitiveServices/accounts/')) {
+    throw new Error('Foundry resource ID must be visible');
+  }
+  if (await resource.isEditable() || await endpoint.isEditable()) {
+    throw new Error('Discovered connection fields must be read-only');
+  }
+  if (!(await endpoint.inputValue()).startsWith('http://127.0.0.1:')) {
     throw new Error('Settings demo must keep its real loopback endpoint');
   }
   for (const name of ['chat_deployment', 'embedding_deployment', 'image_deployment', 'vision_deployment']) {

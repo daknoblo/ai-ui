@@ -24,6 +24,12 @@ type serverFoundrySource struct {
 	snapshot  foundry.Snapshot
 	fail      bool
 	refreshes int
+	images    []foundry.Deployment
+	imageErr  error
+}
+
+func (s *serverFoundrySource) ImageModels(context.Context, string) ([]foundry.Deployment, error) {
+	return s.images, s.imageErr
 }
 
 func (s *serverFoundrySource) Refresh(context.Context, string) (foundry.Snapshot, error) {

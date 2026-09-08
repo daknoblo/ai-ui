@@ -138,6 +138,19 @@ type demoFoundrySource struct {
 	host     string
 }
 
+func (s *demoFoundrySource) ImageModels(ctx context.Context, endpoint string) ([]foundry.Deployment, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if endpoint != s.endpoint {
+		return nil, fmt.Errorf("demo image catalog only supports its local endpoint")
+	}
+	return []foundry.Deployment{{
+		Name: "gpt-image-2", ModelName: "gpt-image-2", ModelFormat: "OpenAI",
+		Source: foundry.ModelsAPISource,
+	}}, nil
+}
+
 func newDemoFoundrySource(endpoint string) (*demoFoundrySource, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {

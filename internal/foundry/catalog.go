@@ -15,11 +15,15 @@ type Identity struct {
 }
 
 type Snapshot struct {
-	ResourceID  string       `json:"resource_id"`
-	Endpoint    string       `json:"endpoint"`
-	Deployments []Deployment `json:"deployments"`
-	RefreshedAt time.Time    `json:"refreshed_at"`
+	ResourceID          string       `json:"resource_id"`
+	Endpoint            string       `json:"endpoint"`
+	Deployments         []Deployment `json:"deployments"`
+	RefreshedAt         time.Time    `json:"refreshed_at"`
+	ImageCatalogChecked bool         `json:"image_catalog_checked,omitempty"`
+	ImageCatalogError   string       `json:"image_catalog_error,omitempty"`
 }
+
+const ModelsAPISource = "models-api"
 
 type Deployment struct {
 	ID                string            `json:"id"`
@@ -30,6 +34,7 @@ type Deployment struct {
 	ProvisioningState string            `json:"provisioning_state"`
 	SKU               string            `json:"sku"`
 	Capabilities      map[string]string `json:"capabilities"`
+	Source            string            `json:"source,omitempty"`
 }
 
 type Operation string
@@ -71,7 +76,11 @@ func (d Deployment) UnsupportedReason(op Operation) string {
 	if !ok {
 		return "operation is not implemented by the OpenAI v1 integration"
 	}
-	if !strings.EqualFold(d.ProvisioningState, "Succeeded") {
+	if d.Source == ModelsAPISource {
+		if op != Images && op != ImageEdits {
+			return "API catalog entries are only used for supported image operations"
+		}
+	} else if !strings.EqualFold(d.ProvisioningState, "Succeeded") {
 		return "deployment provisioning has not succeeded"
 	}
 	if strings.Contains(strings.ToLower(d.SKU), "batch") {

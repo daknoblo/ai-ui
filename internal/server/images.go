@@ -141,7 +141,7 @@ func (s *Server) handleSetImageParams(w http.ResponseWriter, r *http.Request) {
 // generateImage renders the prompt into an image, stores it and pushes it into
 // the open SSE stream. With edit the latest image of the chat is modified
 // instead of creating a new one, which allows refining step by step.
-func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64, prompt string, edit bool, fail func(string)) {
+func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64, prompt string, edit bool, routingUsage llm.Usage, fail func(string)) {
 	cfg := s.cfg.Get()
 	chat, err := s.store.GetChat(ctx, chatID)
 	if err != nil {
@@ -159,16 +159,17 @@ func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64
 	// Editing continues from the latest image, so refinements build on each other.
 	var src *storage.Image
 	if edit {
-		if img, lookupErr := s.store.LatestImage(ctx, chatID); lookupErr == nil {
-			// A format the edit endpoint cannot read would fail the request; a
-			// fresh generation is the more useful outcome than an error.
-			if editableImageMIME[img.MIME] {
-				src = &img
-			} else {
-				slog.Info("latest image cannot be edited, generating instead",
-					"chat", chatID, "mime", img.MIME)
-			}
+		img, lookupErr := s.store.LatestImage(ctx, chatID)
+		if lookupErr != nil {
+			slog.Warn("image edit source unavailable", "chat", chatID, "err", lookupErr)
+			fail(s.t("stream.image_source_missing"))
+			return
 		}
+		if !editableImageMIME[img.MIME] {
+			fail(s.t("stream.image_format"))
+			return
+		}
+		src = &img
 	}
 
 	var (
@@ -206,9 +207,12 @@ func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64
 	}
 
 	_ = sse.send("token", renderMarkdownString(content))
-	if cfg.ImageDeployment != "" {
-		_ = sse.send("model", s.renderString("model-tag", cfg.ImageDeployment))
+	if deployment != "" {
+		_ = sse.send("model", s.renderString("model-tag", deployment))
 	}
+	res.Usage.PromptTokens += routingUsage.PromptTokens
+	res.Usage.CompletionTokens += routingUsage.CompletionTokens
+	res.Usage.TotalTokens += routingUsage.TotalTokens
 	if res.Usage.TotalTokens > 0 {
 		_ = sse.send("usage", s.t("usage.footer",
 			s.thousands(int64(res.Usage.TotalTokens)),

@@ -19,6 +19,7 @@ func TestReasoningEfforts(t *testing.T) {
 		{"gpt-5-mini", effortsGPT5},          //
 		{"gpt-5.1", effortsGPT51},            //
 		{"gpt-5.6-sol", effortsGPT51},        //
+		{"gpt-6-astra", effortsGPT6},         //
 		{"gpt-5.1-chat", nil},                // chat tuned: answers without reasoning
 		{"gpt-chat-latest", nil},             //
 		{"grok-4.3", effortsAny},             //
@@ -67,6 +68,9 @@ func TestNormalizeReasoningEffort(t *testing.T) {
 		{"gpt-5.1", "minimal", ReasoningAuto}, // 5.1 replaced minimal with none
 		{"gpt-5", "minimal", "minimal"},
 		{"o3", "none", ReasoningAuto}, // the o-series has no "none"
+		{"gpt-6-astra", "none", ReasoningAuto},
+		{"gpt-6-astra", "minimal", ReasoningAuto},
+		{"gpt-6-astra", "high", "high"},
 		{"gpt-4.1", "high", ReasoningAuto},
 		{"gpt-5.1", "", ReasoningAuto},
 	}

@@ -74,6 +74,11 @@ type chatRequest struct {
 	Model    string        `json:"model"`
 	Stream   bool          `json:"stream"`
 	Messages []chatMessage `json:"messages"`
+	Tools    []struct {
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	} `json:"tools"`
 }
 
 // chatMessage is a message of that body reduced to role and text.
@@ -182,6 +187,45 @@ func (b *Backend) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 		flusher.Flush()
 		return true
+	}
+
+	// The local stub recognizes two fixed demo phrases; real intent selection
+	// is performed by the chat model through the advertised tool.
+	var imagePrompt string
+	for i := len(req.Messages) - 1; i >= 0; i-- {
+		if req.Messages[i].Role == "user" {
+			text := strings.ToLower(strings.TrimSpace(req.Messages[i].Content))
+			if strings.HasPrefix(text, "generate an image of ") || strings.HasPrefix(text, "erzeuge ein bild von ") {
+				imagePrompt = req.Messages[i].Content
+			}
+			break
+		}
+	}
+	if imagePrompt != "" {
+		for _, tool := range req.Tools {
+			if tool.Function.Name != "generate_image" {
+				continue
+			}
+			arguments, err := json.Marshal(map[string]any{"prompt": imagePrompt, "edit": false})
+			if err != nil {
+				slog.Error("encode demo image tool", "err", err)
+				return
+			}
+			send(map[string]any{
+				"model": model,
+				"choices": []map[string]any{{
+					"index": 0, "finish_reason": "tool_calls",
+					"delta": map[string]any{"tool_calls": []map[string]any{{
+						"index": 0, "id": "demo-image-call", "type": "function",
+						"function": map[string]string{"name": "generate_image", "arguments": string(arguments)},
+					}}},
+				}},
+				"usage": usage,
+			})
+			_, _ = fmt.Fprint(w, "data: [DONE]\n\n") // Best effort after a local streamed tool call.
+			flusher.Flush()
+			return
+		}
 	}
 
 	// Token by token, so the interface shows a real stream.

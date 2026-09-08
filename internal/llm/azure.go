@@ -29,10 +29,11 @@ type Message struct {
 	Content string `json:"content"`
 	// Images are attachments the model should look at. They are not a field of
 	// the wire format: MarshalJSON turns them into multimodal content parts.
-	Images     []ImageContent `json:"-"`
-	ToolCalls  []ToolCall     `json:"tool_calls,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
-	Name       string         `json:"name,omitempty"`
+	Images        []ImageContent    `json:"-"`
+	ToolCalls     []ToolCall        `json:"tool_calls,omitempty"`
+	ToolCallID    string            `json:"tool_call_id,omitempty"`
+	Name          string            `json:"name,omitempty"`
+	ResponseItems []json.RawMessage `json:"-"`
 }
 
 // ImageContent is an image attached to a message. It is sent inline as a data
@@ -236,11 +237,12 @@ type ChatResult struct {
 // TurnResult is the outcome of a single stream pass including the tool calls
 // the model requested, if any.
 type TurnResult struct {
-	Content      string
-	ToolCalls    []ToolCall
-	FinishReason string
-	Usage        Usage
-	Model        string
+	Content       string
+	ToolCalls     []ToolCall
+	FinishReason  string
+	Usage         Usage
+	Model         string
+	ResponseItems []json.RawMessage
 }
 
 // IsV1Endpoint detects the new OpenAI-compatible v1 schema of Azure AI Foundry
@@ -341,6 +343,9 @@ func (c *Client) ChatStreamWithTools(ctx context.Context, opts ChatOptions, mess
 // streamTurn runs one streaming pass, streams text through onDelta and collects
 // optional tool calls (whose arguments arrive across several chunks).
 func (c *Client) streamTurn(ctx context.Context, opts ChatOptions, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
+	if c.useResponses(opts, messages, len(tools) > 0) {
+		return c.responsesTurn(ctx, opts, messages, tools, onDelta)
+	}
 	var result TurnResult
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || (!IsV1Endpoint(cfg.Endpoint) && cfg.APIVersion == "") {

@@ -68,6 +68,10 @@ All screenshots are generated automatically from the demo instance
   images are stored in the database and shown inline. In image mode an attached
   image turns the next prompt into an edit of that image. There the model picker
   offers the image deployments
+- With an image model configured, explicit image requests in ordinary chat can
+  call the image generator automatically. Follow-up edits use the latest image;
+  ordinary answers stay with the chat model. These image calls incur usage
+  charges; manual image mode remains available.
 - Documents and images are bound to their chat and are removed together with it
   (including their embeddings)
 - Settings dialog in the UI (language, deployment defaults, system prompt,
@@ -183,6 +187,15 @@ chat/vision capability metadata when their model format is already supported.
 Known model profiles cover deployments that omit those hints, including
 GPT-5.6, GPT-6 Astra, GPT-chat-latest and Grok 4.3. Unsupported protocols,
 Responses-only models and batch deployments remain excluded.
+
+Automatic image requests use a function tool bound to the configured image
+deployment, not a model chosen by the chat response. GPT-6 Astra and GPT-5.5/5.6
+use the Responses API for tool-enabled turns; requests are stateless
+(`store=false`), and encrypted reasoning items are retained only within the
+current tool loop. Other supported chat models use Chat Completions tools.
+The selected text model and conversation mode are not changed by image delegation.
+The chat deployment must support function tools on its selected API. The manual
+image button bypasses chat-model orchestration and remains available.
 
 In **Settings**, use **Refresh**, select the chat, embedding, image and optional
 vision defaults, **Save**, then run **Check again**. Refresh fetches metadata
@@ -438,6 +451,10 @@ usually lives.
   unprotected
 
 ## Running locally
+
+Static asset URLs carry content versions. Opening settings also updates the
+page's stylesheet, so a page left open during a container update does not render
+new controls with old CSS.
 
 ```sh
 export AZURE_API_KEY=your-key

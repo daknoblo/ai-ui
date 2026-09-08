@@ -15,6 +15,7 @@ const ReasoningAuto = "auto"
 var (
 	effortsGPT51 = []string{ReasoningAuto, "none", "low", "medium", "high", "xhigh"}
 	effortsGPT5  = []string{ReasoningAuto, "minimal", "low", "medium", "high"}
+	effortsGPT6  = []string{ReasoningAuto, "low", "medium", "high", "xhigh"}
 	effortsO     = []string{ReasoningAuto, "low", "medium", "high"}
 	effortsAny   = []string{ReasoningAuto, "none", "minimal", "low", "medium", "high", "xhigh"}
 )
@@ -44,6 +45,8 @@ func ReasoningEfforts(model string) []string {
 		return nil
 	case strings.HasSuffix(name, "-chat"), strings.Contains(name, "chat-latest"):
 		return nil // the chat tuned siblings answer without reasoning
+	case strings.Contains(name, "gpt-6-"):
+		return effortsGPT6
 	case strings.Contains(name, "gpt-5."):
 		return effortsGPT51
 	case strings.Contains(name, "gpt-5"):

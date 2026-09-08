@@ -32,6 +32,7 @@ type Server struct {
 	retriever *rag.Retriever
 	search    *websearch.Client
 	tmpl      *template.Template
+	assets    *staticHandler
 	ready     *readiness
 	logs      *logbuf.Buffer
 	ctx       context.Context
@@ -44,6 +45,14 @@ type Server struct {
 
 // New creates a server and parses the templates.
 func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
+	staticFS, err := fs.Sub(web.StaticFS, "static")
+	if err != nil {
+		panic("embedded static assets missing: " + err.Error())
+	}
+	assets, err := newStaticHandler(staticFS)
+	if err != nil {
+		panic("cannot index static assets: " + err.Error())
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	if status := cfg.FoundryStatus(); status.Enabled {
 		snapshot, ok, err := store.LoadCatalog(ctx, status.ResourceID)
@@ -64,6 +73,7 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 	// field that would have to be threaded through every template data struct.
 	tmpl := template.Must(template.New("").
 		Funcs(template.FuncMap{
+			"assetURL":       assets.URL,
 			"renderMarkdown": renderMarkdown,
 			"lang":           cfg.Language,
 			"t": func(key string, args ...any) string {
@@ -97,6 +107,7 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 		retriever: rag.NewRetriever(store, client),
 		search:    websearch.New(cfg),
 		tmpl:      tmpl,
+		assets:    assets,
 		ready:     &readiness{},
 		logs:      logs,
 	}
@@ -162,17 +173,7 @@ func (s *Server) Routes() http.Handler {
 	// responses keep streaming unbuffered.
 	r.Use(middleware.Compress(5, "text/html", "text/css", "text/javascript", "application/javascript", "application/json"))
 
-	// Static assets from the embedded file system, served with content based
-	// ETags so browsers can revalidate cheaply (see newStaticHandler).
-	staticFS, err := fs.Sub(web.StaticFS, "static")
-	if err != nil {
-		panic("embedded static assets missing: " + err.Error())
-	}
-	staticHandler, err := newStaticHandler(staticFS)
-	if err != nil {
-		panic("cannot index static assets: " + err.Error())
-	}
-	r.Handle("/static/*", staticHandler)
+	r.Handle("/static/*", s.assets)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

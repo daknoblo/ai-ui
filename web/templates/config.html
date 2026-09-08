@@ -1,5 +1,7 @@
 {{define "config"}}
 <div class="modal-overlay" hx-on:click="if(event.target===this)this.remove()">
+	<link rel="stylesheet" href="{{assetURL "app.css"}}"
+		hx-swap-oob="outerHTML:head link[rel='stylesheet'][href^='/static/app.css']">
 	<div class="modal">
 		<div class="modal-head">
 			<h2>{{t "config.title"}}</h2>
@@ -115,6 +117,7 @@
 			<p class="hint config-hint-tight">{{t "config.image_params_hint"}}</p>
 			{{end}}
 			{{if .Notice}}<div class="config-{{if .NoticeErr}}notice-err{{else}}saved{{end}}">{{.Notice}}</div>{{end}}
+			<p class="hint config-full">{{t "config.image_auto_hint"}}</p>
 
 			<div class="config-section-head">{{t "config.section_search"}}</div>
 			<label>

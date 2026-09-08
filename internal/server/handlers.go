@@ -527,7 +527,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 			fail(s.t("stream.image_not_configured"))
 			return
 		}
-		s.generateImage(ctx, sse, id, query, r.URL.Query().Get("edit") == "1", fail)
+		s.generateImage(ctx, sse, id, query, r.URL.Query().Get("edit") == "1", llm.Usage{}, fail)
 		return
 	}
 
@@ -535,6 +535,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	cfg := s.cfg.Get()
 	forceWeb := r.URL.Query().Get("web") == "1" && s.search.Enabled()
 	autoWeb := cfg.SearchAuto && s.search.Enabled() && !forceWeb
+	autoImages := s.cfg.ImagesConfigured()
 
 	// The chat keeps its own model and reasoning effort; empty values leave both
 	// to the router and the model.
@@ -551,6 +552,20 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("document retrieval failed", "chat", id, "err", err)
 		fail(s.t("stream.retrieval_failed", err.Error()))
 		return
+	}
+	if autoImages {
+		count, err := s.store.CountImages(ctx, id)
+		if err != nil {
+			slog.Warn("read image context", "err", err)
+			fail(s.t("stream.request_failed", err.Error()))
+			return
+		}
+		instructions := s.t("prompt.image_tools") + "\n" + s.t("prompt.image_context", count > 0)
+		if len(messages) > 0 && messages[0].Role == "system" {
+			messages[0].Content += "\n\n" + instructions
+		} else {
+			messages = append([]llm.Message{{Role: "system", Content: instructions}}, messages...)
+		}
 	}
 
 	// A picture is useless to a model that cannot see. Rather than failing the
@@ -591,10 +606,14 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		result    llm.ChatResult
 		streamErr error
 	)
-	if autoWeb {
-		result, streamErr = s.streamWithSearch(ctx, sse, opts, messages, onDelta)
+	if autoWeb || autoImages {
+		var imageHandled bool
+		result, imageHandled, streamErr = s.streamWithTools(ctx, sse, id, opts, messages, autoWeb, autoImages, onDelta, fail)
+		if imageHandled {
+			return
+		}
 		// Fall back without tools if the router does not support tool calling.
-		if streamErr != nil && acc.Len() == 0 {
+		if streamErr != nil && acc.Len() == 0 && !autoImages {
 			slog.Warn("tool-calling failed, falling back without tools", "err", streamErr)
 			result, streamErr = s.llm.ChatStream(ctx, opts, messages, onDelta)
 		}
@@ -886,17 +905,24 @@ func (s *Server) webSearchTool() llm.Tool {
 	}
 }
 
-// streamWithSearch runs the tool loop: the model may call the web_search tool
-// itself, results are fed back until a final answer (without a tool call) is
-// streamed.
-func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, opts llm.ChatOptions, messages []llm.Message, onDelta func(string) error) (llm.ChatResult, error) {
-	tools := []llm.Tool{s.webSearchTool()}
+// streamWithTools keeps ordinary answers in chat and delegates explicit image
+// requests to the configured image model without changing the conversation mode.
+func (s *Server) streamWithTools(ctx context.Context, sse *sseWriter, chatID int64, opts llm.ChatOptions,
+	messages []llm.Message, useWeb, useImages bool, onDelta func(string) error, fail func(string),
+) (llm.ChatResult, bool, error) {
+	var tools []llm.Tool
+	if useWeb {
+		tools = append(tools, s.webSearchTool())
+	}
+	if useImages {
+		tools = append(tools, s.imageTool())
+	}
 	var final llm.ChatResult
 
 	for range maxToolIterations {
 		turn, err := s.llm.ChatStreamWithTools(ctx, opts, messages, tools, onDelta)
 		if err != nil {
-			return final, err
+			return final, false, err
 		}
 		if turn.Model != "" {
 			final.Model = turn.Model
@@ -907,17 +933,33 @@ func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, opts llm.
 
 		// No tool calls -> the final answer has already been streamed.
 		if len(turn.ToolCalls) == 0 {
-			return final, nil
+			return final, false, nil
 		}
 
+		for _, call := range turn.ToolCalls {
+			if call.Function.Name != "generate_image" {
+				continue
+			}
+			if !useImages || len(turn.ToolCalls) != 1 || turn.FinishReason != "tool_calls" {
+				return final, false, fmt.Errorf("image generation must be the only enabled tool call in its turn")
+			}
+			if err := s.executeImageTool(ctx, sse, chatID, call, final.Usage, fail); err != nil {
+				return final, false, err
+			}
+			return final, true, nil
+		}
 		// Append the assistant message with the requested tool calls.
 		messages = append(messages, llm.Message{
-			Role:      "assistant",
-			Content:   turn.Content,
-			ToolCalls: turn.ToolCalls,
+			Role:          "assistant",
+			Content:       turn.Content,
+			ToolCalls:     turn.ToolCalls,
+			ResponseItems: turn.ResponseItems,
 		})
 		// Execute every tool call and feed the result back.
 		for _, tc := range turn.ToolCalls {
+			if !useWeb || tc.Function.Name != "web_search" {
+				return final, false, fmt.Errorf("model requested an unavailable tool: %s", tc.Function.Name)
+			}
 			resultText := s.executeToolCall(ctx, sse, tc)
 			messages = append(messages, llm.Message{
 				Role:       "tool",
@@ -931,7 +973,7 @@ func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, opts llm.
 	// Iteration limit reached: force a last answer without tools.
 	turn, err := s.llm.ChatStream(ctx, opts, messages, onDelta)
 	if err != nil {
-		return final, err
+		return final, false, err
 	}
 	if turn.Model != "" {
 		final.Model = turn.Model
@@ -939,7 +981,7 @@ func (s *Server) streamWithSearch(ctx context.Context, sse *sseWriter, opts llm.
 	final.Usage.PromptTokens += turn.Usage.PromptTokens
 	final.Usage.CompletionTokens += turn.Usage.CompletionTokens
 	final.Usage.TotalTokens += turn.Usage.TotalTokens
-	return final, nil
+	return final, false, nil
 }
 
 // executeToolCall runs a tool call and returns the result as text for the

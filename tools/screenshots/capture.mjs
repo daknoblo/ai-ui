@@ -120,6 +120,32 @@ const SHOTS = [
     capture: (page, ctx) => open(page, `/chat/${ctx.index.chats.image}`),
   },
   {
+    id: 'chat-image',
+    langs: ['en', 'de'],
+    meta: {
+      en: {
+        title: 'Image requests in ordinary chat',
+        caption: 'The chat model delegates an explicit image request to the configured image model. The result appears inline while the conversation stays in chat mode.',
+      },
+      de: {
+        title: 'Bildaufträge direkt im Chat',
+        caption: 'Das Chat-Modell übergibt einen ausdrücklichen Bildauftrag an das konfigurierte Bildmodell. Das Bild erscheint direkt in der Unterhaltung; der Chatmodus bleibt aktiv.',
+      },
+    },
+    capture: async (page) => {
+      await open(page, '/');
+      const lang = await page.locator('html').getAttribute('lang');
+      await page.fill('#chat-form textarea', lang === 'de'
+        ? 'Erzeuge ein Bild von einem blauen Park.'
+        : 'Generate an image of a blue park.');
+      await page.locator('#chat-form button[type="submit"]').click();
+      await page.locator('#messages .msg.assistant .bubble img').last().waitFor();
+      if (await page.locator('.composer').getAttribute('data-mode') !== 'chat') {
+        throw new Error('Automatic image generation must preserve chat mode');
+      }
+    },
+  },
+  {
     id: 'settings',
     langs: ['en', 'de'],
     meta: {

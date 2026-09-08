@@ -22,7 +22,7 @@ type Config struct {
 	Endpoint              string   `json:"endpoint"`        // chat, e.g. https://my-router.openai.azure.com
 	ChatDeployment        string   `json:"chat_deployment"` // deployment name of the chat model (or router)
 	ChatModel             string   `json:"chat_model"`      // optional; pins a model instead of letting the router choose
-	ChatModels            []string `json:"-"`               // offered in the header menu; comes from AZURE_MODELS only
+	ChatModels            []string `json:"-"`               // deployment inventory from AZURE_MODELS in manual mode
 	Foundry               bool     `json:"-"`
 	VisionDeployment      string   `json:"vision_deployment,omitempty"`
 	APIVersion            string   `json:"api_version"`           // e.g. 2024-08-01-preview
@@ -129,8 +129,7 @@ func (o Overrides) apply(c Config) Config {
 	if o.ImageAPIVersion != "" {
 		c.ImageAPIVersion = o.ImageAPIVersion
 	}
-	// Without an explicit list the single configured deployment is the only
-	// choice, so the picker always has something to offer in image mode.
+	// Without an explicit list, the configured image deployment is the inventory.
 	c.ImageModels = o.ImageModels
 	if len(c.ImageModels) == 0 && c.ImageDeployment != "" {
 		c.ImageModels = []string{c.ImageDeployment}

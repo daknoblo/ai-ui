@@ -77,7 +77,6 @@ type pageData struct {
 	ChatID            int64
 	Notice            string
 	NoticeErr         bool
-	Picker            modelPickerView
 	ChatMode          string
 	UploadsReady      bool
 	UploadAccept      string
@@ -104,48 +103,6 @@ type reasoningView struct {
 	OOB     bool
 }
 
-// modelPickerView is the model of the picker in the chat header. Image mode
-// offers the image deployments instead of the chat models, so switching the
-// mode re-renders it out of band.
-type modelPickerView struct {
-	ChatID           int64
-	Models           []string
-	Current          string
-	AllowAuto        bool // only the chat models can leave the choice to the router
-	CurrentAvailable bool
-	ImageMode        bool
-	EditSupport      map[string]bool
-	OOB              bool
-}
-
-// pickerFor builds the header picker for a mode.
-func pickerFor(chatID int64, cfg config.Config, chat *storage.Chat) modelPickerView {
-	if chat != nil && chat.Mode == storage.ChatModeImage {
-		current := imageModelOf(cfg, chat)
-		edits := make(map[string]bool, len(cfg.ImageModels))
-		for _, name := range cfg.ImageModels {
-			edits[name] = !cfg.Foundry || slices.Contains(cfg.ImageEditModels, name)
-		}
-		return modelPickerView{
-			ChatID:           chatID,
-			Models:           cfg.ImageModels,
-			Current:          current,
-			CurrentAvailable: slices.Contains(cfg.ImageModels, current),
-			ImageMode:        true,
-			EditSupport:      edits,
-		}
-	}
-	current := cfg.ChatModel
-	if chat != nil {
-		current = chat.Model
-	}
-	if cfg.Foundry && current == "" {
-		current = cfg.ChatDeployment
-	}
-	return modelPickerView{ChatID: chatID, Models: cfg.ChatModels, Current: current, AllowAuto: !cfg.Foundry,
-		CurrentAvailable: slices.Contains(cfg.ChatModels, current)}
-}
-
 // imageModelOf returns the image deployment a chat generates with.
 func imageModelOf(cfg config.Config, chat *storage.Chat) string {
 	if chat != nil && chat.ImageModel != "" {
@@ -168,7 +125,6 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		Chats:             chats,
 		CurrentChat:       current,
 		Configured:        s.cfg.IsConfigured(),
-		Picker:            pickerFor(0, cfg, current),
 		UploadsReady:      s.ready.uploadsAllowed(),
 		UploadAccept:      docparse.UploadAccept(),
 		SearchEnabled:     s.search.Enabled(),
@@ -182,9 +138,10 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		ImageFormats:      imageFormats,
 		StatusBadge:       s.statusData(),
 	}
+	model := s.defaultChatModel()
 	pd.Reasoning = reasoningView{
-		Efforts: llm.ReasoningEfforts(s.cfg.ModelIdentity(pd.Picker.Current)),
-		Current: llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(pd.Picker.Current), cfg.ReasoningEffort),
+		Efforts: llm.ReasoningEfforts(s.cfg.ModelIdentity(model)),
+		Current: llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(model), cfg.ReasoningEffort),
 	}
 	if current != nil {
 		msgs, turns, err := s.store.Conversation(ctx, current.ID)
@@ -221,7 +178,6 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		pd.Title = s.chatTitle(current.Title)
 		pd.ChatID = current.ID
 		pd.ChatMode = current.Mode
-		pd.Picker = pickerFor(current.ID, cfg, current)
 		pd.Reasoning = reasoningView{
 			ChatID:  current.ID,
 			Efforts: llm.ReasoningEfforts(s.cfg.ModelIdentity(current.Model)),
@@ -1258,8 +1214,8 @@ type statusBadge struct {
 	Level      string // ok | warn | err
 }
 
-// handleSetModel applies the model selection from the header menu. The choice
-// belongs to the chat and is also kept as the default for new chats.
+// handleSetModel retains the existing model-selection endpoint for API clients
+// and pages opened before the header selector was removed.
 func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.httpError(w, err)
@@ -1278,8 +1234,7 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := s.cfg.Get()
 
-	// In image mode the picker offers the image deployments, which are stored
-	// separately so switching the mode restores each choice.
+	// Image selections are stored separately from the chat model.
 	if chat.Mode == storage.ChatModeImage {
 		if model != "" && !slices.Contains(cfg.ImageModels, model) {
 			slog.Warn("image model selection rejected", "model", model)
@@ -1372,16 +1327,11 @@ func (s *Server) handleSetMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Chat and image mode offer different deployments, so the header picker
-	// follows the mode.
-	chat, err := s.store.GetChat(r.Context(), chatID)
-	if err != nil {
+	if _, err := s.store.GetChat(r.Context(), chatID); err != nil {
 		s.httpError(w, err)
 		return
 	}
-	picker := pickerFor(chatID, s.cfg.Get(), &chat)
-	picker.OOB = true
-	s.render(w, "model-picker", picker)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleUpload accepts documents (RAG ingestion) and, when image generation is

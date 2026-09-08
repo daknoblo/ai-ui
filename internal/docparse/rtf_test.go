@@ -53,6 +53,8 @@ func TestRTFRejectsMalformedControls(t *testing.T) {
 		`{\rtf1\uc-1\u233?}`, `{\rtf1\uc65536\u233?}`,
 		`{\rtf1\'-1}`, `{\rtf1\'+1}`, `{\rtf1\'fg}`, `{\rtf1\'f}`,
 		`{\rtf1\u233\'-1}`, `{\rtf1\bin-1 x}`, `{\rtf1\bin100 x}`,
+		`{\rtf1\bin2147483648 x}`, `{\rtf1\bin4294967295 x}`,
+		`{\rtf1\bin18446744073709551616 x}`,
 		`{\rtf1 text`, `{\rtf1 text}}`,
 		strings.Repeat("{", 257) + "text" + strings.Repeat("}", 257),
 	} {

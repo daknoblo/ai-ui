@@ -258,11 +258,11 @@ func rtfHexByte(arg string) (byte, error) {
 }
 
 func skipRTFBinary(s string, i int, arg string) (int, error) {
-	n, err := strconv.ParseUint(arg, 10, 32)
-	if err != nil || n > uint64(len(s)-i) {
+	n, err := strconv.Atoi(arg)
+	if err != nil || n < 0 || n > len(s)-i {
 		return i, fmt.Errorf("invalid RTF binary length")
 	}
-	return i + int(n), nil
+	return i + n, nil
 }
 
 // cp1252High maps the 0x80-0x9F range of Windows-1252, which is the only part

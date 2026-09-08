@@ -212,14 +212,15 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 		embeddingOK = false
 		embeddingDetail = err.Error()
 	}
-	if cfg.Foundry && !embeddingSkipped {
+	if !embeddingSkipped {
 		active, known, err := s.store.ActiveEmbeddingProfile(ctx)
 		if err != nil {
 			embeddingOK, embeddingDetail = false, err.Error()
 		} else if known {
 			embeddingTarget = active.Deployment
-			if embeddingOK && active.Deployment != cfg.EmbeddingDeployment {
-				embeddingDetail = s.t("check.embedding_active", cfg.EmbeddingDeployment)
+			target, targetErr := s.llm.ConfiguredEmbeddingProfile()
+			if embeddingOK && targetErr == nil && !active.SameIdentity(target) {
+				embeddingDetail = s.t("check.embedding_active", target.Deployment+" — "+target.Endpoint)
 			}
 		}
 	}

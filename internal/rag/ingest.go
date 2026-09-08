@@ -54,14 +54,11 @@ func (in *Ingestor) Ingest(ctx context.Context, chatID int64, filename, mime str
 	var result IngestResult
 	err := in.store.WithCorpusMutation(ctx, func() error {
 		return in.store.WithEmbeddingProfile(ctx, func(profile storage.EmbeddingProfile, known bool) error {
-			if in.llm.UsesFoundry() && !known {
+			if !known || profile.Dimensions <= 0 {
 				return storage.ErrReindexRequired
 			}
-			embed := in.llm.Embed
-			if known {
-				embed = func(ctx context.Context, inputs []string) ([][]float32, error) {
-					return in.llm.EmbedProfile(ctx, profile, inputs)
-				}
+			embed := func(ctx context.Context, inputs []string) ([][]float32, error) {
+				return in.llm.EmbedProfile(ctx, profile, inputs)
 			}
 			var err error
 			result, err = in.ingest(ctx, chatID, filename, mime, data, embed)

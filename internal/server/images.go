@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -88,7 +89,11 @@ func (s *Server) handleDeleteImage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.DeleteImage(r.Context(), imageID); err != nil {
+	if err := s.store.DeleteImageForChat(r.Context(), chatID, imageID); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
 		s.httpError(w, err)
 		return
 	}
@@ -141,25 +146,14 @@ func (s *Server) handleSetImageParams(w http.ResponseWriter, r *http.Request) {
 // generateImage renders the prompt into an image, stores it and pushes it into
 // the open SSE stream. With edit the latest image of the chat is modified
 // instead of creating a new one, which allows refining step by step.
-func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64, prompt string, edit bool, routingUsage llm.Usage, fail func(string)) {
-	cfg := s.cfg.Get()
-	chat, err := s.store.GetChat(ctx, chatID)
-	if err != nil {
-		fail(s.t("stream.image_failed", err.Error()))
-		return
-	}
-	deployment := imageModelOf(cfg, &chat)
-	opts := llm.ImageOptions{
-		Deployment: deployment,
-		Size:       cfg.ImageSize,
-		Quality:    cfg.ImageQuality,
-		Format:     cfg.ImageFormat,
-	}
+func (s *Server) generateImage(ctx context.Context, sse *generationStream, chatID int64, prompt string, edit bool, routingUsage llm.Usage, fail func(string)) {
+	opts := sse.options.ImageOptions
+	deployment := opts.Deployment
 
 	// Editing continues from the latest image, so refinements build on each other.
 	var src *storage.Image
 	if edit {
-		img, lookupErr := s.store.LatestImage(ctx, chatID)
+		img, lookupErr := s.store.GetImage(ctx, sse.options.SourceImageID)
 		if lookupErr != nil {
 			slog.Warn("image edit source unavailable", "chat", chatID, "err", lookupErr)
 			fail(s.t("stream.image_source_missing"))
@@ -191,22 +185,9 @@ func (s *Server) generateImage(ctx context.Context, sse *sseWriter, chatID int64
 		return
 	}
 
-	// Deliberately not the request context: the result must be persisted even
-	// when the browser has already navigated away.
-	imageID, err := s.store.AddImage(context.Background(), chatID,
-		storage.ImageGenerated, "", prompt, res.MIME, res.Data)
-	if err != nil {
-		slog.Error("save image", "err", err)
-		fail(s.t("stream.image_failed", err.Error()))
-		return
-	}
-
-	content := imageMarkdown(imageID, prompt)
-	if _, err := s.store.AddMessage(context.Background(), chatID, "assistant", content); err != nil {
-		slog.Error("save assistant message", "err", err)
-	}
-
-	_ = sse.send("token", renderMarkdownString(content))
+	// Blob, response message and terminal outcome are committed together by
+	// the worker, even after the original browser has disconnected.
+	sse.image = &storage.Image{Prompt: prompt, MIME: res.MIME, Data: res.Data}
 	if deployment != "" {
 		_ = sse.send("model", s.renderString("model-tag", deployment))
 	}

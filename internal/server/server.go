@@ -25,22 +25,24 @@ import (
 
 // Server bundles all dependencies of the HTTP layer.
 type Server struct {
-	cfg       *config.Store
-	store     *storage.Store
-	llm       *llm.Client
-	ingestor  *rag.Ingestor
-	retriever *rag.Retriever
-	search    *websearch.Client
-	tmpl      *template.Template
-	assets    *staticHandler
-	ready     *readiness
-	logs      *logbuf.Buffer
-	ctx       context.Context
-	cancel    context.CancelFunc
-	jobs      sync.WaitGroup
-	refreshMu sync.Mutex
-	configMu  sync.Mutex
-	closing   bool // guarded by configMu
+	cfg                 *config.Store
+	store               *storage.Store
+	llm                 *llm.Client
+	ingestor            *rag.Ingestor
+	retriever           *rag.Retriever
+	search              *websearch.Client
+	tmpl                *template.Template
+	assets              *staticHandler
+	ready               *readiness
+	logs                *logbuf.Buffer
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	jobs                sync.WaitGroup
+	refreshMu           sync.Mutex
+	configMu            sync.Mutex
+	closing             bool                    // guarded by configMu
+	generations         map[int64]generationJob // guarded by configMu
+	generationWatchDone chan struct{}
 }
 
 // New creates a server and parses the templates.
@@ -93,7 +95,7 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 		}).
 		ParseFS(web.TemplatesFS, "templates/*.html"))
 
-	return &Server{
+	s := &Server{
 		ctx: ctx, cancel: cancel,
 		cfg:   cfg,
 		store: store,
@@ -104,16 +106,20 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 				return i18n.T(cfg.Language(), "prompt.ocr_page", page, total)
 			},
 		}),
-		retriever: rag.NewRetriever(store, client),
-		search:    websearch.New(cfg),
-		tmpl:      tmpl,
-		assets:    assets,
-		ready:     &readiness{},
-		logs:      logs,
+		retriever:           rag.NewRetriever(store, client),
+		search:              websearch.New(cfg),
+		tmpl:                tmpl,
+		assets:              assets,
+		ready:               &readiness{},
+		logs:                logs,
+		generations:         make(map[int64]generationJob),
+		generationWatchDone: make(chan struct{}),
 	}
+	go s.watchGenerations()
+	return s
 }
 
-// Close cancels in-flight indexing work before its database is closed.
+// Close cancels and joins indexing and generation workers before closing SQLite.
 func (s *Server) Close() {
 	s.cancel()
 	// A reindex handler must finish registering its job before Wait starts.
@@ -121,6 +127,7 @@ func (s *Server) Close() {
 	s.closing = true
 	s.configMu.Unlock()
 	s.jobs.Wait()
+	<-s.generationWatchDone
 }
 
 func (s *Server) requestContext(next http.Handler) http.Handler {

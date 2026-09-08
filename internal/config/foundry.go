@@ -31,6 +31,7 @@ type FoundryStatus struct {
 func (s *Store) ConfigureFoundry(resourceID string, source FoundrySource, setupErr error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.embeddingEndpoints = nil
 	s.resourceID = strings.TrimRight(strings.TrimSpace(resourceID), "/")
 	s.identity = source
 	s.identityError = ""
@@ -128,6 +129,7 @@ func (s *Store) SetDiscoveryError(err error) {
 
 func (s *Store) effectiveLocked() Config {
 	cfg := s.overrides.apply(s.cur)
+	cfg.Foundry = s.resourceID != ""
 	if s.resourceID == "" {
 		return cfg
 	}
@@ -220,10 +222,11 @@ func (s *Store) Authorize(req *http.Request, op foundry.Operation, deployment st
 	enabled, source, setupErr, endpoint := s.resourceID != "", s.identity, s.identityError, s.catalog.Endpoint
 	s.mu.RUnlock()
 	if !enabled {
+		if op == foundry.Embeddings {
+			return s.authorizeEmbeddingKey(req, deployment)
+		}
 		key := s.APIKey()
 		switch op {
-		case foundry.Embeddings:
-			key = s.EmbeddingAPIKey()
 		case foundry.Images, foundry.ImageEdits:
 			key = s.ImageAPIKey()
 		}

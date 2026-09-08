@@ -23,6 +23,7 @@ type EmbeddingProfile struct {
 	Deployment   string `json:"deployment"`
 	ModelName    string `json:"model_name"`
 	ModelVersion string `json:"model_version"`
+	APIVersion   string `json:"api_version,omitempty"`
 	Dimensions   int    `json:"dimensions"`
 }
 
@@ -33,7 +34,8 @@ func (p EmbeddingProfile) SameIdentity(other EmbeddingProfile) bool {
 		strings.TrimRight(p.Endpoint, "/") == strings.TrimRight(other.Endpoint, "/") &&
 		p.Deployment == other.Deployment &&
 		p.ModelName == other.ModelName &&
-		p.ModelVersion == other.ModelVersion
+		p.ModelVersion == other.ModelVersion &&
+		p.APIVersion == other.APIVersion
 }
 
 // ActiveEmbeddingProfile reads the persisted profile without inferring the

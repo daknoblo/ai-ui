@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/daknoblo/ai-ui/internal/config"
 	"github.com/daknoblo/ai-ui/internal/foundry"
 	"github.com/daknoblo/ai-ui/internal/storage"
 )
-
-func (c *Client) UsesFoundry() bool {
-	return c.store.FoundryStatus().Enabled
-}
 
 func (c *Client) VisionDeployment(chosen string) (string, bool) {
 	cfg := c.store.Get()
@@ -37,8 +34,15 @@ func (c *Client) ConfiguredEmbeddingProfile() (storage.EmbeddingProfile, error) 
 	if cfg.EmbeddingDeployment == "" || cfg.EmbeddingHost() == "" {
 		return storage.EmbeddingProfile{}, fmt.Errorf("no embedding deployment configured")
 	}
+	endpoint, err := config.NormalizeEmbeddingEndpoint(cfg.EmbeddingHost())
+	if err != nil {
+		return storage.EmbeddingProfile{}, err
+	}
 	profile := storage.EmbeddingProfile{
-		Endpoint: strings.TrimRight(cfg.EmbeddingHost(), "/"), Deployment: cfg.EmbeddingDeployment,
+		Endpoint: endpoint, Deployment: strings.TrimSpace(cfg.EmbeddingDeployment),
+	}
+	if !IsV1Endpoint(endpoint) {
+		profile.APIVersion = cfg.EmbeddingVersion()
 	}
 	if cfg.Foundry {
 		deployment, err := c.store.ResolveDeployment(foundry.Embeddings, cfg.EmbeddingDeployment)
@@ -54,13 +58,19 @@ func (c *Client) ConfiguredEmbeddingProfile() (storage.EmbeddingProfile, error) 
 
 // EmbedProfile uses the index's model, not a concurrently changed UI selection.
 func (c *Client) EmbedProfile(ctx context.Context, profile storage.EmbeddingProfile, inputs []string) ([][]float32, error) {
+	endpoint, err := config.NormalizeEmbeddingEndpoint(profile.Endpoint)
+	if err != nil {
+		return nil, err
+	}
+	if !IsV1Endpoint(endpoint) && strings.TrimSpace(profile.APIVersion) == "" {
+		return nil, fmt.Errorf("embedding profile has no pinned API version; configure the API version and rebuild the document index")
+	}
 	cfg := c.store.Get()
+	if cfg.Foundry != (profile.ResourceID != "") {
+		return nil, fmt.Errorf("embedding authentication mode changed; rebuild the document index")
+	}
 	if profile.ResourceID != "" {
-		if !cfg.Foundry {
-			if strings.TrimRight(cfg.EmbeddingHost(), "/") != profile.Endpoint || cfg.EmbeddingDeployment != profile.Deployment {
-				return nil, fmt.Errorf("manual embedding settings do not match the existing index; use Foundry settings to rebuild it")
-			}
-		} else if !strings.EqualFold(profile.ResourceID, c.store.FoundryStatus().ResourceID) {
+		if !strings.EqualFold(profile.ResourceID, c.store.FoundryStatus().ResourceID) {
 			return nil, fmt.Errorf("embedding index belongs to a different Azure resource")
 		} else {
 			deployment, err := c.store.ResolveDeployment(foundry.Embeddings, profile.Deployment)
@@ -72,8 +82,10 @@ func (c *Client) EmbedProfile(ctx context.Context, profile storage.EmbeddingProf
 			}
 		}
 	}
-	cfg.EmbeddingEndpoint = profile.Endpoint
+	cfg.EmbeddingEndpoint = endpoint
 	cfg.EmbeddingDeployment = profile.Deployment
+	cfg.EmbeddingAPIVersion = profile.APIVersion
+	cfg.APIVersion = profile.APIVersion
 	vectors, err := c.embed(ctx, cfg, inputs)
 	if err != nil {
 		return nil, err

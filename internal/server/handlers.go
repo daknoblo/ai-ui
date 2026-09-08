@@ -70,6 +70,7 @@ type pageData struct {
 	Chats             []storage.Chat
 	CurrentChat       *storage.Chat
 	Messages          []storage.Message
+	Streams           map[int64]*streamView
 	Documents         []storage.Document
 	SourceImages      []storage.Image
 	Configured        bool
@@ -186,7 +187,7 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		Current: llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(pd.Picker.Current), cfg.ReasoningEffort),
 	}
 	if current != nil {
-		msgs, err := s.store.ListMessages(ctx, current.ID)
+		msgs, turns, err := s.store.Conversation(ctx, current.ID)
 		if err != nil {
 			return pageData{}, err
 		}
@@ -199,6 +200,22 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 			return pageData{}, err
 		}
 		pd.Messages = msgs
+		pd.Streams = make(map[int64]*streamView)
+		for _, turn := range turns {
+			if turn.Active() {
+				view, err := generationView(turn)
+				if err != nil {
+					return pageData{}, err
+				}
+				pd.Streams[turn.ResponseID] = &view
+			} else if turn.State == storage.GenerationInterrupted {
+				for i := range pd.Messages {
+					if pd.Messages[i].ID == turn.ResponseID {
+						pd.Messages[i].Content += "\n\n⚠ " + s.t("stream.recovered_interrupt")
+					}
+				}
+			}
+		}
 		pd.Documents = docs
 		pd.SourceImages = imgs
 		pd.Title = s.chatTitle(current.Title)
@@ -315,6 +332,13 @@ func (s *Server) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 		s.corpusError(w, err)
 		return
 	}
+	s.configMu.Lock()
+	for _, job := range s.generations {
+		if job.chatID == id {
+			job.cancel()
+		}
+	}
+	s.configMu.Unlock()
 	redirect(w, r, "/")
 }
 
@@ -407,6 +431,11 @@ func buildChart(days []storage.UsageDay, limit int) []chartBar {
 // handleSend stores the user message and returns the streaming shell.
 func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, s.t("stream.limit"), http.StatusRequestEntityTooLarge)
+		return
+	}
 
 	// Resolve the chat ID ("new" creates a chat on demand).
 	idParam := chi.URLParam(r, "id")
@@ -449,7 +478,25 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	// In image mode the latest image of the chat is edited unless switched off.
 	edit := image && r.FormValue("edit") == "1"
 
-	if _, err := s.store.AddMessage(ctx, chatID, "user", message); err != nil {
+	cfg := s.cfg.Get()
+	turn, err := s.submitGeneration(ctx, chat, message, generationOptions{
+		Web: web, Image: image, Edit: edit,
+		Chat: llm.ChatOptions{Model: chat.Model,
+			ReasoningEffort: llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(chat.Model), chat.ReasoningEffort)},
+		ImageOptions: llm.ImageOptions{Deployment: imageModelOf(cfg, &chat),
+			Size: cfg.ImageSize, Quality: cfg.ImageQuality, Format: cfg.ImageFormat},
+	})
+	if errors.Is(err, storage.ErrGenerationBusy) {
+		http.Error(w, s.t("stream.busy"), http.StatusConflict)
+		return
+	}
+	if errors.Is(err, errGenerationCapacity) {
+		slog.Info("generation submission rejected", "chat", chatID, "reason", err)
+		w.Header().Set("Retry-After", "2")
+		http.Error(w, s.t("stream.overloaded"), http.StatusServiceUnavailable)
+		return
+	}
+	if err != nil {
 		s.httpError(w, err)
 		return
 	}
@@ -457,48 +504,27 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	// Derive a provisional title from the first message.
 	titleChanged := false
 	if isUntitled(chat.Title) {
-		newTitle := makeTitle(message)
-		if err := s.store.UpdateChatTitle(ctx, chatID, newTitle); err == nil {
-			chat.Title = newTitle
-			titleChanged = true
-		}
-	} else {
-		_ = s.store.TouchChat(ctx, chatID)
+		chat.Title = makeTitle(message)
+		titleChanged = true
 	}
 
 	// Append the user bubble plus the streaming shell.
 	s.render(w, "message", storage.Message{Role: "user", Content: message})
-	s.render(w, "assistant-stream", struct {
-		ChatID int64
-		Web    bool
-		Image  bool
-		Edit   bool
-	}{ChatID: chatID, Web: web, Image: image, Edit: edit})
+	s.render(w, "assistant-stream", streamView{ChatID: chatID, TurnID: turn.ID, Web: web, Image: image, Edit: edit})
 	if titleChanged {
 		s.render(w, "title-oob", struct{ Title string }{Title: chat.Title})
 	}
 }
 
-// handleGenerate streams the assistant answer as SSE.
-func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	sse, ok := newSSEWriter(w)
-	if !ok {
-		http.Error(w, s.t("stream.not_supported"), http.StatusInternalServerError)
-		return
-	}
-
-	// The SSE stream is best effort: once the client disconnects, writes fail
-	// and there is nothing useful left to report, so the errors are ignored.
+// generateTurn runs once after its durable claim, independent of SSE observers.
+func (s *Server) generateTurn(ctx context.Context, sse *generationStream, turn storage.Generation, options generationOptions) {
+	id := turn.ChatID
 	fail := func(msg string) {
-		_ = sse.send("token", renderMarkdownString("⚠ "+msg))
-		_ = sse.send("done", "")
+		sse.state, sse.failure = storage.GenerationFailed, msg
+		sse.content = "⚠ " + msg
+		if ctx.Err() != nil {
+			sse.state = storage.GenerationInterrupted
+		}
 	}
 
 	if !s.cfg.IsConfigured() {
@@ -506,46 +532,32 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	history, err := s.store.ListMessages(ctx, id)
-	if err != nil || len(history) == 0 {
+	history, err := s.store.GenerationHistory(ctx, id, turn.ID)
+	if err != nil || len(history) == 0 || history[len(history)-1].ID != turn.ID || history[len(history)-1].Role != "user" {
 		fail(s.t("stream.no_message"))
 		return
 	}
-
-	// Use the last user message as the search query.
-	query := ""
-	for i := len(history) - 1; i >= 0; i-- {
-		if history[i].Role == "user" {
-			query = history[i].Content
-			break
-		}
-	}
+	query := history[len(history)-1].Content
 
 	// Image mode: no streamed answer, the endpoint returns a finished image.
-	if r.URL.Query().Get("image") == "1" {
+	if options.Image {
 		if !s.cfg.ImagesConfigured() {
 			fail(s.t("stream.image_not_configured"))
 			return
 		}
-		s.generateImage(ctx, sse, id, query, r.URL.Query().Get("edit") == "1", llm.Usage{}, fail)
+		s.generateImage(ctx, sse, id, query, options.Edit, llm.Usage{}, fail)
 		return
 	}
 
-	// Web search: forced via the toggle (?web=1) or automatic via tool calling.
+	// Web search: forced by the submitted toggle or automatic via tool calling.
 	cfg := s.cfg.Get()
-	forceWeb := r.URL.Query().Get("web") == "1" && s.search.Enabled()
+	forceWeb := options.Web && s.search.Enabled()
 	autoWeb := cfg.SearchAuto && s.search.Enabled() && !forceWeb
 	autoImages := s.cfg.ImagesConfigured()
 
 	// The chat keeps its own model and reasoning effort; empty values leave both
 	// to the router and the model.
-	var opts llm.ChatOptions
-	if chat, err := s.store.GetChat(ctx, id); err == nil {
-		opts = llm.ChatOptions{
-			Model:           chat.Model,
-			ReasoningEffort: llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(chat.Model), chat.ReasoningEffort),
-		}
-	}
+	opts := options.Chat
 
 	messages, err := s.buildLLMMessages(ctx, id, cfg, history, query, forceWeb)
 	if err != nil {
@@ -587,7 +599,10 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("no vision capable deployment, answering without the attached images",
 				"chat", id, "model", opts.Model)
 			dropImages(messages)
-			_ = sse.send("tool", s.renderString("turn-note", s.t("stream.images_dropped")))
+			if err := sse.send("tool", s.renderString("turn-note", s.t("stream.images_dropped"))); err != nil {
+				fail(s.t("stream.request_failed", err.Error()))
+				return
+			}
 		case picked != opts.Model:
 			slog.Info("switching to a vision capable model for the attachments",
 				"from", opts.Model, "to", picked)
@@ -598,7 +613,11 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	var acc strings.Builder
 	onDelta := func(delta string) error {
+		if len(delta) > maxResponseBytes-acc.Len() {
+			return errors.New(s.t("stream.limit"))
+		}
 		acc.WriteString(delta)
+		sse.content = acc.String()
 		return sse.send("token", renderMarkdownString(acc.String()))
 	}
 
@@ -612,11 +631,6 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		if imageHandled {
 			return
 		}
-		// Fall back without tools if the router does not support tool calling.
-		if streamErr != nil && acc.Len() == 0 && !autoImages {
-			slog.Warn("tool-calling failed, falling back without tools", "err", streamErr)
-			result, streamErr = s.llm.ChatStream(ctx, opts, messages, onDelta)
-		}
 	} else {
 		result, streamErr = s.llm.ChatStream(ctx, opts, messages, onDelta)
 	}
@@ -628,17 +642,19 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// A partial answer exists: mark it and carry on.
+		sse.state, sse.failure = storage.GenerationFailed, streamErr.Error()
+		if ctx.Err() != nil {
+			sse.state = storage.GenerationInterrupted
+		}
 		acc.WriteString("\n\n" + s.t("stream.interrupted"))
 		_ = sse.send("token", renderMarkdownString(acc.String()))
 	}
 
 	final := acc.String()
-	if final != "" {
-		// Deliberately not r.Context(): the answer must be persisted even when
-		// the browser has already navigated away.
-		if _, err := s.store.AddMessage(context.Background(), id, "assistant", final); err != nil {
-			slog.Error("save assistant message", "err", err)
-		}
+	sse.content = final
+	if final == "" && streamErr == nil {
+		fail(s.t("stream.no_message"))
+		return
 	}
 
 	// Show the model that was actually used (as reported by the router).
@@ -655,15 +671,17 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate a concise chat title after the first answer.
-	if final != "" {
-		s.maybeGenerateTitle(context.Background(), sse, id)
+	if final != "" && streamErr == nil {
+		titleCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		s.maybeGenerateTitle(titleCtx, sse, id)
 	}
 	_ = sse.send("done", "")
 }
 
 // maybeGenerateTitle creates a short, meaningful chat title from the content
 // after the first exchange and updates header and sidebar via SSE.
-func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID int64) {
+func (s *Server) maybeGenerateTitle(ctx context.Context, sse *generationStream, chatID int64) {
 	msgs, err := s.store.ListMessages(ctx, chatID)
 	if err != nil || len(msgs) != 2 { // only on the first exchange (1 question + 1 answer)
 		return
@@ -678,7 +696,7 @@ func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID 
 		case "user":
 			userMsg = m.Content
 		case "assistant":
-			assistantMsg = m.Content
+			assistantMsg = sse.content
 		}
 	}
 	if userMsg == "" {
@@ -693,6 +711,9 @@ func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID 
 
 	var sb strings.Builder
 	if _, err := s.llm.ChatStream(ctx, llm.ChatOptions{}, titleMessages, func(delta string) error {
+		if len(delta) > 4096-sb.Len() {
+			return errors.New("generated title exceeds size limit")
+		}
 		sb.WriteString(delta)
 		return nil
 	}); err != nil {
@@ -709,15 +730,7 @@ func (s *Server) maybeGenerateTitle(ctx context.Context, sse *sseWriter, chatID 
 		return
 	}
 
-	// Update header and sidebar live.
-	chats, _ := s.store.ListChats(ctx)
-	chat, _ := s.store.GetChat(ctx, chatID)
-	data := struct {
-		Title       string
-		Chats       []storage.Chat
-		CurrentChat *storage.Chat
-	}{Title: title, Chats: chats, CurrentChat: &chat}
-	_ = sse.send("title", s.renderString("title-update", data))
+	// SSE observers read the current title after the outcome is committed.
 }
 
 // cleanTitle normalizes a title produced by the model.
@@ -907,7 +920,7 @@ func (s *Server) webSearchTool() llm.Tool {
 
 // streamWithTools keeps ordinary answers in chat and delegates explicit image
 // requests to the configured image model without changing the conversation mode.
-func (s *Server) streamWithTools(ctx context.Context, sse *sseWriter, chatID int64, opts llm.ChatOptions,
+func (s *Server) streamWithTools(ctx context.Context, sse *generationStream, chatID int64, opts llm.ChatOptions,
 	messages []llm.Message, useWeb, useImages bool, onDelta func(string) error, fail func(string),
 ) (llm.ChatResult, bool, error) {
 	var tools []llm.Tool
@@ -986,7 +999,7 @@ func (s *Server) streamWithTools(ctx context.Context, sse *sseWriter, chatID int
 
 // executeToolCall runs a tool call and returns the result as text for the
 // model. Currently only "web_search" is supported.
-func (s *Server) executeToolCall(ctx context.Context, sse *sseWriter, tc llm.ToolCall) string {
+func (s *Server) executeToolCall(ctx context.Context, sse *generationStream, tc llm.ToolCall) string {
 	if tc.Function.Name != "web_search" {
 		return s.t("tool.unknown", tc.Function.Name)
 	}
@@ -1051,7 +1064,7 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	defer s.configMu.Unlock()
 	cfg := s.cfg.Get()
 	previousLanguage := cfg.Language
-	previousEmbedding := cfg.EmbeddingDeployment
+	previous := cfg
 	locks := s.cfg.Locks()
 	// Endpoint fields locked via environment variables are disabled in the form
 	// (and therefore not submitted); they must not be cleared. Save() protects
@@ -1119,18 +1132,20 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 			s.renderConfigNotice(w, s.t("foundry.invalid_selection", err.Error()), true)
 			return
 		}
-		if cfg.EmbeddingDeployment != previousEmbedding {
-			job, exists, err := s.store.LatestReindex(r.Context())
-			if err != nil {
-				s.httpError(w, err)
-				return
-			}
-			if exists && job.Status == "running" {
-				s.renderConfigNotice(w, s.t("foundry.reindex_busy"), true)
-				return
-			}
-		}
 		cfg.ChatModel = cfg.ChatDeployment
+	}
+	if cfg.EmbeddingHost() != previous.EmbeddingHost() ||
+		cfg.EmbeddingVersion() != previous.EmbeddingVersion() ||
+		cfg.EmbeddingDeployment != previous.EmbeddingDeployment {
+		job, exists, err := s.store.LatestReindex(r.Context())
+		if err != nil {
+			s.httpError(w, err)
+			return
+		}
+		if exists && job.Status == "running" {
+			s.renderConfigNotice(w, s.t("foundry.reindex_busy"), true)
+			return
+		}
 	}
 
 	if err := s.cfg.Save(cfg); err != nil {
@@ -1272,8 +1287,8 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if cfg.Foundry {
-			if _, err := s.cfg.ResolveDeployment(foundry.Chat, model); err != nil {
-				slog.Warn("chat deployment selection rejected", "err", err)
+			if _, err := s.cfg.ResolveDeployment(foundry.Images, model); err != nil {
+				slog.Warn("image deployment selection rejected", "err", err)
 				http.Error(w, s.t("error.invalid_model"), http.StatusBadRequest)
 				return
 			}
@@ -1537,8 +1552,12 @@ func (s *Server) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.WithCorpusMutation(r.Context(), func() error {
-		return s.store.DeleteDocument(r.Context(), docID)
+		return s.store.DeleteDocumentForChat(r.Context(), chatID, docID)
 	}); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
 		s.corpusError(w, err)
 		return
 	}

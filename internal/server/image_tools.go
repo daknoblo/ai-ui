@@ -24,7 +24,7 @@ func (s *Server) imageTool() llm.Tool {
 	}}
 }
 
-func (s *Server) executeImageTool(ctx context.Context, sse *sseWriter, chatID int64, call llm.ToolCall, routingUsage llm.Usage, fail func(string)) error {
+func (s *Server) executeImageTool(ctx context.Context, sse *generationStream, chatID int64, call llm.ToolCall, routingUsage llm.Usage, fail func(string)) error {
 	var args struct {
 		Prompt string `json:"prompt"`
 		Edit   bool   `json:"edit"`
@@ -46,7 +46,9 @@ func (s *Server) executeImageTool(ctx context.Context, sse *sseWriter, chatID in
 		return fmt.Errorf("no image model configured")
 	}
 	// The image API, not this chat model, handles the user's generation/edit request.
-	_ = sse.send("tool", s.renderString("turn-note", s.t("tool.generating_image")))
+	if err := sse.send("tool", s.renderString("turn-note", s.t("tool.generating_image"))); err != nil {
+		return err
+	}
 	s.generateImage(ctx, sse, chatID, args.Prompt, args.Edit, routingUsage, fail)
 	return nil
 }

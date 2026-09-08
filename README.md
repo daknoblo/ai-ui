@@ -78,8 +78,8 @@ All screenshots are generated automatically from the demo instance
   temperature, default reasoning effort). Manual mode also exposes endpoints
   and API versions; Foundry mode shows the resource and discovered endpoint
   read-only
-- Explicit, staged document reindexing when changing the embedding model in
-  Foundry mode, with progress and a cost warning; a failed rebuild leaves the
+- Explicit, staged document reindexing when changing the embedding configuration
+  in either mode, with progress and a cost warning; a failed rebuild leaves the
   previous index intact
 - User interface available in **English and German**, switchable in the settings
 - Readiness/connection check: uploads are only possible once storage and the
@@ -108,7 +108,7 @@ All screenshots are generated automatically from the demo instance
 | `AZURE_CLIENT_ID` | – | Application/client ID of the service principal; required in Foundry mode. |
 | `AZURE_CLIENT_SECRET` | – | **Secret.** Service-principal secret; required in Foundry mode, environment only. |
 | `AZURE_API_KEY` | – | **Secret.** AI endpoint key in manual mode; not required or used for Foundry identity authentication. |
-| `AZURE_EMBEDDING_API_KEY` | – | **Secret, optional, manual mode.** Dedicated key if embeddings live on a separate Azure resource. Empty ⇒ `AZURE_API_KEY` is used. |
+| `AZURE_EMBEDDING_API_KEY` | – | **Secret, manual mode.** Required for an embedding endpoint with a different scheme or host. Empty ⇒ `AZURE_API_KEY` is used only for the same origin. |
 | `AZURE_IMAGE_API_KEY` | – | **Secret, optional, manual mode.** Dedicated image endpoint key. Empty ⇒ `AZURE_API_KEY` is used. |
 | `SEARCH_API_KEY` | – | **Secret, optional.** API key for web search (Tavily or Brave). Not required for SearXNG. |
 | `DATA_DIR`      | `/appdata` | Persistent data path. The SQLite database is stored directly in it, the UI settings in `<DATA_DIR>/appdata/config.json`. |
@@ -270,10 +270,14 @@ for details.
 
 ### Switching the embedding model
 
-In Foundry mode an index records its resource, endpoint, deployment, canonical
-model/version and vector dimensions. Saving a different embedding default
+Every index records its endpoint, deployment, API version (for classic
+endpoints) and vector dimensions. Foundry indexes additionally record the
+resource and canonical model/version. This applies to both identity-backed
+Foundry and manual/API-key configuration. Saving a different embedding default
 does **not** relabel or mix existing vectors. A legacy corpus with no known
 embedding profile also needs an explicit rebuild before it can be used safely.
+An older classic-endpoint profile without a recorded API version likewise
+requires rebuilding with an explicitly configured version.
 
 Save the new embedding selection, review the document/chunk counts and cost
 warning, then explicitly consent to **Rebuild embedding index** in Settings.
@@ -287,6 +291,16 @@ document/chat deletion are temporarily blocked while the rebuild runs. Only a
 complete successful rebuild becomes active; failure leaves the previous index
 intact. The old profile remains separate from the newly selected default until
 the switch succeeds, rather than silently querying old vectors with a new model.
+
+Manual embeddings can inherit the chat API key only when the endpoints have
+the same scheme and host. A separate origin requires
+`AZURE_EMBEDDING_API_KEY`. Previously configured embedding endpoints remain
+authorized for the old index during the current process. After a restart,
+only the current configuration authorizes a destination: a persisted profile
+alone cannot send the current key to an old endpoint. If those settings are
+incompatible, retrieval fails explicitly until you restore the matching
+configuration or complete a rebuild. Switching between manual and Foundry
+authentication also requires rebuilding; existing vectors are never relabeled.
 
 The **Rebuild options** section also permits an explicitly confirmed rebuild
 of the current profile, for example to repair an index or regenerate changed
@@ -407,6 +421,19 @@ background check (`HEALTHCHECK_INTERVAL`) monitors the connection continuously -
 without the per-deployment probes - and reports failures through the sidebar
 status and the log.
 
+Office imports preserve missing Excel columns and workbook tab order, associate
+PowerPoint notes with their actual slides, and retain text in nested Word
+tables. RTF imports decode UTF-16 surrogate pairs and scoped Unicode fallbacks.
+Malformed selected Office parts and resource-limit violations fail the upload
+instead of silently returning an incomplete extract. Each Office archive is
+limited to 64 MiB per part, 128 MiB total inflated data, 256 MiB processing work,
+2,000 entries/part reads, two million XML tokens, nesting depth 256 and 8 MiB
+extracted text.
+
+Parser improvements apply to newly uploaded documents. To replace an old
+incorrect extract, remove and upload that document again; rebuilding embeddings
+alone reuses the already stored text.
+
 ### Web search (optional)
 
 Pick a provider in the settings dialog under **Web search**:
@@ -432,7 +459,12 @@ usually lives.
 
 - Single static binary on a distroless base image, running as non-root
   (UID/GID `65532`); the container image is signed with cosign and scanned with
-  Trivy in CI
+  Trivy for both `linux/amd64` and `linux/arm64`
+- Releases run the same validation workflow as CI. Images are first pushed by
+  digest without changing public tags; `latest`, `stable` and version/SHA tags
+  are promoted only after both architecture scans and keyless signing succeed.
+  HIGH/CRITICAL findings (including unfixed ones) or failed checks block
+  promotion, and scan reports remain available in GitHub Code Scanning.
 - Secrets are read from environment variables only and are never written to
   `config.json`
 - All SQL statements are parameterized; no user input is concatenated into
@@ -451,6 +483,18 @@ usually lives.
   unprotected
 
 ## Running locally
+
+Sending a message creates a durable generation tied to that exact message.
+SSE connections observe or replay it; reconnecting or reloading does not start
+another provider request. Each chat accepts one active generation at a time,
+with at most four chat/image generations across the application. Additional
+submissions receive an explicit busy response without storing a message or
+starting a provider request; they are not automatically queued or retried.
+Closing the browser does not cancel that generation, which has a ten-minute
+timeout. Application shutdown cancels and joins active workers; after a restart,
+interrupted operations are marked as such and are never automatically retried
+because the provider may already have processed them. Optional title generation
+has a separate fifteen-second timeout.
 
 Static asset URLs carry content versions. Opening settings also updates the
 page's stylesheet, so a page left open during a container update does not render

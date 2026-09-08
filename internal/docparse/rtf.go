@@ -1,8 +1,11 @@
 package docparse
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // parseRTF extracts the plain text of an RTF document.
@@ -13,25 +16,58 @@ import (
 // ignorable destination would otherwise flood the extract with markup.
 func parseRTF(data []byte) (string, error) {
 	s := string(data)
+	type group struct {
+		fallback int
+		skip     bool
+	}
 	var (
-		sb    strings.Builder
-		depth int
-		// skipDepth is the group depth the current skipped destination started
-		// at; -1 means nothing is being skipped.
-		skipDepth = -1
-		i         int
+		sb      strings.Builder
+		state   = group{fallback: 1}
+		stack   []group
+		pending rune
+		i       int
 	)
+	flushSurrogate := func() {
+		if pending != 0 {
+			sb.WriteRune(utf8.RuneError)
+			pending = 0
+		}
+	}
+	writeUnit := func(unit rune) {
+		if pending != 0 && unit >= 0xDC00 && unit <= 0xDFFF {
+			sb.WriteRune(utf16.DecodeRune(pending, unit))
+			pending = 0
+			return
+		}
+		flushSurrogate()
+		switch {
+		case unit >= 0xD800 && unit <= 0xDBFF:
+			pending = unit
+		case unit >= 0xDC00 && unit <= 0xDFFF:
+			sb.WriteRune(utf8.RuneError)
+		default:
+			sb.WriteRune(unit)
+		}
+	}
+	write := func(text string) {
+		flushSurrogate()
+		sb.WriteString(text)
+	}
 
 	for i < len(s) && sb.Len() < maxTextBytes {
 		switch c := s[i]; c {
 		case '{':
-			depth++
+			if len(stack) >= 256 {
+				return "", fmt.Errorf("RTF group nesting limit exceeded")
+			}
+			stack = append(stack, state)
 			i++
 		case '}':
-			if skipDepth >= 0 && depth <= skipDepth {
-				skipDepth = -1
+			if len(stack) == 0 {
+				return "", fmt.Errorf("unmatched RTF closing group")
 			}
-			depth--
+			state = stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
 			i++
 		case '\\':
 			word, arg, next := readControl(s, i)
@@ -40,10 +76,19 @@ func parseRTF(data []byte) (string, error) {
 			// \* marks a destination a reader may ignore. Skipping it covers
 			// every private extension without having to know its name.
 			if word == "*" {
-				skipDepth = depth
+				state.skip = true
 				continue
 			}
-			if skipDepth >= 0 {
+			// Binary destinations can contain braces and backslashes. Their
+			// payload must never be interpreted as RTF group structure.
+			if word == "bin" {
+				var err error
+				if i, err = skipRTFBinary(s, i, arg); err != nil {
+					return "", err
+				}
+				continue
+			}
+			if state.skip {
 				continue
 			}
 
@@ -51,41 +96,65 @@ func parseRTF(data []byte) (string, error) {
 			case "par", "line", "sect", "page", "\n", "\r":
 				// A backslash directly before a line break is RTF's hard return,
 				// which readControl reports as the newline itself.
-				sb.WriteString("\n")
+				write("\n")
 			case "tab", "cell":
-				sb.WriteString("\t")
+				write("\t")
 			case "row":
-				sb.WriteString("\n")
-			case "u":
-				// \uN is a Unicode code point followed by a fallback character
-				// for readers that cannot render it.
-				if n, err := strconv.Atoi(arg); err == nil {
-					if n < 0 {
-						n += 65536 // code points above 32767 are written negative
-					}
-					sb.WriteRune(rune(n))
+				write("\n")
+			case "uc":
+				n, err := strconv.ParseUint(arg, 10, 16)
+				if err != nil {
+					return "", fmt.Errorf("invalid RTF Unicode fallback count")
 				}
-				i = skipUnicodeFallback(s, i)
+				state.fallback = int(n)
+			case "u":
+				// RTF carries UTF-16 code units, normally signed. Accept the
+				// unsigned spelling too, but never wrap an oversized integer.
+				n, err := strconv.ParseInt(arg, 10, 32)
+				if err != nil || n < -32768 || n > 65535 {
+					return "", fmt.Errorf("invalid RTF UTF-16 code unit")
+				}
+				if n < 0 {
+					n += 65536
+				}
+				writeUnit(rune(n))
+				if i, err = skipUnicodeFallback(s, i, state.fallback); err != nil {
+					return "", err
+				}
 			case "'":
 				// \'hh is a byte in the document code page.
-				if n, err := strconv.ParseInt(arg, 16, 32); err == nil {
-					sb.WriteRune(cp1252Rune(byte(n)))
+				b, err := rtfHexByte(arg)
+				if err != nil {
+					return "", err
 				}
+				flushSurrogate()
+				sb.WriteRune(cp1252Rune(b))
 			case "\\", "{", "}":
-				sb.WriteString(word)
+				write(word)
+			case "~":
+				write("\u00A0")
+			case "_":
+				write("\u2011")
+			case "-":
+				write("\u00AD")
 			default:
 				if skipDestinations[word] {
-					skipDepth = depth
+					state.skip = true
 				}
 			}
 		default:
 			// Raw line breaks are formatting of the RTF source, not of the text.
-			if skipDepth < 0 && c != '\r' && c != '\n' {
+			if !state.skip && c != '\r' && c != '\n' {
+				flushSurrogate()
 				sb.WriteByte(c)
 			}
 			i++
 		}
 	}
+	if i == len(s) && len(stack) != 0 {
+		return "", fmt.Errorf("unclosed RTF group")
+	}
+	flushSurrogate()
 
 	out := strings.TrimSpace(collapseBlankLines(sb.String()))
 	if out == "" {
@@ -142,12 +211,58 @@ func readControl(s string, i int) (word, arg string, next int) {
 	return word, arg, i
 }
 
-// skipUnicodeFallback drops the replacement character that follows \uN.
-func skipUnicodeFallback(s string, i int) int {
-	if i < len(s) && s[i] == '?' {
-		return i + 1
+// skipUnicodeFallback counts plain bytes and complete escapes, not source
+// characters in an escape. A group boundary terminates the fallback.
+func skipUnicodeFallback(s string, i, count int) (int, error) {
+	for count > 0 && i < len(s) {
+		switch s[i] {
+		case '{', '}':
+			return i, nil
+		case '\r', '\n':
+			i++
+			continue
+		case '\\':
+			word, arg, next := readControl(s, i)
+			i = next
+			switch word {
+			case "'":
+				if _, err := rtfHexByte(arg); err != nil {
+					return i, err
+				}
+			case "bin":
+				var err error
+				if i, err = skipRTFBinary(s, i, arg); err != nil {
+					return i, err
+				}
+			}
+		default:
+			i++
+		}
+		count--
 	}
-	return i
+	return i, nil
+}
+
+func rtfHexByte(arg string) (byte, error) {
+	isHex := func(c byte) bool {
+		return isDigit(c) || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
+	}
+	if len(arg) != 2 || !isHex(arg[0]) || !isHex(arg[1]) {
+		return 0, fmt.Errorf("invalid RTF hexadecimal byte")
+	}
+	n, err := strconv.ParseUint(arg, 16, 8)
+	if err != nil {
+		return 0, fmt.Errorf("invalid RTF hexadecimal byte: %w", err)
+	}
+	return byte(n), nil
+}
+
+func skipRTFBinary(s string, i int, arg string) (int, error) {
+	n, err := strconv.ParseUint(arg, 10, 32)
+	if err != nil || n > uint64(len(s)-i) {
+		return i, fmt.Errorf("invalid RTF binary length")
+	}
+	return i + int(n), nil
 }
 
 // cp1252High maps the 0x80-0x9F range of Windows-1252, which is the only part

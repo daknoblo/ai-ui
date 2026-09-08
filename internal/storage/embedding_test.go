@@ -84,11 +84,12 @@ func stagedEmbeddingTestCount(t *testing.T, store *Store, jobID int64) int {
 func TestEmbeddingProfileIdentity(t *testing.T) {
 	profile := embeddingTestProfile()
 	tests := map[string]func(*EmbeddingProfile){
-		"resource":   func(p *EmbeddingProfile) { p.ResourceID += "/other" },
-		"endpoint":   func(p *EmbeddingProfile) { p.Endpoint += "/other" },
-		"deployment": func(p *EmbeddingProfile) { p.Deployment += "-other" },
-		"model":      func(p *EmbeddingProfile) { p.ModelName += "-other" },
-		"version":    func(p *EmbeddingProfile) { p.ModelVersion += "-other" },
+		"resource":    func(p *EmbeddingProfile) { p.ResourceID += "/other" },
+		"endpoint":    func(p *EmbeddingProfile) { p.Endpoint += "/other" },
+		"deployment":  func(p *EmbeddingProfile) { p.Deployment += "-other" },
+		"model":       func(p *EmbeddingProfile) { p.ModelName += "-other" },
+		"version":     func(p *EmbeddingProfile) { p.ModelVersion += "-other" },
+		"api-version": func(p *EmbeddingProfile) { p.APIVersion = "other-version" },
 	}
 	for name, change := range tests {
 		t.Run(name, func(t *testing.T) {

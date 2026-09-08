@@ -151,7 +151,7 @@ func TestChatAutomaticallyDelegatesImageRequests(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, message := range []struct{ role, text string }{
-				{"user", "Earlier"}, {"assistant", "Earlier answer"}, {"user", "Create or change an image"},
+				{"user", "Earlier"}, {"assistant", "Earlier answer"},
 			} {
 				if _, err := server.store.AddMessage(t.Context(), id, message.role, message.text); err != nil {
 					t.Fatal(err)
@@ -162,8 +162,12 @@ func TestChatAutomaticallyDelegatesImageRequests(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			submitted := sendGeneration(t, handler, id, "message=Create+or+change+an+image")
+			streamURL := submittedGenerationURL(t, submitted)
 			result := httptest.NewRecorder()
-			handler.ServeHTTP(result, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/chat/%d/generate", id), nil))
+			handler.ServeHTTP(result, httptest.NewRequest(http.MethodGet, streamURL, nil))
+			replay := httptest.NewRecorder()
+			handler.ServeHTTP(replay, httptest.NewRequest(http.MethodGet, streamURL, nil))
 			if imageCalls.Load() != test.wantImages || chatCalls.Load() != 1 {
 				t.Fatalf("calls: chat=%d image=%d; %s", chatCalls.Load(), imageCalls.Load(), result.Body.String())
 			}

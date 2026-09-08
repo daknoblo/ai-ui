@@ -61,7 +61,16 @@
       "width": 1440,
       "height": 900,
       "title": "Foundry deployment inventory",
-      "caption": "Refresh reads metadata for one resource. Canonical models and capabilities explain which deployment aliases are usable; the local demo needs no credentials."
+      "caption": "Refresh reads metadata for the configured resources. Canonical models and capabilities explain which deployment aliases are usable; the local demo needs no credentials."
+    },
+    {
+      "id": "image-resource",
+      "lang": "en",
+      "file": "en/image-resource.png",
+      "width": 1440,
+      "height": 900,
+      "title": "A separate resource for image models",
+      "caption": "AZURE_IMAGE_RESOURCE_ID selects a separate ARM deployment inventory and endpoint using the same identity. Chat and embeddings remain on the primary resource."
     },
     {
       "id": "model-defaults",
@@ -142,7 +151,16 @@
       "width": 1440,
       "height": 900,
       "title": "Foundry-Deployment-Inventar",
-      "caption": "Aktualisieren liest Metadaten einer Ressource. Kanonische Modelle und Fähigkeiten zeigen, welche Deployment-Aliase nutzbar sind; die lokale Demo braucht keine Zugangsdaten."
+      "caption": "Aktualisieren liest Metadaten der eingestellten Ressourcen. Kanonische Modelle und Fähigkeiten zeigen, welche Deployment-Aliase nutzbar sind; die lokale Demo braucht keine Zugangsdaten."
+    },
+    {
+      "id": "image-resource",
+      "lang": "de",
+      "file": "de/image-resource.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Eine getrennte Ressource für Bildmodelle",
+      "caption": "AZURE_IMAGE_RESOURCE_ID wählt ein eigenes ARM-Deployment-Inventar samt Endpoint mit derselben Identität. Chat und Embeddings bleiben auf der Hauptressource."
     },
     {
       "id": "model-defaults",

@@ -51,8 +51,26 @@
       "file": "en/settings.png",
       "width": 1440,
       "height": 900,
-      "title": "Settings dialog",
-      "caption": "Language, endpoints, deployments, image parameters, web search and log level - all in the UI. API keys stay in the environment."
+      "title": "Foundry deployment inventory",
+      "caption": "Refresh reads metadata for one resource. Canonical models and capabilities explain which deployment aliases are usable; the local demo needs no credentials."
+    },
+    {
+      "id": "model-defaults",
+      "lang": "en",
+      "file": "en/model-defaults.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Defaults for each operation",
+      "caption": "Chat, embedding, image and vision defaults use supported inventory entries. The active embedding profile and completed local rebuild are shown below."
+    },
+    {
+      "id": "embedding-reindex",
+      "lang": "en",
+      "file": "en/embedding-reindex.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Embedding changes require consent",
+      "caption": "Saving a new embedding default does not relabel the old vectors. The staged rebuild requires explicit consent after showing corpus counts and an API cost warning."
     },
     {
       "id": "stats",
@@ -105,8 +123,26 @@
       "file": "de/settings.png",
       "width": 1440,
       "height": 900,
-      "title": "Einstellungsdialog",
-      "caption": "Sprache, Endpunkte, Deployments, Bildparameter, Websuche und Log-Level - alles in der Oberfläche. API-Schlüssel bleiben in der Umgebung."
+      "title": "Foundry-Deployment-Inventar",
+      "caption": "Aktualisieren liest Metadaten einer Ressource. Kanonische Modelle und Fähigkeiten zeigen, welche Deployment-Aliase nutzbar sind; die lokale Demo braucht keine Zugangsdaten."
+    },
+    {
+      "id": "model-defaults",
+      "lang": "de",
+      "file": "de/model-defaults.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Standard-Deployments je Aufgabe",
+      "caption": "Chat, Embeddings, Bilder und Vision verwenden unterstützte Inventar-Einträge. Darunter stehen das aktive Embedding-Profil und der abgeschlossene lokale Neuaufbau."
+    },
+    {
+      "id": "embedding-reindex",
+      "lang": "de",
+      "file": "de/embedding-reindex.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Embedding-Wechsel mit Bestätigung",
+      "caption": "Ein neuer Embedding-Standard ändert bestehende Vektoren nicht. Der getrennte Neuaufbau erfordert eine Bestätigung mit Dokumentanzahl und Hinweis auf API-Kosten."
     },
     {
       "id": "stats",

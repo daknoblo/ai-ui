@@ -7,7 +7,7 @@
       "width": 1440,
       "height": 900,
       "title": "Chat with Markdown answers",
-      "caption": "Conversations in the sidebar, model picker in the header, answers rendered as sanitized Markdown including tables and code."
+      "caption": "Conversations in the sidebar, a clear chat title, and answers rendered as sanitized Markdown including tables and code. Model defaults are managed in Settings."
     },
     {
       "id": "streaming",
@@ -124,7 +124,7 @@
       "width": 1440,
       "height": 900,
       "title": "Chat mit Markdown-Antworten",
-      "caption": "Unterhaltungen in der Seitenleiste, Modellauswahl in der Kopfzeile, Antworten als bereinigtes Markdown inklusive Tabellen und Code."
+      "caption": "Unterhaltungen in der Seitenleiste, ein klarer Chat-Titel und Antworten als bereinigtes Markdown inklusive Tabellen und Code. Modellvorgaben stehen in den Einstellungen."
     },
     {
       "id": "image",

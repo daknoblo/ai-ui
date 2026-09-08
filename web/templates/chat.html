@@ -20,7 +20,11 @@
 		</div>
 		{{end}}
 		{{range .Messages}}
+			{{with index $.Streams .ID}}
+			{{template "assistant-stream" .}}
+			{{else}}
 			{{template "message" .}}
+			{{end}}
 		{{end}}
 	</div>
 
@@ -84,7 +88,8 @@
 				hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
 				hx-target="#messages"
 				hx-swap="beforeend"
-				hx-on::after-request="if(event.detail.successful){this.reset();this.querySelector('textarea').style.height='auto';applyComposerState();}">
+				hx-on::response-error="var notice=document.getElementById('send-status');notice.textContent=event.detail.xhr.responseText;notice.hidden=false;"
+				hx-on::after-request="if(event.detail.successful){document.getElementById('send-status').hidden=true;this.reset();this.querySelector('textarea').style.height='auto';applyComposerState();}">
 				<input type="hidden" name="web" id="web-flag" value="0">
 				<input type="hidden" name="mode" id="mode-flag" value="chat">
 				<input type="hidden" name="edit" id="edit-flag" value="0">
@@ -97,6 +102,7 @@
 				<button type="submit" class="btn btn-send" title="{{t "chat.send_title"}}">↑</button>
 			</form>
 		</div>
+		<div id="send-status" class="warn-text" role="alert" hidden></div>
 	</div>
 
 	<div class="drop-overlay" id="drop-overlay" aria-hidden="true">
@@ -156,10 +162,10 @@
 {{define "assistant-stream"}}
 <div class="msg assistant"
 	hx-ext="sse"
-	sse-connect="/chat/{{.ChatID}}/generate{{if .Image}}?image=1{{if .Edit}}&amp;edit=1{{end}}{{else if .Web}}?web=1{{end}}"
+	sse-connect="/chat/{{.ChatID}}/generate?turn={{.TurnID}}"
 	sse-close="done">
 	<div class="msg-role">{{t "role.assistant"}}<span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span>{{if .Web}} <span class="web-tag"><span class="emoji">🌐</span> {{t "chat.web_tag"}}</span>{{end}}{{if .Image}} <span class="web-tag"><span class="emoji">🖼️</span> {{t "chat.image_tag"}}</span>{{end}}</div>
-	<div class="msg-tools" sse-swap="tool" hx-swap="beforeend"></div>
+	<div class="msg-tools" sse-swap="tool" hx-swap="innerHTML"></div>
 	<div class="bubble" sse-swap="token" hx-swap="innerHTML"><div class="pending" role="status"><span class="pending-label">{{if .Image}}{{if .Edit}}{{t "stream.pending_image_edit"}}{{else}}{{t "stream.pending_image"}}{{end}}{{else}}{{t "stream.pending_chat"}}{{end}}</span><span class="pending-bar"><span class="pending-fill"></span></span></div></div>
 	<div class="msg-usage" sse-swap="usage" hx-swap="innerHTML"></div>
 	<div class="msg-title-sink" sse-swap="title" hx-swap="innerHTML" hidden></div>

@@ -195,6 +195,9 @@ CREATE TABLE IF NOT EXISTS model_catalog (
 	if err := s.migrateEmbeddings(ctx); err != nil {
 		return err
 	}
+	if err := s.migrateGenerations(ctx); err != nil {
+		return err
+	}
 	// Older databases were created without auto_vacuum. The connection pragma
 	// only takes effect for the current file after a full VACUUM, which is run
 	// exactly once here.
@@ -479,6 +482,19 @@ func (s *Store) DeleteDocument(ctx context.Context, id int64) error {
 	return s.Vacuum(ctx)
 }
 
+// DeleteDocumentForChat refuses to delete another chat's attachment.
+// The caller must hold the corpus mutation lock, just as for DeleteDocument.
+func (s *Store) DeleteDocumentForChat(ctx context.Context, chatID, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM documents WHERE id = ? AND chat_id = ?`, id, chatID)
+	if err != nil {
+		return err
+	}
+	if err := requireChanged(res); err != nil {
+		return err
+	}
+	return s.Vacuum(ctx)
+}
+
 // Vacuum returns space freed by deletions to the file system.
 //
 // With auto_vacuum=INCREMENTAL (see Open) this only releases the free pages
@@ -731,6 +747,18 @@ func (s *Store) ImagesWithDataByKind(ctx context.Context, chatID int64, kind str
 // DeleteImage removes a stored image.
 func (s *Store) DeleteImage(ctx context.Context, id int64) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM images WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return s.Vacuum(ctx)
+}
+
+// DeleteImageForChat refuses to delete another chat's image.
+func (s *Store) DeleteImageForChat(ctx context.Context, chatID, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM images WHERE id = ? AND chat_id = ?`, id, chatID)
+	if err != nil {
+		return err
+	}
+	if err := requireChanged(res); err != nil {
 		return err
 	}
 	return s.Vacuum(ctx)

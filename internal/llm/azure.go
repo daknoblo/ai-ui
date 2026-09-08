@@ -148,7 +148,9 @@ func New(store *config.Store) *Client {
 			Timeout:   5 * time.Minute,
 			Transport: transport,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 10 || (len(via) > 0 && req.URL.Host != via[0].URL.Host) {
+				if len(via) >= 10 || (len(via) > 0 &&
+					(req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme ||
+						req.URL.EscapedPath() != via[0].URL.EscapedPath())) {
 					return fmt.Errorf("inference redirect is not allowed")
 				}
 				return nil

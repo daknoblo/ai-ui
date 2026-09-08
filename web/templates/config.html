@@ -89,6 +89,8 @@
 					placeholder="text-embedding-3-large"{{if .Locks.EmbeddingDeployment}} disabled{{end}}>
 			</label>
 
+			<div class="config-full">{{template "embedding-index" .Foundry.Index}}</div>
+
 			<div class="config-section-head">{{t "config.section_images"}}</div>
 			<label>
 				{{t "config.image_endpoint"}} <span class="hint">{{if .Locks.ImageEndpoint}}{{t "config.set_via" "AZURE_IMAGE_ENDPOINT"}}{{else}}{{t "config.optional_same_as_chat"}}{{end}}</span>
@@ -176,9 +178,10 @@
 				{{t "config.chat_key"}}
 				{{if .HasKey}}{{t "config.chat_key_set"}}{{else}}{{t "config.chat_key_missing"}}{{end}}
 			</div>
-			<div class="config-secret {{if .HasEmbeddingKey}}ok{{else}}warn{{end}}">
+			<div class="config-secret {{if and .HasEmbeddingKey (not .Foundry.Index.KeyMismatch)}}ok{{else}}warn{{end}}">
 				{{t "config.embedding_key"}}
-				{{if .HasOwnEmbeddingKey}}{{t "config.embedding_key_own"}}
+				{{if .Foundry.Index.KeyMismatch}}{{t "config.embedding_key_cross"}}
+				{{else if .HasOwnEmbeddingKey}}{{t "config.embedding_key_own"}}
 				{{else if .HasEmbeddingKey}}{{t "config.embedding_key_inherit"}}
 				{{else}}{{t "config.embedding_key_missing"}}{{end}}
 			</div>

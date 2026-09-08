@@ -231,13 +231,14 @@ type Store struct {
 	overrides       Overrides // endpoint values pinned via environment variables
 	locks           Locks     // derived from overrides: which fields are read-only
 
-	mu             sync.RWMutex
-	cur            Config // stored raw configuration (without overrides applied)
-	identity       FoundrySource
-	resourceID     string
-	identityError  string
-	discoveryError string
-	catalog        foundry.Snapshot
+	mu                 sync.RWMutex
+	cur                Config // stored raw configuration (without overrides applied)
+	identity           FoundrySource
+	resourceID         string
+	identityError      string
+	discoveryError     string
+	catalog            foundry.Snapshot
+	embeddingEndpoints map[string]struct{}
 }
 
 // Keys bundles the secrets read from the environment. Empty dedicated keys fall
@@ -277,6 +278,7 @@ func (s *Store) Load() (Config, error) {
 		if werr := s.writeLocked(s.cur); werr != nil {
 			return s.cur, werr
 		}
+		s.rememberEmbeddingEndpointLocked(s.effectiveLocked())
 		return s.cur, nil
 	}
 	if err != nil {
@@ -289,6 +291,7 @@ func (s *Store) Load() (Config, error) {
 	}
 	cfg.Language = i18n.Normalize(cfg.Language)
 	s.cur = cfg
+	s.rememberEmbeddingEndpointLocked(s.effectiveLocked())
 	return s.cur, nil
 }
 
@@ -327,7 +330,9 @@ func (s *Store) Save(cfg Config) error {
 	if err := s.writeLocked(cfg); err != nil {
 		return err
 	}
+	s.rememberEmbeddingEndpointLocked(s.effectiveLocked())
 	s.cur = cfg
+	s.rememberEmbeddingEndpointLocked(s.effectiveLocked())
 	return nil
 }
 

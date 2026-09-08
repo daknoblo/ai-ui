@@ -1,9 +1,9 @@
 package docparse
 
 import (
+	"errors"
 	"strings"
 	"testing"
-	"time"
 )
 
 // TestDOCXNestedCellsDoNotRepeat is the regression test for a memory
@@ -33,7 +33,7 @@ func TestDOCXNestedCellsDoNotRepeat(t *testing.T) {
 // buffers until the row closes. A document that opens cells and never closes a
 // row must still finish instead of running until it is killed.
 func TestDOCXDeepNestingTerminates(t *testing.T) {
-	const depth = 50000
+	const depth = 300
 
 	var xml strings.Builder
 	xml.WriteString("<w:document><w:body>")
@@ -44,15 +44,23 @@ func TestDOCXDeepNestingTerminates(t *testing.T) {
 	xml.WriteString("</w:body></w:document>")
 	data := buildDOCX(t, xml.String())
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_, _ = Extract("deep.docx", "", data)
-	}()
+	if got, err := Extract("deep.docx", "", data); !errors.Is(err, errOOXMLLimit) || got != "" {
+		t.Fatalf("Extract = %q, %v; want a nesting limit error", got, err)
+	}
+}
 
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		t.Fatal("extraction did not terminate on deeply nested table cells")
+func TestDOCXNestedTablesPreserveOuterText(t *testing.T) {
+	cell := func(text string) string { return `<w:tc><w:p><w:r><w:t>` + text + `</w:t></w:r></w:p></w:tc>` }
+	data := buildDOCX(t, `<w:document><w:body><w:tbl><w:tr><w:tc>`+
+		`<w:p><w:r><w:t>Before</w:t></w:r></w:p>`+
+		`<w:tbl><w:tr>`+cell("Inner A")+cell("Inner B")+`</w:tr>`+
+		`<w:tr>`+cell("Inner C")+`</w:tr></w:tbl>`+
+		`<w:p><w:r><w:t>After</w:t></w:r></w:p></w:tc>`+
+		cell("Outer neighbor")+`</w:tr><w:tr>`+cell("Next row")+
+		`</w:tr></w:tbl></w:body></w:document>`)
+	got, err := Extract("nested.docx", "", data)
+	want := "Before Inner A\tInner B Inner C After\tOuter neighbor\nNext row"
+	if err != nil || got != want {
+		t.Fatalf("Extract = %q, %v; want %q", got, err, want)
 	}
 }

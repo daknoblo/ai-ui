@@ -102,6 +102,9 @@ func ocrServer(t *testing.T, models []string) (*Server, http.Handler, *[]map[str
 			cfg.EmbeddingDeployment = "text-embedding-3-large"
 		})
 	// Uploads are gated on a verified connection.
+	if err := srv.verifyActiveEmbedding(t.Context()); err != nil {
+		t.Fatalf("verify embedding profile: %v", err)
+	}
 	srv.ready.set(true, true, true)
 
 	if _, err := srv.store.CreateChat(t.Context(), untitled, "", llm.ReasoningAuto); err != nil {

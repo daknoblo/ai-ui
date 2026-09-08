@@ -47,23 +47,20 @@ func (r *Retriever) Retrieve(ctx context.Context, chatID int64, query string, to
 	var result []Result
 	err := r.store.WithEmbeddingProfile(ctx, func(profile storage.EmbeddingProfile, known bool) error {
 		embed := func(ctx context.Context, inputs []string) ([][]float32, error) {
-			if known {
+			if known && profile.Dimensions > 0 {
 				return r.llm.EmbedProfile(ctx, profile, inputs)
 			}
-			if r.llm.UsesFoundry() {
-				return nil, storage.ErrReindexRequired
-			}
-			return r.llm.Embed(ctx, inputs)
+			return nil, storage.ErrReindexRequired
 		}
 		var err error
-		result, err = r.retrieve(ctx, chatID, query, topK, embed, known)
+		result, err = r.retrieve(ctx, chatID, query, topK, embed)
 		return err
 	})
 	return result, err
 }
 
 func (r *Retriever) retrieve(ctx context.Context, chatID int64, query string, topK int,
-	embed func(context.Context, []string) ([][]float32, error), knownProfile bool,
+	embed func(context.Context, []string) ([][]float32, error),
 ) ([]Result, error) {
 	count, err := r.store.CountChunksByChat(ctx, chatID)
 	if err != nil {
@@ -89,10 +86,7 @@ func (r *Retriever) retrieve(ctx context.Context, chatID int64, query string, to
 	scored := make([]candidate, 0, count)
 	err = r.store.EachChunkVector(ctx, chatID, func(cv storage.ChunkVector) error {
 		if len(cv.Embedding) != len(qv) {
-			if knownProfile {
-				return fmt.Errorf("stored vectors do not match the active embedding profile")
-			}
-			return nil // skip incompatible dimensions (e.g. after a model change)
+			return fmt.Errorf("stored vectors do not match the active embedding profile")
 		}
 		scored = append(scored, candidate{
 			ID:         cv.ID,

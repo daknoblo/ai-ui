@@ -316,8 +316,11 @@ func TestFoundryUnavailableImageModeDoesNotBecomeChat(t *testing.T) {
 	rec := postFoundryForm(handler, fmt.Sprintf("/chat/%d/send", id), url.Values{
 		"message": {"draw an image"}, "mode": {"image"},
 	})
-	if !strings.Contains(rec.Body.String(), "image=1") {
-		t.Fatalf("unavailable image requests must reach the explicit image error, not chat: %s", rec.Body.String())
+	streamURL := submittedGenerationURL(t, rec)
+	stream := httptest.NewRecorder()
+	handler.ServeHTTP(stream, httptest.NewRequest(http.MethodGet, streamURL, nil))
+	if !strings.Contains(stream.Body.String(), srv.t("stream.image_not_configured")) {
+		t.Fatalf("unavailable image requests must reach the explicit image error, not chat: %s", stream.Body.String())
 	}
 	page := httptest.NewRecorder()
 	handler.ServeHTTP(page, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/chat/%d", id), nil))

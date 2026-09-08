@@ -54,9 +54,9 @@ type foundryView struct {
 }
 
 type embeddingIndexView struct {
-	Enabled, NeedsReindex, CanReindex, Running bool
-	Selected, Active, Error, Status, Target    string
-	Documents, Chunks, Completed               int
+	Enabled, NeedsReindex, CanReindex, Running, KeyMismatch bool
+	Selected, Active, Error, Status, Target                 string
+	Documents, Chunks, Completed                            int
 }
 
 func (s *Server) refreshFoundry(ctx context.Context) error {
@@ -136,7 +136,7 @@ func (s *Server) handleDeploymentRefresh(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) foundryData(ctx context.Context) foundryView {
 	status := s.cfg.FoundryStatus()
-	view := foundryView{FoundryStatus: status}
+	view := foundryView{FoundryStatus: status, Index: s.embeddingIndexData(ctx)}
 	if !status.Enabled {
 		return view
 	}
@@ -231,15 +231,12 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 		view.Groups[group].Models = append(view.Groups[group].Models, row)
 	}
 	view.EmptyImageInventory = len(view.Groups[2].Models) == 0
-	view.Index = s.embeddingIndexData(ctx)
 	return view
 }
 
 func (s *Server) embeddingIndexData(ctx context.Context) embeddingIndexView {
-	view := embeddingIndexView{Enabled: s.cfg.FoundryStatus().Enabled, Selected: s.cfg.Get().EmbeddingDeployment}
-	if !view.Enabled {
-		return view
-	}
+	view := embeddingIndexView{Enabled: true, Selected: s.cfg.Get().EmbeddingDeployment,
+		KeyMismatch: s.cfg.EmbeddingKeyMismatch()}
 	var err error
 	view.Documents, view.Chunks, err = s.store.EmbeddingCounts(ctx)
 	if err != nil {
@@ -252,7 +249,7 @@ func (s *Server) embeddingIndexData(ctx context.Context) embeddingIndexView {
 		return view
 	}
 	if known {
-		view.Active = profile.Deployment
+		view.Active = profile.Deployment + " — " + profile.Endpoint
 	} else {
 		view.Active = s.t("foundry.unknown_index")
 	}
@@ -300,7 +297,7 @@ func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 		s.httpError(w, context.Canceled)
 		return
 	}
-	if !s.cfg.FoundryStatus().Enabled || r.FormValue("confirm_reindex") != "yes" {
+	if r.FormValue("confirm_reindex") != "yes" {
 		slog.Info("embedding reindex requires explicit confirmation")
 		http.Error(w, s.t("foundry.confirm_required"), http.StatusBadRequest)
 		return
@@ -338,7 +335,7 @@ func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 
 func embeddingTarget(profile storage.EmbeddingProfile) string {
 	value := strings.Join([]string{profile.ResourceID, profile.Endpoint, profile.Deployment,
-		profile.ModelName, profile.ModelVersion}, "\x00")
+		profile.ModelName, profile.ModelVersion, profile.APIVersion}, "\x00")
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
 }
 
@@ -346,9 +343,6 @@ func embeddingTarget(profile storage.EmbeddingProfile) string {
 func (s *Server) verifyActiveEmbedding(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	if !s.cfg.FoundryStatus().Enabled {
-		return s.llm.VerifyEmbedding(ctx)
-	}
 	target, err := s.llm.ConfiguredEmbeddingProfile()
 	if err != nil {
 		return err
@@ -381,7 +375,7 @@ func (s *Server) verifyActiveEmbedding(ctx context.Context) error {
 		}
 		return nil
 	}
-	if !known {
+	if !known || active.Dimensions <= 0 {
 		return storage.ErrReindexRequired
 	}
 	return s.store.WithEmbeddingProfile(ctx, func(profile storage.EmbeddingProfile, known bool) error {

@@ -206,8 +206,9 @@ func askWithAttachment(t *testing.T, handler http.Handler, filename, mime string
 		t.Fatalf("send = %d, want 200", rec.Code)
 	}
 
+	streamURL := submittedGenerationURL(t, rec)
 	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/chat/1/generate", nil))
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, streamURL, nil))
 	if !strings.Contains(rec.Body.String(), "I see it") {
 		t.Fatalf("the answer was not streamed: %s", rec.Body.String())
 	}
@@ -369,8 +370,9 @@ func askWithoutUpload(t *testing.T, handler http.Handler) {
 		t.Fatalf("send = %d, want 200", rec.Code)
 	}
 
+	streamURL := submittedGenerationURL(t, rec)
 	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/chat/1/generate", nil))
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, streamURL, nil))
 	if !strings.Contains(rec.Body.String(), "I see it") {
 		t.Fatalf("the answer was not streamed: %s", rec.Body.String())
 	}

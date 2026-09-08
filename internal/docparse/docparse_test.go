@@ -44,10 +44,19 @@ func TestParseDOCX(t *testing.T) {
 // guard: a small archive that expands beyond the limit must be rejected instead
 // of being read into memory.
 func TestParseDOCXRejectsOversizedPart(t *testing.T) {
-	huge := strings.Repeat("a", maxOOXMLPartBytes+1024)
-	data := buildDOCX(t, `<w:document><w:body><w:p><w:r><w:t>`+huge+`</w:t></w:r></w:p></w:body></w:document>`)
-
-	if _, err := Extract("bomb.docx", "", data); err == nil {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	if _, err := zw.CreateRaw(&zip.FileHeader{
+		Name: "word/document.xml", Method: zip.Store, UncompressedSize64: maxOOXMLPartBytes + 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// The declared-size guard runs before decompression; do not allocate a
+	// 64 MiB payload just to exercise this branch on shared CI hosts.
+	if _, err := Extract("bomb.docx", "", buf.Bytes()); err == nil {
 		t.Fatal("expected an error for an oversized document.xml")
 	}
 }

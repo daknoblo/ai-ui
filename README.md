@@ -132,13 +132,9 @@ The chat and embedding endpoints may use different schemas in manual mode.
 For an installation **outside Azure**, provide these four environment settings
 for an existing service principal and one existing Foundry/Azure OpenAI account:
 
-```sh
-export AZURE_RESOURCE_ID='/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>'
-export AZURE_TENANT_ID='<tenant-id>'
-export AZURE_CLIENT_ID='<application-client-id>'
-export AZURE_CLIENT_SECRET='<service-principal-secret>'
-CGO_ENABLED=0 DATA_DIR=./data PORT=8080 go run .
-```
+`AZURE_RESOURCE_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, and
+`AZURE_CLIENT_SECRET`. For a new installation, follow the
+[service-principal setup](#service-principal-setup-and-operation) below.
 
 Inject the real secret through your deployment environment or secret manager,
 not through `config.json` or committed files. The resource ID only opts in; it
@@ -188,6 +184,61 @@ use manual mode for a multi-resource API-key setup. `AZURE_MODELS` and
 `AZURE_IMAGE_MODELS`, when supplied in Foundry mode, restrict the discovered
 supported choices; they cannot turn an unsupported or undiscovered deployment
 into a supported one.
+
+### Service-principal setup and operation
+
+Open [Azure Cloud Shell](https://shell.azure.com) in **Bash** mode in the tenant
+that owns your Foundry resource. Your user needs permission to create app
+registrations/service principals and assign roles on that resource.
+Replace the three placeholders and run:
+
+```bash
+az account set --subscription '<subscription-id>' &&
+RESOURCE_ID="$(az cognitiveservices account show \
+  --resource-group '<resource-group>' \
+  --name '<foundry-account-name>' \
+  --query id --output tsv)" &&
+test -n "$RESOURCE_ID" &&
+az ad sp create-for-rbac \
+  --name "ai-ui-$(date -u +%Y%m%d-%H%M%S)" \
+  --role 'Cognitive Services OpenAI User' \
+  --scopes "$RESOURCE_ID" \
+  --years 1 \
+  --output json &&
+printf 'AZURE_RESOURCE_ID=%s\n' "$RESOURCE_ID"
+```
+
+This creates an app/service principal with a timestamped name, grants access
+only to that Foundry account, and creates a secret valid for **one year**
+(subject to tenant policy). The account name is the Azure resource name, not
+a Foundry project name. The `&&` chain stops on errors.
+
+Copy the output into your container's environment settings:
+
+| Output value | Container variable |
+| --- | --- |
+| Printed `AZURE_RESOURCE_ID` | `AZURE_RESOURCE_ID` |
+| JSON `tenant` | `AZURE_TENANT_ID` |
+| JSON `appId` | `AZURE_CLIENT_ID` |
+| JSON `password` | `AZURE_CLIENT_SECRET` |
+
+**Copy and securely store `password` immediately**; Azure does not let you read
+its value again. Do not commit or share the output, or put the secret in Compose
+YAML or `config.json`. If you change the generated name, use an unused name:
+`create-for-rbac` can modify an existing app with a matching display name.
+This is a one-time creation command, not a container startup or rotation command.
+
+[docker-compose.example.yml](docker-compose.example.yml) already maps these four
+variables. Start/recreate the container with the values, then open
+**Settings > Refresh deployments**, select the models, **Save**, and
+**Check again**. Allow a few minutes for new role assignments to propagate;
+model verification and use can incur Azure charges.
+
+Before expiry, add a new secret to the same app, update the container's
+environment and recreate it. Remove the old secret only after testing the new
+one; retain the data volume. See the
+[Azure CLI service-principal guide](https://learn.microsoft.com/en-us/cli/azure/azure-cli-sp-tutorial-1)
+for details.
 
 ### Switching the embedding model
 

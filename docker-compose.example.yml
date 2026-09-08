@@ -15,6 +15,8 @@ services:
       # Optional Foundry inventory for ONE existing resource. For an off-Azure
       # service principal, set all four values; the resource ID alone is not
       # authentication. Secrets belong only in the deployment environment.
+      # See README.md: "Service-principal setup and operation" for Cloud Shell
+      # commands and the mapping from their output to these variables.
       - AZURE_RESOURCE_ID=${AZURE_RESOURCE_ID:-}
       - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
       - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}

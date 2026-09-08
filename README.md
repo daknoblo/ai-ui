@@ -11,6 +11,11 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
+**Release 1.2.0:** identity-based Foundry setup, separate image resources,
+reconnect-safe generation, safer embedding indexes and corrected document
+extraction. See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.2.0)
+and [upgrade checklist](#upgrading-to-120).
+
 **Website with the full screenshot gallery:**
 <https://daknoblo.github.io/ai-ui/>
 
@@ -608,8 +613,72 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions: `latest` and `stable` from `main`,
-and the version tags (`1.1.0`, `1.1`) when a release is published. Note that the
+and the version tags (`1.2.0`, `1.2`) when a release is published. Note that the
 image tag carries no `v` prefix even though the git tag does.
+
+### Upgrading to 1.2.0
+
+1. **Back up the complete data volume before upgrading.** Stop ai-ui while
+   copying `/appdata`, or use a consistent SQLite backup procedure. Retain the
+   database, any journal/WAL files, stored configuration and file ownership.
+   Do not remove the volume or run `docker compose down -v`.
+2. **Pin the image in the existing stack** to
+   `ghcr.io/daknoblo/ai-ui:1.2.0`, keeping the same persistent volume, ports and
+   environment settings. The `1.2` tag follows releases in this minor series;
+   an exact version or digest is preferable when upgrades must be controlled.
+3. **Review the configuration changes below**, then recreate the ai-ui service.
+   With the service name from the example:
+
+   ```sh
+   docker compose pull ai-ui
+   docker compose up -d --no-deps ai-ui
+   ```
+
+4. **Reload the browser, open Settings and verify the saved configuration.**
+   In Foundry mode, refresh deployments before checking the selected models.
+   Storage migrations run automatically; the app does not automatically
+   regenerate existing embeddings or retry interrupted generation requests.
+5. **Test a normal chat and document retrieval.** If images are configured,
+   check their resource/deployment and then test generation separately if
+   desired; a real image request incurs provider charges. The incomplete image
+   connection probe does not generate an image.
+
+Important compatibility and behavior changes:
+
+- **Foundry remains opt-in.** Manual/API-key configuration is retained when
+  `AZURE_RESOURCE_ID` is absent. For identity-based discovery, follow the
+  [service-principal setup](#service-principal-setup-and-operation); secrets stay
+  in environment variables only. Images in another account use
+  [`AZURE_IMAGE_RESOURCE_ID`](#separate-image-resource) and permissions for the
+  same service principal on that account. An image-only resource change does
+  not change the primary chat/embedding resource or require reindexing.
+- **Old embedding indexes may require explicit rebuilding.** An index without
+  a known profile, an older classic profile without a recorded API version, or
+  a switch of model/authentication identity is not silently relabeled. Review
+  counts and usage charges in [Switching the embedding model](#switching-the-embedding-model)
+  before confirming the staged rebuild. Failure keeps the previous index.
+- **Manual embedding credentials are destination-scoped.** An embedding
+  endpoint on another scheme/host requires `AZURE_EMBEDDING_API_KEY`; the chat
+  key is no longer inherited across origins. After restarting with a different
+  endpoint, an old profile cannot authorize sending current credentials to the
+  former destination. Restore compatible settings or rebuild explicitly.
+- **Parser corrections do not rewrite stored extracts.** Re-upload documents
+  whose previous Excel columns/sheet names, PowerPoint notes, nested Word
+  tables or RTF text were extracted incorrectly. Reindexing alone reuses the
+  stored text. Malformed or oversized OOXML inputs now fail explicitly rather
+  than returning an incomplete extract.
+- **Generation is bounded and durable.** One active turn per chat and four
+  across the application are allowed. Reconnecting does not repeat a model
+  request; closing the browser no longer cancels the worker. After shutdown or
+  interruption, an uncertain provider outcome is never retried automatically.
+- **The header model selector is gone.** Settings retain deployment defaults,
+  streamed answers retain their responding-model badges, and existing chat
+  model selections are preserved. Ordinary chat can now delegate explicit
+  image requests to the configured image model, with the associated charges.
+
+For rollback, stop the new container and restore the pre-upgrade data backup
+together with the previous pinned image. Merely pointing an older binary at a
+database already migrated by 1.2.0 is not a supported rollback procedure.
 
 ## Development
 

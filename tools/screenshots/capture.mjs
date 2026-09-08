@@ -52,11 +52,11 @@ const SHOTS = [
     meta: {
       en: {
         title: 'Chat with Markdown answers',
-        caption: 'Conversations in the sidebar, model picker in the header, answers rendered as sanitized Markdown including tables and code.',
+        caption: 'Conversations in the sidebar, a clear chat title, and answers rendered as sanitized Markdown including tables and code. Model defaults are managed in Settings.',
       },
       de: {
         title: 'Chat mit Markdown-Antworten',
-        caption: 'Unterhaltungen in der Seitenleiste, Modellauswahl in der Kopfzeile, Antworten als bereinigtes Markdown inklusive Tabellen und Code.',
+        caption: 'Unterhaltungen in der Seitenleiste, ein klarer Chat-Titel und Antworten als bereinigtes Markdown inklusive Tabellen und Code. Modellvorgaben stehen in den Einstellungen.',
       },
     },
     capture: (page, ctx) => open(page, `/chat/${ctx.index.chats.chat}`),
@@ -140,6 +140,7 @@ const SHOTS = [
         : 'Generate an image of a blue park.');
       await page.locator('#chat-form button[type="submit"]').click();
       await page.locator('#messages .msg.assistant .bubble img').last().waitFor();
+      await page.locator('#messages .msg.assistant .model-badge').last().waitFor();
       if (await page.locator('.composer').getAttribute('data-mode') !== 'chat') {
         throw new Error('Automatic image generation must preserve chat mode');
       }
@@ -380,6 +381,9 @@ async function main() {
           }
           const page = await context.newPage();
           await shot.capture(page, { index, lang });
+          if (await page.locator('#model-picker, #model-select').count()) {
+            throw new Error('The chat header must not contain a model selector');
+          }
           const file = `${lang}/${shot.id}.png`;
           await page.screenshot({ path: join(outDir, file), animations: 'disabled' });
           const viewport = page.viewportSize();

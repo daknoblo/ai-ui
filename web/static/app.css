@@ -274,28 +274,6 @@ html, body {
 }
 /* Opens the drawer; only shown once the sidebar is off-canvas. */
 .nav-toggle { display: none; }
-.model-picker {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	flex: 0 0 auto;
-	margin: 0;
-}
-/* The class sets display, so the hidden attribute needs to win explicitly. */
-.model-picker[hidden] { display: none; }
-.model-label { font-size: 12px; color: var(--text-dim); }
-.model-picker select {
-	background: var(--bg-elev);
-	color: var(--text);
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	padding: 6px 28px 6px 10px;
-	font: inherit;
-	font-size: 13px;
-	cursor: pointer;
-	max-width: 200px;
-}
-.model-picker select:focus { outline: none; border-color: var(--accent); }
 
 .messages {
 	flex: 1;
@@ -942,18 +920,6 @@ html, body {
 
 	.chat-header { gap: 8px; padding: 6px 10px; }
 	.chat-header h1 { font-size: 14px; }
-	/* The label only exists for screen readers here; the select shows the name. */
-	.model-label {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		margin: -1px;
-		padding: 0;
-		overflow: hidden;
-		clip-path: inset(50%);
-		white-space: nowrap;
-	}
-	.model-picker select { max-width: 38vw; padding: 5px 24px 5px 8px; }
 
 	.messages { padding: 12px; gap: 14px; }
 	.msg-role { font-size: 11px; }
@@ -1009,7 +975,6 @@ html, body {
    16px, and hover-only affordances never show up at all. */
 @media (pointer: coarse) {
 	.composer textarea,
-	.model-picker select,
 	.image-params select,
 	.reasoning-opt select,
 	.config-form input,

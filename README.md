@@ -29,11 +29,9 @@ All screenshots are generated automatically from the demo instance
 
 - Chat interface with a sidebar, multiple conversations and history
 - Answer streaming (token by token) via server-sent events
-- Model picker in the top right of the chat window. In manual mode its list
-  comes from `AZURE_MODELS`; in Foundry mode it comes from supported deployments
-  in the resource inventory. Manual mode offers "Auto" for the configured chat
-  default; Foundry mode selects deployments explicitly, including a model
-  router when available. The selection survives switching chats
+- Model configuration stays in Settings rather than a selector in the chat
+  header. The model badge on each streamed answer still identifies the model
+  that actually replied. Existing per-chat model selections are preserved
 - Optional Foundry inventory with metadata-only **Refresh** and separate defaults
   for chat, embeddings, images and vision. Deployment aliases are mapped to
   canonical model metadata; unsupported deployments remain visible
@@ -59,15 +57,15 @@ All screenshots are generated automatically from the demo instance
 - **The model follows the attachment**: a picture attached while a text-only
   model is selected is answered by the first vision capable entry of
   `AZURE_MODELS` in manual mode, or the configured vision fallback in Foundry
-  mode. The switch applies to that one answer, the picker stays where it is,
-  and the model tag names whoever replied
+  mode. The switch applies to that one answer without changing the stored
+  chat model, and the model tag names whoever replied
 - Optional web search (🌐) per request: pulls in current online results as
   context - provider agnostic (Tavily, Brave Search, SearXNG)
 - Optional image generation (🖼): the toggle switches the next message from a
   chat answer to a generated image (Azure image models such as `gpt-image-2`);
   images are stored in the database and shown inline. In image mode an attached
-  image turns the next prompt into an edit of that image. There the model picker
-  offers the image deployments
+  image turns the next prompt into an edit of that image. Image deployments
+  are configured in Settings
 - With an image model configured, explicit image requests in ordinary chat can
   call the image generator automatically. Follow-up edits use the latest image;
   ordinary answers stay with the chat model. These image calls incur usage
@@ -373,12 +371,13 @@ metadata is refreshed; refresh after changing deployments in Azure.
 
 ### Several deployments, one configuration (manual mode)
 
-All deployments of a resource share its endpoint and API key, so `AZURE_MODELS`
-is all it takes to offer several models: list the deployment names, and the
-picker in the top right switches between them. With the v1 schema the selected
-name is sent as `model`, with the classic schema it becomes the deployment in
-the request path - in both cases the request goes to that deployment. The entry
-of `AZURE_DEPLOYMENT` answers "Auto (router)" and is the fallback.
+All deployments of a resource share its endpoint and API key. `AZURE_MODELS`
+declares the available chat deployments for verification and automatic vision
+fallback. Existing chat pins and saved model defaults remain in effect;
+otherwise new chats use the first list entry, or `AZURE_DEPLOYMENT` when the
+list is empty. There is no model selector in the chat header. With the v1
+schema the resolved name is sent as `model`; with the classic schema it becomes
+the deployment in the request path.
 
 Embeddings and image generation are separate APIs and therefore keep their own
 deployment setting, but they can live in the same resource: leave their endpoint
@@ -439,7 +438,7 @@ Image generation (fall back to the AI endpoint when empty):
 | --------------- | --------------------------------------------- |
 | `AZURE_IMAGE_ENDPOINT` | Image endpoint URL, e.g. `https://my-resource.services.ai.azure.com/openai/v1`. |
 | `AZURE_IMAGE_DEPLOYMENT` | Deployment name of the image model, e.g. `gpt-image-2`. |
-| `AZURE_IMAGE_MODELS` | Selectable image deployments (comma or newline separated). In manual mode, empty ⇒ only `AZURE_IMAGE_DEPLOYMENT`; in Foundry mode, empty ⇒ supported inventory entries, otherwise an allow-list. In image mode the picker offers these instead of the chat models. |
+| `AZURE_IMAGE_MODELS` | Image deployment list (comma or newline separated). In manual mode, empty ⇒ only `AZURE_IMAGE_DEPLOYMENT`; in Foundry mode, empty ⇒ supported inventory entries, otherwise an allow-list for the image selection in Settings. |
 | `AZURE_IMAGE_API_VERSION` | Image API version.                    |
 
 The key is `AZURE_IMAGE_API_KEY`; when it is empty `AZURE_API_KEY` is used.

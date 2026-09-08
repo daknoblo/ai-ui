@@ -83,11 +83,6 @@
 			// Read from the DOM instead of a server rendered flag: attaching or
 			// removing a file and finishing a generation all happen without a reload.
 			var hasImage = !!document.querySelector('#doc-list .source-chip, #messages .bubble img');
-			var picker = document.getElementById('model-picker');
-			var selectedModel = document.querySelector('#model-select option:checked');
-			if (box && picker && picker.dataset.imageMode === '1' && selectedModel) {
-				box.dataset.imageEdits = selectedModel.dataset.imageEdits || '0';
-			}
 			var supportsEdits = !!box && box.dataset.imageEdits === '1';
 			var edit = image && hasImage && supportsEdits && editEnabled();
 

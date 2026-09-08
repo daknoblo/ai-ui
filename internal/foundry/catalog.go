@@ -101,6 +101,13 @@ func (d Deployment) UnsupportedReason(op Operation) string {
 	if format == "cohere" && strings.Contains(model, "embed") {
 		return "Cohere embeddings require a model-specific embedding adapter"
 	}
+	if (strings.HasPrefix(model, "gpt-") && (strings.HasSuffix(model, "-pro") || strings.Contains(model, "-codex"))) ||
+		strings.HasPrefix(model, "codex-") || model == "computer-use-preview" {
+		return "this model requires the Responses API, which is not implemented"
+	}
+	if model == "gpt-35-turbo-instruct" || model == "gpt-3.5-turbo-instruct" {
+		return "legacy text completions are not implemented by the chat integration"
+	}
 	for _, excluded := range []string{"realtime", "audio", "transcribe", "whisper", "tts", "sora", "batch"} {
 		for _, token := range strings.FieldsFunc(model+"-"+strings.ToLower(d.ModelVersion), func(r rune) bool { return r == '-' || r == '_' }) {
 			if token == excluded {
@@ -109,8 +116,11 @@ func (d Deployment) UnsupportedReason(op Operation) string {
 		}
 	}
 	profile, known := modelProfiles[model]
+	if !known {
+		profile, known = d.advertisedChatProfile(format)
+	}
 	if !known || !matchesFormat(format, profile.format) {
-		return "canonical model identity or model format is not recognized by the OpenAI v1 integration"
+		return fmt.Sprintf("model %q (format %q) has neither a known profile nor supported chat capability metadata", d.ModelName, d.ModelFormat)
 	}
 	supported := profile.operations
 	if model == "gpt-4" {
@@ -144,8 +154,28 @@ func (d Deployment) UnsupportedReason(op Operation) string {
 	return ""
 }
 
-// ARM capability keys are extensible. Only these boolean hints can restrict a
-// known model; arbitrary hints never turn an unknown model into a supported one.
+// New model names can advertise chat support on a format already implemented
+// here. Protocol and model-kind exclusions are checked before this fallback.
+func (d Deployment) advertisedChatProfile(format string) (modelProfile, bool) {
+	_, enabled, valid := d.capability(capabilityKeys[Chat]...)
+	if !enabled || !valid {
+		return modelProfile{}, false
+	}
+	for _, profile := range modelProfiles {
+		if profile.operations&chatBit == 0 || !matchesFormat(format, profile.format) {
+			continue
+		}
+		operations := chatBit
+		if _, enabled, valid := d.capability(capabilityKeys[Vision]...); enabled && valid {
+			operations |= visionBit
+		}
+		return modelProfile{format: format, operations: operations}, true
+	}
+	return modelProfile{}, false
+}
+
+// ARM capability keys are extensible. Only recognized boolean hints are used;
+// explicit restrictions still override the model profiles.
 var capabilityKeys = map[Operation][]string{
 	Chat:       {"chatcompletion", "chatcompletions"},
 	Embeddings: {"embeddings", "embedding"},
@@ -214,8 +244,8 @@ type modelProfile struct {
 	operations operationSet
 }
 
-// The allowlist is based on canonical model names, never customer deployment
-// aliases. New model families stay visible until their protocol is supported.
+// Profiles provide defaults when ARM omits capability metadata. They are keyed
+// by canonical model names, never customer deployment aliases.
 var modelProfiles = map[string]modelProfile{
 	"model-router":                           {"openai", chatBit},
 	"gpt-35-turbo":                           {"openai", chatBit},
@@ -243,6 +273,11 @@ var modelProfiles = map[string]modelProfile{
 	"gpt-5.4-mini":                           {"openai", chatBit | visionBit},
 	"gpt-5.4-nano":                           {"openai", chatBit | visionBit},
 	"gpt-5.5":                                {"openai", chatBit | visionBit},
+	"gpt-5.6-sol":                            {"openai", chatBit | visionBit},
+	"gpt-5.6-terra":                          {"openai", chatBit | visionBit},
+	"gpt-5.6-luna":                           {"openai", chatBit | visionBit},
+	"gpt-6-astra":                            {"openai", chatBit | visionBit},
+	"gpt-chat-latest":                        {"openai", chatBit},
 	"o1":                                     {"openai", chatBit | visionBit},
 	"o1-preview":                             {"openai", chatBit},
 	"o1-mini":                                {"openai", chatBit},
@@ -298,6 +333,7 @@ var modelProfiles = map[string]modelProfile{
 	"grok-3":                                 {"xai", chatBit},
 	"grok-3-mini":                            {"xai", chatBit},
 	"grok-4":                                 {"xai", chatBit},
+	"grok-4.3":                               {"xai", chatBit},
 	"grok-4-fast-reasoning":                  {"xai", chatBit | visionBit},
 	"grok-4-fast-non-reasoning":              {"xai", chatBit | visionBit},
 }

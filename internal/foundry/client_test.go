@@ -136,7 +136,7 @@ func TestRefreshPaginationAndTokenAudiences(t *testing.T) {
 		snapshot.RefreshedAt.Before(start) || snapshot.RefreshedAt.After(time.Now()) {
 		t.Fatalf("incomplete discovery snapshot: %+v", snapshot)
 	}
-	if got := snapshot.Names(Chat); !reflect.DeepEqual(got, []string{"customer-alias"}) {
+	if got := snapshot.Names(Chat); !reflect.DeepEqual(got, []string{"customer-alias", "future"}) {
 		t.Fatalf("chat names = %v", got)
 	}
 	deployment, found := snapshot.Find("customer-alias")

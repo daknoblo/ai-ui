@@ -168,9 +168,11 @@ not universal Foundry protocol support.
 The supported-model mapping includes GPT chat models, model router,
 OpenAI text embeddings and GPT-Image generation/editing. DALL-E image options
 and Cohere embedding request formats need separate adapters and are not
-selectable in Foundry mode. New model families remain visible until their
-operation support is implemented; a capability flag alone does not authorize
-an unknown model protocol.
+selectable in Foundry mode. New chat model names can use recognized Azure
+chat/vision capability metadata when their model format is already supported.
+Known model profiles cover deployments that omit those hints, including
+GPT-5.6, GPT-6 Astra, GPT-chat-latest and Grok 4.3. Unsupported protocols,
+Responses-only models and batch deployments remain excluded.
 
 In **Settings**, use **Refresh**, select the chat, embedding, image and optional
 vision defaults, **Save**, then run **Check again**. Refresh fetches metadata
@@ -184,6 +186,9 @@ use manual mode for a multi-resource API-key setup. `AZURE_MODELS` and
 `AZURE_IMAGE_MODELS`, when supplied in Foundry mode, restrict the discovered
 supported choices; they cannot turn an unsupported or undiscovered deployment
 into a supported one.
+The settings dialog warns when these environment filters hide compatible
+deployments. Remove obsolete filters if you want to select from the complete
+discovered inventory.
 
 ### Service-principal setup and operation
 

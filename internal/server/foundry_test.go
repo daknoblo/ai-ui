@@ -42,6 +42,11 @@ func (*serverFoundrySource) Authorize(req *http.Request) error {
 
 func newFoundryTestServer(t *testing.T, language string) (*Server, http.Handler, *serverFoundrySource, *atomic.Int64) {
 	t.Helper()
+	return newFoundryTestServerWithOverrides(t, language, config.Overrides{})
+}
+
+func newFoundryTestServerWithOverrides(t *testing.T, language string, overrides config.Overrides) (*Server, http.Handler, *serverFoundrySource, *atomic.Int64) {
+	t.Helper()
 	calls := &atomic.Int64{}
 	azure := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -81,7 +86,7 @@ func newFoundryTestServer(t *testing.T, language string) (*Server, http.Handler,
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"pong"}}]}`))
 	}))
 	t.Cleanup(azure.Close)
-	srv, handler := newConfiguredServer(t, language, config.Keys{API: "legacy-unused"}, config.Overrides{}, nil)
+	srv, handler := newConfiguredServer(t, language, config.Keys{API: "legacy-unused"}, overrides, nil)
 	source := &serverFoundrySource{snapshot: foundry.Snapshot{
 		ResourceID: serverResourceID, Endpoint: azure.URL + "/openai/v1", RefreshedAt: time.Now(),
 		Deployments: []foundry.Deployment{

@@ -29,6 +29,8 @@
 {{else}}<p class="hint config-full">{{t "foundry.no_deployments"}}</p>{{end}}
 <div class="config-section-head">{{t "foundry.roles"}}</div>
 <p class="hint config-full">{{t "foundry.roles_hint"}}</p>
+{{if .ChatFilterActive}}<p class="warn-text config-full">{{t "foundry.chat_filter_hint"}}</p>{{end}}
+{{if .ImageFilterActive}}<p class="warn-text config-full">{{t "foundry.image_filter_hint"}}</p>{{end}}
 {{range .Fields}}{{template "deployment-field" .}}{{end}}
 <div class="config-full">{{template "embedding-index" .Index}}</div>
 {{end}}

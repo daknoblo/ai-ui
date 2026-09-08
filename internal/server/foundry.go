@@ -41,6 +41,7 @@ type foundryView struct {
 	Fields                                                     []deploymentField
 	UpdatedAt                                                  string
 	Index                                                      embeddingIndexView
+	ChatFilterActive, ImageFilterActive                        bool
 }
 
 type embeddingIndexView struct {
@@ -141,6 +142,8 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 	view.EmbeddingChoices = choices(foundry.Embeddings)
 	view.ImageChoices = choices(foundry.Images)
 	view.VisionChoices = choices(foundry.Vision)
+	view.ChatFilterActive = len(view.ChatChoices) < len(status.Catalog.Names(foundry.Chat))
+	view.ImageFilterActive = len(view.ImageChoices) < len(status.Catalog.Names(foundry.Images))
 	cfg, locks := s.cfg.Get(), s.cfg.Locks()
 	view.Fields = []deploymentField{
 		{Name: "chat_deployment", LabelKey: "foundry.chat", Current: cfg.ChatDeployment, Env: "AZURE_DEPLOYMENT", EmptyKey: "foundry.not_configured", Choices: view.ChatChoices, Locked: locks.ChatDeployment},

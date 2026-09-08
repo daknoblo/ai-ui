@@ -92,6 +92,26 @@ func newClient(resourceID string, credential azcore.TokenCredential) *Client {
 	}
 }
 
+// WithResource returns a client for another Cognitive Services account while
+// reusing the explicit credential and its token cache, plus the hardened HTTP
+// transport.
+func (c *Client) WithResource(resourceID string) (*Client, error) {
+	resourceID = strings.TrimSuffix(strings.TrimSpace(resourceID), "/")
+	if err := ValidateResourceID(resourceID); err != nil {
+		return nil, err
+	}
+	if c == nil || c.credential == nil || c.httpClient == nil {
+		return nil, errors.New("azure resource clone requires an initialized client secret identity")
+	}
+	return &Client{
+		resourceID:  resourceID,
+		credential:  c.credential,
+		httpClient:  c.httpClient,
+		armEndpoint: c.armEndpoint,
+		timeout:     c.timeout,
+	}, nil
+}
+
 func (c *Client) Authorize(req *http.Request) error {
 	if req == nil {
 		return errors.New("azure inference authorization requires an HTTP request")

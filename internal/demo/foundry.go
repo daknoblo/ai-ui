@@ -16,6 +16,31 @@ import (
 )
 
 const demoResourceID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/demo/providers/Microsoft.CognitiveServices/accounts/local-demo"
+const demoImageResourceID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/demo/providers/Microsoft.CognitiveServices/accounts/local-images"
+
+// ConfigureImageResource attaches a second local ARM-style image inventory.
+func ConfigureImageResource(ctx context.Context, cfg *config.Store, store *storage.Store, endpoint string) error {
+	if !cfg.FoundryStatus().Enabled {
+		return fmt.Errorf("the separate image demo requires Foundry mode")
+	}
+	source, err := newDemoFoundrySource(endpoint)
+	if err != nil {
+		return err
+	}
+	source.imageResource = true
+	snapshot, err := source.Refresh(ctx, "")
+	if err != nil {
+		return err
+	}
+	cfg.ConfigureImageFoundry(demoImageResourceID, source, nil)
+	if err := cfg.SetImageCatalog(snapshot); err != nil {
+		return err
+	}
+	if err := cfg.ValidateRoleSelections(cfg.Get()); err != nil {
+		return err
+	}
+	return store.SaveCatalog(ctx, snapshot)
+}
 
 // SetupFoundry prepares the identity-backed inventory demo using only a local
 // stub. Setup remains the manual/API-key demo for existing callers.
@@ -134,13 +159,17 @@ func remapFoundryChats(ctx context.Context, store *storage.Store, idx Index, sna
 }
 
 type demoFoundrySource struct {
-	endpoint string
-	host     string
+	endpoint      string
+	host          string
+	imageResource bool
 }
 
 func (s *demoFoundrySource) ImageModels(ctx context.Context, endpoint string) ([]foundry.Deployment, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if s.imageResource {
+		return nil, fmt.Errorf("the separate demo image resource uses only ARM deployment discovery")
 	}
 	if endpoint != s.endpoint {
 		return nil, fmt.Errorf("demo image catalog only supports its local endpoint")
@@ -172,9 +201,13 @@ func (s *demoFoundrySource) Refresh(ctx context.Context, override string) (found
 	if override != "" && strings.TrimRight(override, "/") != s.endpoint {
 		return foundry.Snapshot{}, fmt.Errorf("demo Foundry endpoint cannot be overridden")
 	}
+	resourceID := demoResourceID
+	if s.imageResource {
+		resourceID = demoImageResourceID
+	}
 	deployment := func(name, model, version string) foundry.Deployment {
 		return foundry.Deployment{
-			ID: demoResourceID + "/deployments/" + name, Name: name,
+			ID: resourceID + "/deployments/" + name, Name: name,
 			ModelName: model, ModelVersion: version, ModelFormat: "OpenAI",
 			ProvisioningState: "Succeeded", SKU: "GlobalStandard",
 		}
@@ -190,8 +223,14 @@ func (s *demoFoundrySource) Refresh(ctx context.Context, override string) (found
 	}
 	deployments[5].ModelFormat = "Anthropic"
 	deployments[6].SKU = "GlobalBatch"
+	if s.imageResource {
+		deployments = []foundry.Deployment{
+			deployment("canvas", "gpt-image-2", "2026-04-21"),
+			deployment("canvas-legacy", "gpt-image-1.5", "2025-12-16"),
+		}
+	}
 	return foundry.Snapshot{
-		ResourceID: demoResourceID, Endpoint: s.endpoint,
+		ResourceID: resourceID, Endpoint: s.endpoint,
 		Deployments: deployments, RefreshedAt: time.Now().UTC(),
 	}, nil
 }
@@ -200,6 +239,9 @@ func (s *demoFoundrySource) Authorize(req *http.Request) error {
 	if req == nil || req.URL == nil || req.URL.Scheme != "http" || req.URL.Host != s.host ||
 		!strings.HasPrefix(req.URL.Path, "/openai/v1/") {
 		return fmt.Errorf("demo identity only authorizes its local inference stub")
+	}
+	if s.imageResource && !strings.HasPrefix(req.URL.Path, "/openai/v1/images/") {
+		return fmt.Errorf("demo image identity only authorizes image operations")
 	}
 	if req.Header == nil {
 		req.Header = make(http.Header)

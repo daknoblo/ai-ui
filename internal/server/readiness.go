@@ -3,20 +3,37 @@ package server
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
+	"github.com/daknoblo/ai-ui/internal/config"
 	"github.com/daknoblo/ai-ui/internal/foundry"
 )
 
 // checkResult is the outcome of a single readiness check.
 type checkResult struct {
+	Key     string
 	Name    string
 	OK      bool
 	Detail  string
 	Target  string
 	Skipped bool
 	Info    bool
+}
+
+func (r *readiness) invalidateImageChecks(detail string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.generation++
+	r.results = slices.Clone(r.results)
+	for i := range r.results {
+		if r.results[i].Key == "image-api" {
+			r.results[i].OK = false
+			r.results[i].Skipped = true
+			r.results[i].Detail = detail
+		}
+	}
 }
 
 func (r checkResult) State() string {
@@ -162,30 +179,7 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 	}
 	results = append(results, checkResult{Name: s.t("check.storage"), OK: storageOK, Detail: storageDetail})
 
-	if status := s.cfg.FoundryStatus(); status.Enabled {
-		catalog := checkResult{Name: s.t("check.foundry_inventory"), Info: true}
-		switch {
-		case status.IdentityError != "":
-			catalog.Detail = status.IdentityError
-		case status.RefreshError != "":
-			catalog.Detail = status.RefreshError
-		case status.Catalog.RefreshedAt.IsZero():
-			catalog.Skipped, catalog.Detail = true, s.t("check.refresh_first")
-		default:
-			catalog.OK, catalog.Detail = true, s.t("check.catalog_cached", formatCheckTime(status.Catalog.RefreshedAt))
-		}
-		results = append(results, catalog)
-		images := checkResult{Name: s.t("check.image_catalog"), Info: true}
-		switch {
-		case status.Catalog.ImageCatalogError != "":
-			images.Detail = status.Catalog.ImageCatalogError
-		case !status.Catalog.ImageCatalogChecked:
-			images.Skipped, images.Detail = true, s.t("check.refresh_first")
-		default:
-			images.OK, images.Detail = true, s.t("check.image_catalog_listed")
-		}
-		results = append(results, images)
-	}
+	results = append(results, s.inventoryChecks()...)
 
 	// 2. Check saved selections, not unsaved values in the settings form.
 	chatOK := true
@@ -289,12 +283,12 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 	// An incomplete image request must never be presented as a successful generation.
 	if cfg.ImageDeployment == "" {
 		if cfg.Foundry {
-			results = append(results, checkResult{Name: s.t("check.image_endpoint"),
+			results = append(results, checkResult{Key: "image-api", Name: s.t("check.image_endpoint"),
 				Skipped: true, Detail: s.t("check.optional_not_configured")})
 		}
 	} else if !deep {
 		if cfg.Foundry {
-			results = append(results, checkResult{Name: s.t("check.image_endpoint"), Target: cfg.ImageDeployment,
+			results = append(results, checkResult{Key: "image-api", Name: s.t("check.image_endpoint"), Target: cfg.ImageDeployment,
 				Skipped: true, Detail: s.t("check.manual_only")})
 		}
 	} else {
@@ -309,7 +303,7 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 				ok = false
 				detail = err.Error()
 			}
-			results = append(results, checkResult{Name: s.t("check.image_endpoint"), Target: model,
+			results = append(results, checkResult{Key: "image-api", Name: s.t("check.image_endpoint"), Target: model,
 				OK: ok, Detail: detail, Info: true})
 		}
 	}
@@ -318,6 +312,51 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 		results = append(results, checkResult{Name: s.t("config.title"), Detail: s.t("foundry.check_changed")})
 	}
 	return results
+}
+
+// Inventory is metadata, so settings can show its latest refresh without
+// repeating the billable inference checks or invalidating chat/embedding health.
+func (s *Server) inventoryChecks() []checkResult {
+	status := s.cfg.FoundryStatus()
+	if !status.Enabled {
+		return nil
+	}
+	catalogCheck := func(key, name string, state config.FoundryStatus) checkResult {
+		result := checkResult{Key: key, Name: name, Info: true}
+		switch {
+		case state.IdentityError != "":
+			result.Detail = state.IdentityError
+		case state.RefreshError != "":
+			result.Detail = state.RefreshError
+		case state.Catalog.RefreshedAt.IsZero():
+			result.Skipped, result.Detail = true, s.t("check.refresh_first")
+		default:
+			result.OK, result.Detail = true, s.t("check.catalog_cached", formatCheckTime(state.Catalog.RefreshedAt))
+		}
+		return result
+	}
+	results := []checkResult{catalogCheck("foundry-inventory", s.t("check.foundry_inventory"), status)}
+	if s.cfg.HasSeparateImageResource() {
+		return append(results, catalogCheck("foundry-image-inventory", s.t("check.image_inventory"), s.cfg.ImageFoundryStatus()))
+	}
+	images := checkResult{Key: "foundry-image-catalog", Name: s.t("check.image_catalog"), Info: true}
+	switch {
+	case status.Catalog.ImageCatalogError != "":
+		images.Detail = status.Catalog.ImageCatalogError
+	case !status.Catalog.ImageCatalogChecked:
+		images.Skipped, images.Detail = true, s.t("check.refresh_first")
+	default:
+		images.OK, images.Detail = true, s.t("check.image_catalog_listed")
+	}
+	return append(results, images)
+}
+
+func (s *Server) currentInventoryResults(results []checkResult) []checkResult {
+	results = slices.DeleteFunc(slices.Clone(results), func(result checkResult) bool {
+		return result.Key == "foundry-inventory" || result.Key == "foundry-image-inventory" ||
+			result.Key == "foundry-image-catalog"
+	})
+	return slices.Insert(results, min(1, len(results)), s.inventoryChecks()...)
 }
 
 // Monitor verifies the connection once at start-up and then checks it

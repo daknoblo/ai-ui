@@ -14,7 +14,7 @@
 	</div>
 	{{if .IdentityError}}<div class="config-notice-err">{{t "foundry.identity_error" .IdentityError}}</div>{{end}}
 	{{if .RefreshError}}<div class="config-notice-err">{{t "foundry.stale" .RefreshError}}</div>{{end}}
-	{{if .Catalog.ImageCatalogError}}<div class="config-notice-err">{{t "foundry.image_catalog_error" .Catalog.ImageCatalogError}}</div>{{end}}
+	{{if not .SeparateImageResource}}{{if .Catalog.ImageCatalogError}}<div class="config-notice-err">{{t "foundry.image_catalog_error" .Catalog.ImageCatalogError}}</div>{{end}}{{end}}
 	<p class="hint">{{if .UpdatedAt}}{{t "foundry.updated_at" .UpdatedAt}}{{else}}{{t "foundry.not_discovered"}}{{end}}</p>
 	<button type="button" class="btn btn-ghost" hx-post="/config/deployments/refresh"
 		hx-target="#modal-root" hx-swap="innerHTML" hx-params="none"
@@ -23,6 +23,24 @@
 	</button>
 	<span id="foundry-refresh-indicator" class="htmx-indicator hint">{{t "foundry.refreshing"}}</span>
 </div>
+{{if .SeparateImageResource}}
+<div id="foundry-image-resource" class="config-full">
+	<p class="hint">{{t "foundry.separate_images_hint"}}</p>
+	<div class="foundry-connection">
+		<label class="foundry-resource" for="foundry-image-resource-id">
+			{{t "foundry.image_resource"}}
+			<textarea id="foundry-image-resource-id" class="config-readonly" rows="3" readonly spellcheck="false">{{.ImageResource.ResourceID}}</textarea>
+		</label>
+		<label class="foundry-resource" for="foundry-image-endpoint">
+			{{t "config.image_endpoint"}}
+			<input id="foundry-image-endpoint" class="config-readonly" type="text" readonly value="{{.ImageResource.Catalog.Endpoint}}" placeholder="{{t "foundry.not_discovered"}}">
+		</label>
+	</div>
+	{{if .ImageResource.IdentityError}}<div class="config-notice-err">{{t "foundry.identity_error" .ImageResource.IdentityError}}</div>{{end}}
+	{{if .ImageResource.RefreshError}}<div class="config-notice-err">{{t "foundry.stale" .ImageResource.RefreshError}}</div>{{end}}
+	<p class="hint">{{if .ImageUpdatedAt}}{{t "foundry.updated_at" .ImageUpdatedAt}}{{else}}{{t "foundry.not_discovered"}}{{end}}</p>
+</div>
+{{end}}
 <div class="config-full foundry-inventory">
 	{{range .Groups}}{{if .Models}}
 	{{if .Unsupported}}

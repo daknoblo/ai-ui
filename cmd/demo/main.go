@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -30,15 +31,19 @@ func main() {
 	lang := flag.String("lang", "en", "interface language of the demo content (en or de)")
 	reset := flag.Bool("reset", false, "delete the database in the data path before seeding")
 	foundry := flag.Bool("foundry", false, "show the identity-backed deployment inventory using only the local stub")
+	separateImages := flag.Bool("separate-images", false, "use a second local image resource (requires -foundry)")
 	flag.Parse()
 
-	if err := run(*port, *dataDir, *lang, *reset, *foundry); err != nil {
+	if err := run(*port, *dataDir, *lang, *reset, *foundry, *separateImages); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(port, dataDir, lang string, reset, foundry bool) error {
+func run(port, dataDir, lang string, reset, foundry, separateImages bool) error {
+	if separateImages && !foundry {
+		return fmt.Errorf("-separate-images requires -foundry")
+	}
 	logs := logbuf.New(2000)
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.MultiWriter(os.Stdout, logs),
 		&slog.HandlerOptions{Level: logs.LevelVar()})))
@@ -67,6 +72,17 @@ func run(port, dataDir, lang string, reset, foundry bool) error {
 		return err
 	}
 	defer func() { _ = store.Close() }()
+
+	if separateImages {
+		imageBackend, err := demo.StartBackend(lang)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = imageBackend.Close() }() // The local HTTP fixture is stopped on exit.
+		if err := demo.ConfigureImageResource(ctx, cfgStore, store, imageBackend.URL()); err != nil {
+			return err
+		}
+	}
 
 	srv := server.New(cfgStore, store, logs)
 	defer srv.Close()

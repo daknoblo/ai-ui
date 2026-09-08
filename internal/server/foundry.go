@@ -44,10 +44,13 @@ type deploymentField struct {
 
 type foundryView struct {
 	config.FoundryStatus
+	ImageResource                                              config.FoundryStatus
+	SeparateImageResource                                      bool
 	ChatChoices, EmbeddingChoices, ImageChoices, VisionChoices []deploymentChoice
 	Groups                                                     []deploymentGroup
 	Fields                                                     []deploymentField
 	UpdatedAt                                                  string
+	ImageUpdatedAt                                             string
 	Index                                                      embeddingIndexView
 	ChatFilterActive, ImageFilterActive                        bool
 	EmptyImageInventory                                        bool
@@ -66,6 +69,15 @@ func (s *Server) refreshFoundry(ctx context.Context) error {
 	defer s.refreshMu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
+	primaryErr := s.refreshPrimaryFoundry(ctx)
+	var imageErr error
+	if s.cfg.HasSeparateImageResource() {
+		imageErr = s.refreshImageFoundry(ctx)
+	}
+	return errors.Join(primaryErr, imageErr)
+}
+
+func (s *Server) refreshPrimaryFoundry(ctx context.Context) error {
 	snapshot, err := s.cfg.Discover(ctx)
 	if err == nil {
 		s.configMu.Lock()
@@ -79,7 +91,10 @@ func (s *Server) refreshFoundry(ctx context.Context) error {
 	if err == nil {
 		previous, cfg := s.cfg.FoundryStatus().Catalog, s.cfg.Get()
 		changed = previous.Endpoint != snapshot.Endpoint
-		names := []string{cfg.ChatDeployment, cfg.ChatModel, cfg.EmbeddingDeployment, cfg.ImageDeployment, cfg.VisionDeployment}
+		names := []string{cfg.ChatDeployment, cfg.ChatModel, cfg.EmbeddingDeployment, cfg.VisionDeployment}
+		if !s.cfg.HasSeparateImageResource() {
+			names = append(names, cfg.ImageDeployment)
+		}
 		active, known, profileErr := s.store.ActiveEmbeddingProfile(ctx)
 		if profileErr != nil {
 			err = profileErr
@@ -118,6 +133,34 @@ func (s *Server) refreshFoundry(ctx context.Context) error {
 	return nil
 }
 
+func (s *Server) refreshImageFoundry(ctx context.Context) error {
+	snapshot, err := s.cfg.DiscoverImages(ctx)
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	status := s.cfg.ImageFoundryStatus()
+	if err == nil && (!strings.EqualFold(snapshot.ResourceID, status.ResourceID) ||
+		!foundry.IsV1Endpoint(snapshot.Endpoint)) {
+		err = fmt.Errorf("image discovery returned an invalid resource or endpoint")
+	}
+	if err == nil {
+		err = s.store.SaveCatalog(ctx, snapshot)
+	}
+	if err == nil {
+		err = s.cfg.SetImageCatalog(snapshot)
+	}
+	if err != nil {
+		s.cfg.SetImageDiscoveryError(err)
+		slog.Warn("image deployment refresh failed", "err", err)
+		return fmt.Errorf("image deployment discovery: %w", err)
+	}
+	if status.Catalog.Endpoint != snapshot.Endpoint ||
+		!reflect.DeepEqual(status.Catalog.Deployments, snapshot.Deployments) {
+		s.ready.invalidateImageChecks(s.t("check.image_changed"))
+	}
+	slog.Info("image deployment catalog refreshed", "deployments", len(snapshot.Deployments))
+	return nil
+}
+
 func (s *Server) handleDeploymentRefresh(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.FoundryStatus().Enabled {
 		http.Error(w, s.t("foundry.disabled"), http.StatusBadRequest)
@@ -136,14 +179,21 @@ func (s *Server) handleDeploymentRefresh(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) foundryData(ctx context.Context) foundryView {
 	status := s.cfg.FoundryStatus()
-	view := foundryView{FoundryStatus: status, Index: s.embeddingIndexData(ctx)}
+	images := s.cfg.ImageFoundryStatus()
+	view := foundryView{FoundryStatus: status, ImageResource: images,
+		SeparateImageResource: s.cfg.HasSeparateImageResource(), Index: s.embeddingIndexData(ctx)}
 	if !status.Enabled {
 		return view
 	}
 	view.UpdatedAt = formatCheckTime(status.Catalog.RefreshedAt)
+	view.ImageUpdatedAt = formatCheckTime(images.Catalog.RefreshedAt)
 	choices := func(op foundry.Operation) []deploymentChoice {
 		var choices []deploymentChoice
-		for _, name := range status.Catalog.Names(op) {
+		catalog := status.Catalog
+		if op == foundry.Images || op == foundry.ImageEdits {
+			catalog = images.Catalog
+		}
+		for _, name := range catalog.Names(op) {
 			deployment, err := s.cfg.ResolveDeployment(op, name)
 			if err != nil {
 				continue // An explicit environment list may exclude this deployment.
@@ -161,7 +211,7 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 	view.ImageChoices = choices(foundry.Images)
 	view.VisionChoices = choices(foundry.Vision)
 	view.ChatFilterActive = len(view.ChatChoices) < len(status.Catalog.Names(foundry.Chat))
-	view.ImageFilterActive = len(view.ImageChoices) < len(status.Catalog.Names(foundry.Images))
+	view.ImageFilterActive = len(view.ImageChoices) < len(images.Catalog.Names(foundry.Images))
 	cfg, locks := s.cfg.Get(), s.cfg.Locks()
 	view.Fields = []deploymentField{
 		{Name: "chat_deployment", LabelKey: "foundry.chat", Current: cfg.ChatDeployment, Env: "AZURE_DEPLOYMENT", EmptyKey: "foundry.not_configured", Choices: view.ChatChoices, Locked: locks.ChatDeployment},
@@ -182,7 +232,21 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 		{Title: s.t("foundry.images")},
 		{Title: s.t("foundry.unsupported_group"), Unsupported: true},
 	}
-	for _, deployment := range status.Catalog.Deployments {
+	deployments := append([]foundry.Deployment(nil), status.Catalog.Deployments...)
+	if view.SeparateImageResource {
+		deployments = nil
+		for _, deployment := range status.Catalog.Deployments {
+			if !deployment.Supports(foundry.Images) && deployment.Source != foundry.ModelsAPISource {
+				deployments = append(deployments, deployment)
+			}
+		}
+		for _, deployment := range images.Catalog.Deployments {
+			if deployment.Supports(foundry.Images) {
+				deployments = append(deployments, deployment)
+			}
+		}
+	}
+	for _, deployment := range deployments {
 		var support []string
 		for _, capability := range []struct {
 			op  foundry.Operation

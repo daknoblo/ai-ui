@@ -12,12 +12,15 @@ services:
     container_name: ai-ui
     restart: unless-stopped
     environment:
-      # Optional Foundry inventory for ONE existing resource. For an off-Azure
+      # Optional Foundry inventory for an existing primary resource. For an off-Azure
       # service principal, set all four values; the resource ID alone is not
       # authentication. Secrets belong only in the deployment environment.
       # See README.md: "Service-principal setup and operation" for Cloud Shell
       # commands and the mapping from their output to these variables.
       - AZURE_RESOURCE_ID=${AZURE_RESOURCE_ID:-}
+      # Optional separate image account, using the same identity. Grant the SP
+      # access on that account too; leave empty to use the primary account.
+      - AZURE_IMAGE_RESOURCE_ID=${AZURE_IMAGE_RESOURCE_ID:-}
       - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
       - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
       - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET:-}
@@ -41,8 +44,8 @@ services:
       # Manual mode: curated deployment names (comma separated). Foundry mode:
       # optional allow-list of supported inventory entries; empty uses discovery.
       - AZURE_MODELS=${AZURE_MODELS:-}
-      # Image generation (optional). Foundry roles must share the configured
-      # resource: do not set a different per-role endpoint in identity mode.
+      # Image generation (optional). In Foundry mode use AZURE_IMAGE_RESOURCE_ID
+      # for another account; an endpoint override must match that account.
       - AZURE_IMAGE_ENDPOINT=${AZURE_IMAGE_ENDPOINT:-}
       - AZURE_IMAGE_DEPLOYMENT=${AZURE_IMAGE_DEPLOYMENT:-}
       - AZURE_IMAGE_MODELS=${AZURE_IMAGE_MODELS:-}

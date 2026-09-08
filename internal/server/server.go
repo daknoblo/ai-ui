@@ -66,6 +66,17 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 			slog.Warn("load deployment catalog", "err", err)
 		}
 	}
+	if cfg.HasSeparateImageResource() {
+		status := cfg.ImageFoundryStatus()
+		snapshot, ok, err := store.LoadCatalog(ctx, status.ResourceID)
+		if err == nil && ok {
+			err = cfg.SetImageCatalog(snapshot)
+		}
+		if err != nil {
+			cfg.SetImageDiscoveryError(err)
+			slog.Warn("load image deployment catalog", "err", err)
+		}
+	}
 	client := llm.New(cfg)
 	// Persist token usage in the database.
 	client.SetUsageRecorder(usageRecorder{store: store})

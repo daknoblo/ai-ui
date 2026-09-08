@@ -103,7 +103,8 @@ All screenshots are generated automatically from the demo instance
 
 | Variable        | Default  | Description                                   |
 | --------------- | -------- | --------------------------------------------- |
-| `AZURE_RESOURCE_ID` | – | Optional. Opts into Foundry inventory for exactly one account resource; see [Foundry inventory & identity](#foundry-inventory--identity-optional). |
+| `AZURE_RESOURCE_ID` | – | Optional. Opts into Foundry inventory for the primary chat/vision/embedding account; see [Foundry inventory & identity](#foundry-inventory--identity-optional). |
+| `AZURE_IMAGE_RESOURCE_ID` | primary resource | Optional in Foundry mode. Separate account for image generation/editing, using the same service principal. Requires `AZURE_RESOURCE_ID` and access to both accounts; see [Separate image resource](#separate-image-resource). |
 | `AZURE_TENANT_ID` | – | Tenant ID of the service principal; required in Foundry mode. |
 | `AZURE_CLIENT_ID` | – | Application/client ID of the service principal; required in Foundry mode. |
 | `AZURE_CLIENT_SECRET` | – | **Secret.** Service-principal secret; required in Foundry mode, environment only. |
@@ -146,7 +147,9 @@ does **not** authenticate the application by itself. The endpoint is derived
 from valid account metadata returned by Azure Resource Manager (ARM).
 `AZURE_ENDPOINT` is an optional explicit OpenAI-compatible `/openai/v1` endpoint
 override, for example when metadata does not provide a usable endpoint. Thus
-the automatic-endpoint setup needs four settings, or five with an override.
+the basic automatic-endpoint setup needs four settings. Add
+`AZURE_IMAGE_RESOURCE_ID` when image deployments live in another account; no
+additional identity or secret is needed. Endpoint overrides remain optional.
 The distroless image remains a single static, non-root Go binary: it contains
 no Azure CLI and requires no interactive login.
 
@@ -158,9 +161,12 @@ operations, may need additional operation-specific permissions; this role is
 not a promise that every Foundry model or protocol is usable. Inventory visibility
 alone does not prove inference permission. The app never grants roles.
 
-Discovery reads ARM metadata for that account and its deployments, plus
+Discovery reads ARM metadata for the configured account and its deployments.
+With no separate image resource, it also reads
 `/openai/v1/models?api-version=preview` on the same inference endpoint for
-known GPT-Image model IDs. It does not scan subscriptions, read account keys,
+known GPT-Image model IDs. With a separate image resource, only actual ARM
+deployments from that account populate the image picker; neither account's
+Models API is queried. Discovery does not scan subscriptions, read account keys,
 create deployments or provision resources. A data-plane model list alone is
 insufficient to establish chat/embedding deployment capabilities.
 The inventory classifies canonical model
@@ -175,7 +181,9 @@ The inventory groups chat, embeddings, and image models and shows their
 capabilities, version, format, and source. **Models API** image entries can be
 available by name without appearing as ARM deployments. Provider aliases are
 preferred over duplicate dated image variants, and an ARM deployment always
-wins a name collision. Listing a model does not prove generation permission.
+wins a name collision. Listing a model proves neither that it is deployed in
+that resource nor that generation is permitted. An image deployment in another
+resource requires `AZURE_IMAGE_RESOURCE_ID`, not a matching catalog model ID.
 If the image catalog cannot be read, the ARM inventory still updates and any
 previous image entries for the same resource/endpoint are retained with a warning.
 
@@ -203,9 +211,11 @@ only: it neither invokes models nor changes role defaults. A failed refresh
 keeps the last successful inventory and displays the failure. Connection
 verification is separate and can consume chat/embedding tokens.
 
-All identity-backed roles belong to this one resource and endpoint. Remove
-dedicated embedding/image endpoint overrides that point to another resource;
-use manual mode for a multi-resource API-key setup. `AZURE_MODELS` and
+Chat, vision and embeddings use the primary account. Image generation and
+editing use `AZURE_IMAGE_RESOURCE_ID` when set, otherwise the primary account.
+Endpoint overrides must match the discovered account for their operation.
+Separate-resource API-key configurations remain available in manual mode.
+`AZURE_MODELS` and
 `AZURE_IMAGE_MODELS`, when supplied in Foundry mode, restrict the discovered
 supported choices; they cannot turn an unsupported or undiscovered deployment
 into a supported one.
@@ -267,6 +277,60 @@ environment and recreate it. Remove the old secret only after testing the new
 one; retain the data volume. See the
 [Azure CLI service-principal guide](https://learn.microsoft.com/en-us/cli/azure/azure-cli-sp-tutorial-1)
 for details.
+
+### Separate image resource
+
+If the image deployment belongs to a different Foundry/Azure OpenAI account,
+set `AZURE_IMAGE_RESOURCE_ID` to that account's ARM resource ID. Keep
+`AZURE_RESOURCE_ID` and the existing tenant/client/secret settings unchanged.
+The accounts may be in different resource groups or subscriptions, but must be
+accessible to the same service principal in the same Entra tenant. The app
+does not search projects or subscriptions automatically.
+
+In Cloud Shell **Bash**, signed into that tenant, grant the existing service
+principal access to the image account. Replace the placeholders; the caller
+needs permission to read the account/service principal and create role
+assignments at the image resource scope:
+
+```bash
+IMAGE_SUBSCRIPTION='<image-subscription-id>' &&
+IMAGE_RESOURCE_ID="$(az cognitiveservices account show \
+  --subscription "$IMAGE_SUBSCRIPTION" \
+  --resource-group '<image-resource-group>' \
+  --name '<image-account-name>' --query id --output tsv)" &&
+SP_OBJECT_ID="$(az ad sp show \
+  --id '<existing-AZURE_CLIENT_ID>' --query id --output tsv)" &&
+test -n "$IMAGE_RESOURCE_ID" && test -n "$SP_OBJECT_ID" &&
+az role assignment create \
+  --subscription "$IMAGE_SUBSCRIPTION" \
+  --assignee-object-id "$SP_OBJECT_ID" \
+  --assignee-principal-type ServicePrincipal \
+  --role 'Cognitive Services OpenAI User' \
+  --scope "$IMAGE_RESOURCE_ID" --output none &&
+printf 'AZURE_IMAGE_RESOURCE_ID=%s\n' "$IMAGE_RESOURCE_ID"
+```
+
+This adds resource-scoped permissions only. It neither creates a service
+principal nor creates/rotates a secret. A Cloud Shell login-cache error needs
+to be resolved in that shell; it does not by itself mean the app's service
+principal credentials are invalid.
+
+Add the printed variable to the container environment and recreate it.
+Leave `AZURE_IMAGE_ENDPOINT` unset to derive the endpoint from the image
+account; remove an old override that points to the primary resource.
+In Settings, choose **Refresh deployments**, select the actual image
+**deployment name**, save, then **Check again**. Allow time for role assignments
+to propagate. `AZURE_IMAGE_DEPLOYMENT` can optionally pin that deployment, and
+`AZURE_IMAGE_MODELS` remains an optional allow-list for that image resource.
+
+The image account has its own cached ARM inventory, read-only resource/endpoint
+fields and connection-check row. Refresh attempts both accounts even if one
+fails, retains each last successful cache separately, and never falls back to
+the primary endpoint when the image account is unavailable. Metadata updates
+are reflected immediately in the displayed inventory checks without silently
+repeating inference probes. Chat/embedding readiness and the stored embedding
+profile are not reset by an image-only inventory change; changing just the
+image resource does **not** require rebuilding embeddings.
 
 ### Switching the embedding model
 
@@ -578,6 +642,7 @@ reindexing operate on the local fixture.
 go run ./cmd/demo -data ./data/demo                        # Manual demo
 go run ./cmd/demo -foundry -data ./data/demo-foundry        # Foundry demo
 go run ./cmd/demo -foundry -data ./data/demo-foundry-de -lang de
+go run ./cmd/demo -foundry -separate-images -data ./data/demo-images
 # http://localhost:8080
 ```
 
@@ -588,8 +653,12 @@ reindex workflow over stored texts, rather than relabeling legacy vectors. A
 second local embedding alias lets you try the consent and rebuild flow without
 API costs. Web search remains a display-only placeholder in the demo.
 
+The `-separate-images` option adds a second loopback backend and a separate
+image account with actual GPT-Image 2/1.5 deployment metadata, using the same
+fake identity. The original primary resource and embedding profile stay intact.
+
 The demo is also the source of the screenshots. The capture script starts it
-with `-foundry`, exercises the local inventory, role defaults and reindex consent
+with `-foundry -separate-images`, exercises both local inventories, role defaults and reindex consent
 views, and captures those sections with Playwright. The resource and endpoint
 remain truthful read-only demo values; it does not replace them with real Azure
 URLs or contact real services. Screenshots are written to `docs/screenshots`,

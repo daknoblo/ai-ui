@@ -21,14 +21,16 @@ import (
 const serverResourceID = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/test/providers/Microsoft.CognitiveServices/accounts/test"
 
 type serverFoundrySource struct {
-	snapshot  foundry.Snapshot
-	fail      bool
-	refreshes int
-	images    []foundry.Deployment
-	imageErr  error
+	snapshot   foundry.Snapshot
+	fail       bool
+	refreshes  int
+	images     []foundry.Deployment
+	imageErr   error
+	imageReads atomic.Int64
 }
 
 func (s *serverFoundrySource) ImageModels(context.Context, string) ([]foundry.Deployment, error) {
+	s.imageReads.Add(1)
 	return s.images, s.imageErr
 }
 

@@ -18,33 +18,34 @@ import (
 // deliberately NOT stored here; they are read at runtime from environment
 // variables only.
 type Config struct {
-	Language            string   `json:"language"`        // UI language: "en" or "de"
-	Endpoint            string   `json:"endpoint"`        // chat, e.g. https://my-router.openai.azure.com
-	ChatDeployment      string   `json:"chat_deployment"` // deployment name of the chat model (or router)
-	ChatModel           string   `json:"chat_model"`      // optional; pins a model instead of letting the router choose
-	ChatModels          []string `json:"-"`               // offered in the header menu; comes from AZURE_MODELS only
-	Foundry             bool     `json:"-"`
-	VisionDeployment    string   `json:"vision_deployment,omitempty"`
-	APIVersion          string   `json:"api_version"`           // e.g. 2024-08-01-preview
-	EmbeddingEndpoint   string   `json:"embedding_endpoint"`    // optional; falls back to Endpoint
-	EmbeddingDeployment string   `json:"embedding_deployment"`  // deployment name of the embedding model
-	EmbeddingAPIVersion string   `json:"embedding_api_version"` // optional; falls back to APIVersion
-	ImageEndpoint       string   `json:"image_endpoint"`        // optional; falls back to Endpoint
-	ImageDeployment     string   `json:"image_deployment"`      // deployment name of the image model
-	ImageModels         []string `json:"-"`                     // selectable image deployments; comes from AZURE_IMAGE_MODELS
-	ImageEditModels     []string `json:"-"`
-	ImageAPIVersion     string   `json:"image_api_version"`  // optional; falls back to APIVersion
-	ImageSize           string   `json:"image_size"`         // e.g. 1024x1024 or "auto"
-	ImageQuality        string   `json:"image_quality"`      // low | medium | high | auto
-	ImageFormat         string   `json:"image_format"`       // png | jpeg | webp
-	SearchProvider      string   `json:"search_provider"`    // "", "tavily", "brave", "searxng"
-	SearchEndpoint      string   `json:"search_endpoint"`    // base URL of the SearXNG instance
-	SearchMaxResults    int      `json:"search_max_results"` // number of results (default 5)
-	SearchAuto          bool     `json:"search_auto"`        // allow the model to trigger a web search via tool calling
-	SystemPrompt        string   `json:"system_prompt"`      // empty means "use the localized default"
-	LogLevel            string   `json:"log_level"`          // debug | info | warn | error
-	Temperature         float64  `json:"temperature"`
-	ReasoningEffort     string   `json:"reasoning_effort"` // "auto" leaves the decision to the model
+	Language              string   `json:"language"`        // UI language: "en" or "de"
+	Endpoint              string   `json:"endpoint"`        // chat, e.g. https://my-router.openai.azure.com
+	ChatDeployment        string   `json:"chat_deployment"` // deployment name of the chat model (or router)
+	ChatModel             string   `json:"chat_model"`      // optional; pins a model instead of letting the router choose
+	ChatModels            []string `json:"-"`               // offered in the header menu; comes from AZURE_MODELS only
+	Foundry               bool     `json:"-"`
+	VisionDeployment      string   `json:"vision_deployment,omitempty"`
+	APIVersion            string   `json:"api_version"`           // e.g. 2024-08-01-preview
+	EmbeddingEndpoint     string   `json:"embedding_endpoint"`    // optional; falls back to Endpoint
+	EmbeddingDeployment   string   `json:"embedding_deployment"`  // deployment name of the embedding model
+	EmbeddingAPIVersion   string   `json:"embedding_api_version"` // optional; falls back to APIVersion
+	ImageEndpoint         string   `json:"image_endpoint"`        // optional; falls back to Endpoint unless images use another resource
+	ImageDeployment       string   `json:"image_deployment"`      // deployment name of the image model
+	ImageModels           []string `json:"-"`                     // selectable image deployments; comes from AZURE_IMAGE_MODELS
+	ImageEditModels       []string `json:"-"`
+	SeparateImageResource bool     `json:"-"`
+	ImageAPIVersion       string   `json:"image_api_version"`  // optional; falls back to APIVersion
+	ImageSize             string   `json:"image_size"`         // e.g. 1024x1024 or "auto"
+	ImageQuality          string   `json:"image_quality"`      // low | medium | high | auto
+	ImageFormat           string   `json:"image_format"`       // png | jpeg | webp
+	SearchProvider        string   `json:"search_provider"`    // "", "tavily", "brave", "searxng"
+	SearchEndpoint        string   `json:"search_endpoint"`    // base URL of the SearXNG instance
+	SearchMaxResults      int      `json:"search_max_results"` // number of results (default 5)
+	SearchAuto            bool     `json:"search_auto"`        // allow the model to trigger a web search via tool calling
+	SystemPrompt          string   `json:"system_prompt"`      // empty means "use the localized default"
+	LogLevel              string   `json:"log_level"`          // debug | info | warn | error
+	Temperature           float64  `json:"temperature"`
+	ReasoningEffort       string   `json:"reasoning_effort"` // "auto" leaves the decision to the model
 }
 
 // EmbeddingVersion returns the API version to use for embeddings. When no
@@ -69,6 +70,9 @@ func (c Config) EmbeddingHost() string {
 func (c Config) ImageHost() string {
 	if c.ImageEndpoint != "" {
 		return c.ImageEndpoint
+	}
+	if c.SeparateImageResource {
+		return ""
 	}
 	return c.Endpoint
 }
@@ -231,14 +235,19 @@ type Store struct {
 	overrides       Overrides // endpoint values pinned via environment variables
 	locks           Locks     // derived from overrides: which fields are read-only
 
-	mu                 sync.RWMutex
-	cur                Config // stored raw configuration (without overrides applied)
-	identity           FoundrySource
-	resourceID         string
-	identityError      string
-	discoveryError     string
-	catalog            foundry.Snapshot
-	embeddingEndpoints map[string]struct{}
+	mu                  sync.RWMutex
+	cur                 Config // stored raw configuration (without overrides applied)
+	identity            FoundrySource
+	resourceID          string
+	identityError       string
+	discoveryError      string
+	catalog             foundry.Snapshot
+	imageIdentity       FoundrySource
+	imageResourceID     string
+	imageIdentityError  string
+	imageDiscoveryError string
+	imageCatalog        foundry.Snapshot
+	embeddingEndpoints  map[string]struct{}
 }
 
 // Keys bundles the secrets read from the environment. Empty dedicated keys fall
@@ -344,6 +353,8 @@ func (s *Store) keepLockedLocked(cfg *Config) {
 		// Discovered connection metadata must not overwrite the manual setup.
 		cfg.Endpoint = s.cur.Endpoint
 		cfg.EmbeddingEndpoint = s.cur.EmbeddingEndpoint
+	}
+	if s.resourceID != "" || s.separateImageResourceLocked() {
 		cfg.ImageEndpoint = s.cur.ImageEndpoint
 	}
 	if s.locks.Endpoint {

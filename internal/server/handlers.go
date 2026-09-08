@@ -1603,6 +1603,7 @@ func (s *Server) renderConfigNotice(w http.ResponseWriter, notice string, isErr 
 func (s *Server) renderConfigData(w http.ResponseWriter, saved bool, notice string, noticeErr bool) {
 	cfg := s.cfg.Get()
 	results, checkedAt := s.ready.lastResults()
+	results = s.currentInventoryResults(results)
 	data := struct {
 		Config             config.Config
 		Foundry            foundryView

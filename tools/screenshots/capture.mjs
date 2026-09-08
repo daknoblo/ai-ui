@@ -151,17 +151,36 @@ const SHOTS = [
     meta: {
       en: {
         title: 'Foundry deployment inventory',
-        caption: 'Refresh reads metadata for one resource. Canonical models and capabilities explain which deployment aliases are usable; the local demo needs no credentials.',
+        caption: 'Refresh reads metadata for the configured resources. Canonical models and capabilities explain which deployment aliases are usable; the local demo needs no credentials.',
       },
       de: {
         title: 'Foundry-Deployment-Inventar',
-        caption: 'Aktualisieren liest Metadaten einer Ressource. Kanonische Modelle und Fähigkeiten zeigen, welche Deployment-Aliase nutzbar sind; die lokale Demo braucht keine Zugangsdaten.',
+        caption: 'Aktualisieren liest Metadaten der eingestellten Ressourcen. Kanonische Modelle und Fähigkeiten zeigen, welche Deployment-Aliase nutzbar sind; die lokale Demo braucht keine Zugangsdaten.',
       },
     },
     capture: async (page, ctx) => {
       await openSettings(page, ctx);
       await submitSettings(page, '[hx-post="/config/deployments/refresh"]', '/config/deployments/refresh');
       await scrollSettingsTo(page, '.foundry-resource');
+    },
+  },
+  {
+    id: 'image-resource',
+    langs: ['en', 'de'],
+    meta: {
+      en: {
+        title: 'A separate resource for image models',
+        caption: 'AZURE_IMAGE_RESOURCE_ID selects a separate ARM deployment inventory and endpoint using the same identity. Chat and embeddings remain on the primary resource.',
+      },
+      de: {
+        title: 'Eine getrennte Ressource für Bildmodelle',
+        caption: 'AZURE_IMAGE_RESOURCE_ID wählt ein eigenes ARM-Deployment-Inventar samt Endpoint mit derselben Identität. Chat und Embeddings bleiben auf der Hauptressource.',
+      },
+    },
+    capture: async (page, ctx) => {
+      await openSettings(page, ctx);
+      await page.locator('#foundry-image-resource-id').waitFor();
+      await scrollSettingsTo(page, '#foundry-image-resource');
     },
   },
   {
@@ -309,7 +328,7 @@ async function scrollSettingsTo(page, selector) {
 
 /** Starts the demo binary on a scratch data path. */
 function startDemo(dataDir, lang) {
-  const proc = spawn(binary, ['-port', String(port), '-data', dataDir, '-lang', lang, '-reset', '-foundry'], {
+  const proc = spawn(binary, ['-port', String(port), '-data', dataDir, '-lang', lang, '-reset', '-foundry', '-separate-images'], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   proc.stderr.on('data', (chunk) => process.stderr.write(`[demo] ${chunk}`));

@@ -82,20 +82,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if resourceID := strings.TrimSpace(os.Getenv("AZURE_RESOURCE_ID")); resourceID != "" {
-		client, identityErr := foundry.New(foundry.Identity{
-			ResourceID:   resourceID,
-			TenantID:     strings.TrimSpace(os.Getenv("AZURE_TENANT_ID")),
-			ClientID:     strings.TrimSpace(os.Getenv("AZURE_CLIENT_ID")),
-			ClientSecret: os.Getenv("AZURE_CLIENT_SECRET"),
-		})
-		if identityErr != nil {
-			cfgStore.ConfigureFoundry(resourceID, nil, identityErr)
-			slog.Error("Foundry identity configuration failed", "err", identityErr)
-		} else {
-			cfgStore.ConfigureFoundry(resourceID, client, nil)
-		}
-	}
+	configureFoundryFromEnv(cfgStore, os.Getenv)
 	logs.SetLevel(logbuf.ParseLevel(cfg.LogLevel))
 
 	// Open the SQLite database in the data path.
@@ -147,6 +134,46 @@ func run() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		return httpServer.Shutdown(shutdownCtx)
+	}
+}
+
+func configureFoundryFromEnv(cfgStore *config.Store, lookup func(string) string) {
+	resourceID := strings.TrimSpace(lookup("AZURE_RESOURCE_ID"))
+	imageResourceID := strings.TrimSpace(lookup("AZURE_IMAGE_RESOURCE_ID"))
+	if resourceID == "" {
+		if imageResourceID != "" {
+			err := errors.New("AZURE_IMAGE_RESOURCE_ID requires AZURE_RESOURCE_ID and an explicit Foundry identity")
+			cfgStore.ConfigureImageFoundry(imageResourceID, nil, err)
+			slog.Error("image Foundry identity configuration failed", "err", err)
+		}
+		return
+	}
+
+	client, identityErr := foundry.New(foundry.Identity{
+		ResourceID:   resourceID,
+		TenantID:     strings.TrimSpace(lookup("AZURE_TENANT_ID")),
+		ClientID:     strings.TrimSpace(lookup("AZURE_CLIENT_ID")),
+		ClientSecret: lookup("AZURE_CLIENT_SECRET"),
+	})
+	if identityErr != nil {
+		cfgStore.ConfigureFoundry(resourceID, nil, identityErr)
+		slog.Error("Foundry identity configuration failed", "err", identityErr)
+	} else {
+		cfgStore.ConfigureFoundry(resourceID, client, nil)
+	}
+	if imageResourceID == "" {
+		return
+	}
+	if identityErr != nil {
+		err := errors.New("image Foundry identity requires a valid primary Foundry identity configuration")
+		cfgStore.ConfigureImageFoundry(imageResourceID, nil, err)
+		slog.Error("image Foundry identity configuration failed", "err", err)
+		return
+	}
+	imageClient, err := client.WithResource(imageResourceID)
+	cfgStore.ConfigureImageFoundry(imageResourceID, imageClient, err)
+	if err != nil {
+		slog.Error("image Foundry resource configuration failed", "err", err)
 	}
 }
 

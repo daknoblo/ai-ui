@@ -12,7 +12,8 @@
 			<div class="config-section-head">{{t "config.section_readiness"}}</div>
 			<div id="verify-results" class="config-full"
 				{{if and (not .Results) (not .Foundry.Enabled)}}hx-post="/verify" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-indicator="#verify-indicator"{{end}}>
-				{{if .Results}}{{template "check-list" .}}{{else}}<p class="hint">{{t "config.verify_pending"}}</p>{{end}}
+				{{if .Results}}{{template "check-list" .}}{{end}}
+				{{if not .CheckedAt}}<p class="hint">{{t "config.verify_pending"}}</p>{{end}}
 			</div>
 			<div id="verify-indicator" class="htmx-indicator hint config-full">{{t "config.verify_running"}}</div>
 			<div class="config-full">

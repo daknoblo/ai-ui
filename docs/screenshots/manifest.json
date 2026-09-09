@@ -19,6 +19,15 @@
       "caption": "The answer arrives over server-sent events; the model used and the token usage are shown once the stream ends."
     },
     {
+      "id": "stream-reading",
+      "lang": "en",
+      "file": "en/stream-reading.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Read without being pulled to the bottom",
+      "caption": "Scrolling upward pauses automatic following. New output stays below the viewport, and the completion indicator lets you jump back to the latest response."
+    },
+    {
       "id": "documents",
       "lang": "en",
       "file": "en/documents.png",
@@ -125,6 +134,15 @@
       "height": 900,
       "title": "Chat mit Markdown-Antworten",
       "caption": "Unterhaltungen in der Seitenleiste, ein klarer Chat-Titel und Antworten als bereinigtes Markdown inklusive Tabellen und Code. Modellvorgaben stehen in den Einstellungen."
+    },
+    {
+      "id": "stream-reading",
+      "lang": "de",
+      "file": "de/stream-reading.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Lesen ohne automatische Scroll-Sprünge",
+      "caption": "Nach oben scrollen pausiert das automatische Folgen. Neue Ausgabe bleibt unterhalb des sichtbaren Bereichs; der Abschluss-Hinweis führt zurück zur neuesten Antwort."
     },
     {
       "id": "image",

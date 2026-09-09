@@ -34,6 +34,9 @@ All screenshots are generated automatically from the demo instance
 
 - Chat interface with a sidebar, multiple conversations and history
 - Answer streaming (token by token) via server-sent events
+- Streaming follows the latest output only while you stay at the bottom.
+  Scrolling up preserves your reading position; a jump-to-latest control shows
+  whether the response is still running, reconnecting, or has finished
 - Model configuration stays in Settings rather than a selector in the chat
   header. The model badge on each streamed answer still identifies the model
   that actually replied. Existing per-chat model selections are preserved
@@ -563,6 +566,15 @@ timeout. Application shutdown cancels and joins active workers; after a restart,
 interrupted operations are marked as such and are never automatically retried
 because the provider may already have processed them. Optional title generation
 has a separate fifteen-second timeout.
+
+The conversation scrolls along with new output while you remain at the bottom.
+Scroll upward to read earlier lines without being pulled back down by incoming
+text, tool notices or unrelated settings updates. A floating **Jump to latest**
+button shows whether output is still running, reconnecting, or finished.
+Finishing does not move your reading position; a connection error is not treated
+as completion. Click the button or scroll back to the bottom to resume following.
+Sending a new message or opening another conversation starts at the latest
+output again. The same behavior applies on desktop and mobile.
 
 Static asset URLs carry content versions. Opening settings also updates the
 page's stylesheet, so a page left open during a container update does not render

@@ -8,6 +8,7 @@
 	<script src="{{assetURL "htmx.min.js"}}"></script>
 	<script src="{{assetURL "sse.js"}}"></script>
 	<script src="{{assetURL "upload.js"}}"></script>
+	<script src="{{assetURL "chat-scroll.js"}}" defer></script>
 </head>
 <body>
 	<div class="app">
@@ -27,15 +28,6 @@
 			summary: "{{t `js.summary`}}",
 			failed: "{{t `js.failed`}}"
 		};
-
-		// Scroll to the bottom after every HTMX swap in the message area.
-		function scrollMessages() {
-			var m = document.getElementById('messages');
-			if (m) { m.scrollTop = m.scrollHeight; }
-		}
-		document.body.addEventListener('htmx:afterSwap', scrollMessages);
-		document.body.addEventListener('htmx:sseMessage', scrollMessages);
-		window.addEventListener('load', scrollMessages);
 
 		// On narrow viewports the sidebar is an off-canvas drawer. The open
 		// state lives as a class on <body> because htmx swaps the body content

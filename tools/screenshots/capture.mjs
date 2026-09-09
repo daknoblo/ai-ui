@@ -15,6 +15,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
+import { verifyChatScroll } from './scroll-checks.mjs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
@@ -79,6 +80,33 @@ const SHOTS = [
         return bubble !== null && bubble.innerText.trim().length > 60;
       }, null, { timeout: 30_000 });
       await sleep(400);
+    },
+  },
+  {
+    id: 'stream-reading',
+    langs: ['en', 'de'],
+    meta: {
+      en: {
+        title: 'Read without being pulled to the bottom',
+        caption: 'Scrolling upward pauses automatic following. New output stays below the viewport, and the completion indicator lets you jump back to the latest response.',
+      },
+      de: {
+        title: 'Lesen ohne automatische Scroll-Sprünge',
+        caption: 'Nach oben scrollen pausiert das automatische Folgen. Neue Ausgabe bleibt unterhalb des sichtbaren Bereichs; der Abschluss-Hinweis führt zurück zur neuesten Antwort.',
+      },
+    },
+    capture: async (page, ctx) => {
+      await open(page, `/chat/${ctx.index.chats.chat}`);
+      await page.fill('#chat-form textarea', ctx.index.stream_prompt);
+      await page.locator('#chat-form button[type="submit"]').click();
+      await page.locator('#messages [sse-connect]').last().waitFor();
+      await page.waitForFunction(() => document.querySelector('#messages').scrollTop > 0);
+      await page.locator('#messages').evaluate(box => { box.scrollTop = 0; });
+      await page.waitForFunction(() => document.querySelector('#messages').dataset.following === '0');
+      await page.waitForFunction(() => document.getElementById('scroll-status').dataset.state === 'finished');
+      if (await page.locator('#messages').evaluate(box => box.scrollTop > 2)) {
+        throw new Error('Completing a real demo response moved the reader');
+      }
     },
   },
   {
@@ -365,6 +393,15 @@ async function main() {
       const index = JSON.parse(await readFile(join(dataDir, 'demo-index.json'), 'utf8'));
       const browser = await chromium.launch(launchOptions);
       try {
+        for (const [layout, options] of [['desktop', DESKTOP], ['mobile', MOBILE]]) {
+          const context = await browser.newContext({ ...options, reducedMotion: 'reduce' });
+          try {
+            await verifyChatScroll(await context.newPage(), base, index, layout === 'mobile');
+            process.stdout.write(`scroll checks passed (${lang}/${layout})\n`);
+          } finally {
+            await context.close();
+          }
+        }
         await mkdir(join(outDir, lang), { recursive: true });
         for (const shot of SHOTS.filter((s) => s.langs.includes(lang))) {
           const context = await browser.newContext({

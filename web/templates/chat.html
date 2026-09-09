@@ -7,24 +7,36 @@
 		<h1 id="chat-title">{{if .CurrentChat}}{{chatTitle .CurrentChat.Title}}{{else}}{{t "chat.default_title"}}{{end}}</h1>
 	</div>
 
-	<div id="messages" class="messages">
-		{{if not .Messages}}
-		<div class="welcome">
-			<h2>{{t "chat.welcome_title"}}</h2>
-			<p>{{t "chat.welcome_text"}}</p>
-			<p class="welcome-hint">{{t "chat.welcome_hint"}}</p>
-			{{if not .Configured}}
-			<p class="warn-text">{{t "chat.not_configured"}}</p>
+	<div class="messages-pane">
+		<div id="messages" class="messages" tabindex="0" role="region" aria-label="{{t "chat.conversation"}}">
+			{{if not .Messages}}
+			<div class="welcome">
+				<h2>{{t "chat.welcome_title"}}</h2>
+				<p>{{t "chat.welcome_text"}}</p>
+				<p class="welcome-hint">{{t "chat.welcome_hint"}}</p>
+				{{if not .Configured}}
+				<p class="warn-text">{{t "chat.not_configured"}}</p>
+				{{end}}
+			</div>
+			{{end}}
+			{{range .Messages}}
+				{{with index $.Streams .ID}}
+				{{template "assistant-stream" .}}
+				{{else}}
+				{{template "message" .}}
+				{{end}}
 			{{end}}
 		</div>
-		{{end}}
-		{{range .Messages}}
-			{{with index $.Streams .ID}}
-			{{template "assistant-stream" .}}
-			{{else}}
-			{{template "message" .}}
-			{{end}}
-		{{end}}
+		<div id="scroll-status" class="scroll-status" hidden>
+			<button id="scroll-to-latest" type="button" aria-controls="messages"
+				data-latest="{{t "chat.scroll_latest"}}"
+				data-streaming="{{t "chat.scroll_streaming"}}"
+				data-finished="{{t "chat.scroll_finished"}}"
+				data-reconnecting="{{t "chat.scroll_reconnecting"}}">
+				<span aria-hidden="true">↓</span>
+				<span id="scroll-status-text" role="status" aria-live="polite" aria-atomic="true"></span>
+			</button>
+		</div>
 	</div>
 
 	<div class="composer-dock">
@@ -146,6 +158,7 @@
 {{define "assistant-stream"}}
 <div class="msg assistant"
 	hx-ext="sse"
+	data-stream-state="pending"
 	sse-connect="/chat/{{.ChatID}}/generate?turn={{.TurnID}}"
 	sse-close="done">
 	<div class="msg-role">{{t "role.assistant"}}<span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span>{{if .Web}} <span class="web-tag"><span class="emoji">🌐</span> {{t "chat.web_tag"}}</span>{{end}}{{if .Image}} <span class="web-tag"><span class="emoji">🖼️</span> {{t "chat.image_tag"}}</span>{{end}}</div>

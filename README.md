@@ -11,9 +11,11 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Release 1.2.0:** identity-based Foundry setup, separate image resources,
-reconnect-safe generation, safer embedding indexes and corrected document
-extraction. See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.2.0)
+**Current release: 1.2.1.** Read streamed answers without being pulled to the
+bottom, with progress, reconnect and completion indicators. The 1.2 series also
+includes identity-based Foundry setup, separate image resources, reconnect-safe
+generation, safer embedding indexes and corrected document extraction.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.2.1)
 and [upgrade checklist](#upgrading-to-120).
 
 **Website with the full screenshot gallery:**
@@ -405,13 +407,13 @@ every chat request. The **reasoning effort** (the `reasoning_effort` parameter o
 reasoning models) is chosen **per chat** next to the input field; the settings
 dialog only holds the default for new chats.
 
-The offered values follow the model selected in the top right and are updated
-when it changes: `none`, `low`, `medium`, `high`, `xhigh` for GPT-5.1 and newer,
-`minimal`, `low`, `medium`, `high` for GPT-5, `low`, `medium`, `high` for the
-o-series. Models without reasoning hide the field, and `auto` omits the parameter
-so the model keeps its own default. A value the answering model does not accept -
-which cannot be ruled out behind a model router - is dropped automatically and
-the request is repeated without it, the same way an unsupported temperature is.
+The offered values follow the conversation's configured model; deployment
+defaults are managed in Settings, not in a chat-header selector. GPT-6 offers
+`low`, `medium`, `high`, `xhigh`; GPT-5.x profiles offer `none`, `low`, `medium`,
+`high`, `xhigh`; GPT-5 offers `minimal`, `low`, `medium`, `high`; reasoning-capable
+o-series models offer `low`, `medium`, `high`. Models without reasoning hide
+the field. `auto` omits the parameter so the model keeps its own default, and
+values outside the configured model's supported set are normalized to `auto`.
 
 ### Pinning the endpoint via environment variables (optional)
 
@@ -624,18 +626,25 @@ changes on the host are required.
 labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
-`ghcr.io/daknoblo/ai-ui` by GitHub Actions: `latest` and `stable` from `main`,
-and the version tags (`1.2.0`, `1.2`) when a release is published. Note that the
-image tag carries no `v` prefix even though the git tag does.
+`ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
+`stable`; version releases publish tags such as `1.2.1` and `1.2` and also
+advance `latest`. Use an exact version or digest for controlled upgrades.
+The image tag carries no `v` prefix even though the git tag does.
 
 ### Upgrading to 1.2.0
+
+This checklist covers the migration introduced in 1.2.0 and applies when moving
+older installations to the 1.2 series. The current patch is **1.2.1**.
+When updating an existing 1.2.0 installation to 1.2.1, update the image and fully
+reload the browser; no additional environment variables or embedding rebuild
+are required for the scrolling fix.
 
 1. **Back up the complete data volume before upgrading.** Stop ai-ui while
    copying `/appdata`, or use a consistent SQLite backup procedure. Retain the
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.2.0`, keeping the same persistent volume, ports and
+   `ghcr.io/daknoblo/ai-ui:1.2.1`, keeping the same persistent volume, ports and
    environment settings. The `1.2` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.

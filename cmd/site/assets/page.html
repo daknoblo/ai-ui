@@ -37,6 +37,7 @@
 		<p class="cta">
 			<a class="btn" href="docs.html">Documentation</a>
 			<a class="btn btn-ghost" href="{{.Repo}}">GitHub</a>
+			<a class="btn btn-ghost" href="{{.Repo}}/releases/latest">Latest release</a>
 			<a class="btn btn-ghost" href="#screenshots">Screenshots</a>
 		</p>
 	</section>
@@ -74,7 +75,7 @@
 		<p class="muted">The same demo the screenshots come from runs locally without any API key:</p>
 		<pre><code>git clone {{.Repo}}.git
 cd ai-ui
-go run ./cmd/demo   # http://localhost:8080</code></pre>
+go run ./cmd/demo -foundry -separate-images   # http://localhost:8080</code></pre>
 	</section>
 </main>
 {{template "foot" .}}

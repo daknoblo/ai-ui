@@ -30,6 +30,8 @@ type Message struct {
 	CreatedAt    time.Time `json:"created_at"`
 	GenerationID int64     `json:"-"`
 	Retried      bool      `json:"-"`
+	ModelUsed    string    `json:"-"`
+	UsageText    string    `json:"-"`
 }
 
 // Document describes an uploaded document.

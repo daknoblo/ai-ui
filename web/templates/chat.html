@@ -152,7 +152,10 @@
 	<div class="msg-role">{{if eq .Role "user"}}{{t "role.user"}}{{else}}{{t "role.assistant"}}{{end}}</div>
 	{{if .Retried}}<p class="retry-note">{{t "retry.answer"}}</p>{{end}}
 	<div class="bubble">{{renderMarkdown .Content}}</div>
-	{{if eq .Role "assistant"}}{{template "response-copy" (responseActions .ChatID .GenerationID)}}{{end}}
+	{{if eq .Role "assistant"}}
+	<div class="msg-metadata"><span class="msg-usage">{{.UsageText}}</span><span class="msg-model">{{if .ModelUsed}}{{template "model-tag" .ModelUsed}}{{end}}</span></div>
+	{{template "response-copy" (responseActions .ChatID .GenerationID)}}
+	{{end}}
 </div>
 {{end}}
 
@@ -169,6 +172,7 @@
 		{{if .TurnID}}hx-post="/chat/{{.ChatID}}/retry/{{.TurnID}}" hx-target="#messages" hx-swap="beforeend"
 		hx-params="none" hx-disabled-elt="this" hx-confirm="{{t "retry.confirm"}}"{{else}}disabled{{end}}>
 		<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 12l-4-5"/></svg>
+		<span class="response-retry-label">{{t "retry.label"}}</span>
 	</button>
 	<span class="response-copy-status" role="status" aria-live="polite"></span>
 	<span class="response-retry-status" role="alert"></span>
@@ -182,11 +186,11 @@
 	data-stream-state="pending"
 	sse-connect="/chat/{{.ChatID}}/generate?turn={{.TurnID}}"
 	sse-close="done">
-	<div class="msg-role">{{t "role.assistant"}}<span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span>{{if .Web}} <span class="web-tag"><span class="emoji">🌐</span> {{t "chat.web_tag"}}</span>{{end}}{{if .Image}} <span class="web-tag"><span class="emoji">🖼️</span> {{t "chat.image_tag"}}</span>{{end}}</div>
+	<div class="msg-role">{{t "role.assistant"}}{{if .Web}} <span class="web-tag"><span class="emoji">🌐</span> {{t "chat.web_tag"}}</span>{{end}}{{if .Image}} <span class="web-tag"><span class="emoji">🖼️</span> {{t "chat.image_tag"}}</span>{{end}}</div>
 	{{if .Retried}}<p class="retry-note">{{t "retry.answer"}}</p>{{end}}
 	<div class="msg-tools" sse-swap="tool" hx-swap="innerHTML"></div>
 	<div class="bubble" sse-swap="token" hx-swap="innerHTML"><div class="pending" role="status"><span class="pending-label">{{if .Image}}{{if .Edit}}{{t "stream.pending_image_edit"}}{{else}}{{t "stream.pending_image"}}{{end}}{{else}}{{t "stream.pending_chat"}}{{end}}</span><span class="pending-bar"><span class="pending-fill"></span></span></div></div>
-	<div class="msg-usage" sse-swap="usage" hx-swap="innerHTML"></div>
+	<div class="msg-metadata"><span class="msg-usage" sse-swap="usage" hx-swap="innerHTML"></span><span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span></div>
 	{{template "response-copy" .}}
 	<div class="msg-title-sink" sse-swap="title" hx-swap="innerHTML" hidden></div>
 </div>
@@ -201,8 +205,8 @@
 {{/* title-update: updates the header title and the sidebar via out-of-band swap */}}
 {{define "title-update"}}<h1 id="chat-title" hx-swap-oob="true">{{chatTitle .Title}}</h1><nav id="chat-list" class="chat-list" hx-swap-oob="true">{{template "chatnav-items" .}}</nav>{{end}}
 
-{{/* model-tag: shows the model that was actually used next to the role */}}
-{{define "model-tag"}} <span class="model-badge" title="{{t "model.badge_title"}}">{{.}}</span>{{end}}
+{{/* model-tag: shows the actual model in the same typography as token usage. */}}
+{{define "model-tag"}}<span class="model-badge" title="{{t "model.badge_title"}}">{{.}}</span>{{end}}
 
 {{/* title-oob: updates the header title via out-of-band swap */}}
 {{define "title-oob"}}<h1 id="chat-title" hx-swap-oob="true">{{chatTitle .Title}}</h1>{{end}}

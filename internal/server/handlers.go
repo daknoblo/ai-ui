@@ -162,6 +162,10 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		}
 		pd.Messages = msgs
 		pd.Streams = make(map[int64]*streamView)
+		messagePositions := make(map[int64]int, len(msgs))
+		for i := range msgs {
+			messagePositions[msgs[i].ID] = i
+		}
 		for _, turn := range turns {
 			if turn.Active() {
 				view, err := generationView(turn)
@@ -169,12 +173,15 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 					return pageData{}, err
 				}
 				pd.Streams[turn.ResponseID] = &view
-			} else if turn.State == storage.GenerationInterrupted {
-				for i := range pd.Messages {
-					if pd.Messages[i].ID == turn.ResponseID {
-						pd.Messages[i].Content += "\n\n⚠ " + s.t("stream.recovered_interrupt")
-					}
+			} else if i, exists := messagePositions[turn.ResponseID]; exists {
+				if turn.State == storage.GenerationInterrupted {
+					pd.Messages[i].Content += "\n\n⚠ " + s.t("stream.recovered_interrupt")
 				}
+				model, usage, metadataErr := responseMetadata(turn.Snapshot)
+				if metadataErr != nil {
+					slog.Warn("read saved response metadata", "turn", turn.ID, "err", metadataErr)
+				}
+				pd.Messages[i].ModelUsed, pd.Messages[i].UsageText = model, usage
 			}
 		}
 		pd.Documents = docs

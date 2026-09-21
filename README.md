@@ -46,8 +46,8 @@ All screenshots are generated automatically from the demo instance
   Scrolling up preserves your reading position; a jump-to-latest control shows
   whether the response is still running, reconnecting, or has finished
 - Model configuration stays in Settings rather than a selector in the chat
-  header. The model badge on each streamed answer still identifies the model
-  that actually replied. Existing per-chat model selections are preserved
+  header. The footer alongside token usage identifies the model that actually
+  replied, using the same typography. Existing per-chat model selections are preserved
 - Optional Foundry inventory with metadata-only **Refresh** and separate defaults
   for chat, embeddings, images and vision. Deployment aliases are mapped to
   canonical model metadata; unsupported deployments remain visible
@@ -602,7 +602,7 @@ copied as image files; their available alternative text is included instead.
 
 ### Retrying an answer
 
-The retry icon beside Copy explicitly runs the request belonging to that
+The labeled Retry button directly beside Copy explicitly runs the request belonging to that
 answer again. A confirmation warns about additional API charges. The previous
 answer is never overwritten: the new attempt is labeled and appended at the
 end of the conversation, without adding a duplicate user message. Failed and
@@ -623,6 +623,12 @@ rejects overlapping requests. Reconnecting to an accepted retry only observes
 that job and does not create another attempt. Older imported conversations
 without saved request metadata show a disabled retry control: resend their
 question explicitly rather than guessing missing settings.
+
+The model reported by the provider appears beside the token/input/output
+figures below the answer, not as a separate badge beside the assistant heading.
+Both use the same font, size and color. Recorded model and usage metadata also
+remain visible when reopening a conversation; missing historical metadata is
+not replaced with a guessed current model.
 
 ### Organizing chats
 
@@ -771,7 +777,7 @@ Important compatibility and behavior changes:
   request; closing the browser no longer cancels the worker. After shutdown or
   interruption, an uncertain provider outcome is never retried automatically.
 - **The header model selector is gone.** Settings retain deployment defaults,
-  streamed answers retain their responding-model badges, and existing chat
+  streamed answers retain their responding-model information, and existing chat
   model selections are preserved. Ordinary chat can now delegate explicit
   image requests to the configured image model, with the associated charges.
 

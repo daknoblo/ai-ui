@@ -65,6 +65,18 @@ export async function verifyResponseRetry(page, base, index) {
         Math.abs(retry.y - copy.y) > 2 || !(await response.locator('.response-retry-label').innerText()).trim()) {
       throw new Error(`Retry must be visibly labeled directly beside Copy: ${JSON.stringify({ copy, retry })}`);
     }
+    if (!(await response.locator('.response-copy-label').innerText()).trim()) {
+      throw new Error('Copy must have a visible label matching the Retry button style');
+    }
+    const equalActions = await response.locator('.response-actions').evaluate(actions => {
+      const copy = getComputedStyle(actions.querySelector('.response-copy'));
+      const retry = getComputedStyle(actions.querySelector('.response-retry'));
+      const properties = ['height', 'minWidth', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+        'gap', 'fontFamily', 'fontSize', 'fontWeight', 'borderTopWidth', 'borderTopStyle', 'borderTopColor',
+        'borderRadius', 'backgroundColor', 'color'];
+      return properties.every(key => copy[key] === retry[key]);
+    });
+    if (!equalActions) throw new Error('Copy and Retry have inconsistent button styles');
     if (await response.locator('.msg-role .msg-model').count()) {
       throw new Error('Model metadata must not remain beside the Assistant heading');
     }

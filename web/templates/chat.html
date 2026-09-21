@@ -165,6 +165,7 @@
 		data-copy-success="{{t "copy.success"}}" data-copy-plain="{{t "copy.plain"}}"
 		data-copy-failed="{{t "copy.failed"}}" data-copy-empty="{{t "copy.empty"}}">
 		<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
+		<span class="response-copy-label">{{t "copy.label"}}</span>
 	</button>
 	<button type="button" class="response-retry" title="{{if .TurnID}}{{t "retry.title"}}{{else}}{{t "retry.unavailable"}}{{end}}"
 		aria-label="{{t "retry.title"}}" data-retry-unavailable="{{if .TurnID}}0{{else}}1{{end}}"

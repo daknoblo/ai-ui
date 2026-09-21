@@ -35,7 +35,11 @@ All screenshots are generated automatically from the demo instance
 ## Features
 
 - Chat interface with a sidebar, multiple conversations and history
+- Single-level named chat groups with optional colors, persistent collapse
+  state, drag-and-drop movement and a keyboard/touch-accessible Move action
 - Answer streaming (token by token) via server-sent events
+- A copy icon below each completed answer copies the full response text with
+  rich formatting (headings, emphasis, lists, tables and code) where supported
 - Streaming follows the latest output only while you stay at the bottom.
   Scrolling up preserves your reading position; a jump-to-latest control shows
   whether the response is still running, reconnecting, or has finished
@@ -577,6 +581,54 @@ Finishing does not move your reading position; a connection error is not treated
 as completion. Click the button or scroll back to the bottom to resume following.
 Sending a new message or opening another conversation starts at the latest
 output again. The same behavior applies on desktop and mobile.
+
+### Copying answers
+
+The copy icon below a completed assistant answer copies only the response body,
+not the model name, tool notices or token usage. It is available both after a
+stream finishes and when reopening stored conversations. Rich HTML and plain
+text are supplied together, so the target application can use the format it
+supports. Headings, emphasis, lists, tables and code structure are retained;
+the target editor controls the final appearance.
+
+Clipboard access generally works best over HTTPS or localhost. If the browser
+does not support rich clipboard access, the app attempts a user-initiated copy
+fallback. A plain-text-only result or a denied clipboard operation is reported
+explicitly, not shown as a successful formatted copy. The complete answer is
+copied, including text outside the visible viewport. Images themselves are not
+copied as image files; their available alternative text is included instead.
+
+### Organizing chats
+
+The sidebar has **New chat** and **New group** actions side by side. Give a
+group a name and optionally choose a color; its conversations appear indented
+under an expandable heading. Groups have one level, not nested subgroups.
+Use the group menu to rename it, change its color or remove it.
+
+Drag a conversation onto a group, including a collapsed group, to move it.
+The **Move chat** action provides the same operation without dragging for
+keyboard and touch users. Move a chat into **Ungrouped** to remove its group
+assignment. Moving a chat only updates the sidebar: it does not interrupt the
+current response or replace the conversation you are reading.
+
+Groups are shown in creation order and their chats retain the usual
+most-recently-updated ordering. New chats start ungrouped. Group metadata,
+assignments and collapse state are stored in SQLite and survive restarts.
+Removing a group keeps all its conversations under **Ungrouped**; it does not
+delete their messages, documents or images. Empty chats explicitly organized
+into groups are preserved rather than treated as abandoned new-chat entries.
+Chat grouping is organizational, not an access-control or privacy boundary.
+
+### Stored images
+
+Generated and uploaded images are stored as binary data in the SQLite database
+under the persistent data path, with their chat association and metadata.
+Successful generated images are committed together with their assistant reply.
+They survive container recreation when the same data volume is retained.
+Deleting a chat also deletes its associated images. Back up the database/data
+volume to retain them. There is currently no separate media library in the
+navigation; view images in their conversations and use the browser's image
+save action to download them.
 
 Static asset URLs carry content versions. Opening settings also updates the
 page's stylesheet, so a page left open during a container update does not render

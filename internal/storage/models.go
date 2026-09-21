@@ -6,6 +6,7 @@ import "time"
 type Chat struct {
 	ID              int64     `json:"id"`
 	Title           string    `json:"title"`
+	GroupID         int64     `json:"group_id"`         // zero means ungrouped
 	Model           string    `json:"model"`            // pinned model of this chat (empty = router decides)
 	ImageModel      string    `json:"image_model"`      // image deployment of this chat (empty = configured default)
 	Mode            string    `json:"mode"`             // ChatModeChat or ChatModeImage

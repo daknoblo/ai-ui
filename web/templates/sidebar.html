@@ -1,10 +1,16 @@
 {{define "sidebar"}}
 <div class="nav-backdrop" onclick="closeNav()"></div>
 <aside class="sidebar" id="sidebar">
+	<div class="sidebar-create">
 	<form hx-post="/chats" hx-target="body" hx-push-url="true" class="new-chat-form">
 		<button type="submit" class="btn btn-new" onclick="closeNav()"
 			title="{{t "nav.new_chat"}}" aria-label="{{t "nav.new_chat"}}"><span class="btn-icon" aria-hidden="true">+</span><span class="btn-label">{{t "nav.new_chat"}}</span></button>
 	</form>
+	<button type="button" id="new-group" class="btn btn-new" data-group-action
+		hx-get="/groups/new" hx-target="#modal-root" hx-swap="innerHTML"
+		title="{{t "group.new"}}" aria-label="{{t "group.new"}}"><span class="btn-icon" aria-hidden="true">+</span><span class="btn-label">{{t "group.new"}}</span></button>
+	</div>
+	<p id="group-feedback" class="group-feedback" role="status" aria-live="polite" hidden data-error="{{t "group.request_failed"}}" data-success="{{t "group.saved"}}"></p>
 
 	<div class="sidebar-actions">
 		<button class="btn btn-config"
@@ -36,9 +42,42 @@
 {{end}}
 
 {{define "chatnav-items"}}
-	{{range .Chats}}
-	<div class="chat-item {{if and $.CurrentChat (eq .ID $.CurrentChat.ID)}}active{{end}}">
+	<div class="chat-groups" data-current-chat="{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}0{{end}}">
+	{{range .Groups}}
+	<section class="chat-group group-color-{{if .Color}}{{.Color}}{{else}}none{{end}}" data-group-id="{{.ID}}" aria-labelledby="group-name-{{.ID}}">
+		<div class="group-heading">
+			<button type="button" id="group-toggle-{{.ID}}" class="group-toggle" data-group-action
+				hx-post="/groups/{{.ID}}/collapse" hx-vals='{"collapsed":"{{if .Collapsed}}false{{else}}true{{end}}"}'
+				hx-target="#chat-list" hx-swap="outerHTML" hx-disabled-elt="this"
+				aria-expanded="{{if .Collapsed}}false{{else}}true{{end}}" aria-controls="group-chats-{{.ID}}">
+				<span class="group-chevron" aria-hidden="true">{{if .Collapsed}}▸{{else}}▾{{end}}</span>
+				<span id="group-name-{{.ID}}" class="group-name">{{.Title}}</span>
+				<span class="group-count" aria-label="{{t "group.chat_count" (len .Chats)}}">{{len .Chats}}</span>
+			</button>
+			<button type="button" id="group-edit-{{.ID}}" class="group-edit" data-group-action
+				hx-get="/groups/{{.ID}}/edit" hx-target="#modal-root" hx-swap="innerHTML"
+				title="{{t "group.edit" .Title}}" aria-label="{{t "group.edit" .Title}}">⋯</button>
+		</div>
+		<div id="group-chats-{{.ID}}" class="group-children" {{if .Collapsed}}hidden{{end}}>
+			{{range .Chats}}{{template "chatnav-row" (chatNavRow . $.CurrentChat)}}{{else}}<p class="empty-hint group-empty">{{t "group.empty"}}</p>{{end}}
+		</div>
+	</section>
+	{{end}}
+	<section class="ungrouped-chats" data-group-id="0" aria-label="{{t "group.ungrouped"}}">
+		{{if .Groups}}<div class="ungrouped-heading">{{t "group.ungrouped"}}</div>{{end}}
+		{{range .Ungrouped}}{{template "chatnav-row" (chatNavRow . $.CurrentChat)}}{{else}}
+		<p class="empty-hint">{{if .Groups}}{{t "group.drop_here"}}{{else}}{{t "chat.none_yet"}}{{end}}</p>
+		{{end}}
+	</section>
+	</div>
+{{end}}
+
+{{define "chatnav-row"}}
+	<div id="chat-row-{{.ID}}" data-chat-id="{{.ID}}" draggable="true" class="chat-item {{if and .CurrentChat (eq .ID .CurrentChat.ID)}}active{{end}}">
 		<a href="/chat/{{.ID}}" class="chat-link" title="{{chatTitle .Title}}">{{chatTitle .Title}}</a>
+		<button type="button" id="chat-move-{{.ID}}" class="chat-move" data-group-action
+			hx-get="/chats/{{.ID}}/move" hx-target="#modal-root" hx-swap="innerHTML"
+			title="{{t "group.move_chat" (chatTitle .Title)}}" aria-label="{{t "group.move_chat" (chatTitle .Title)}}">↪</button>
 		<button class="chat-del"
 			hx-delete="/chats/{{.ID}}"
 			hx-target="body"
@@ -46,9 +85,6 @@
 			hx-push-url="/"
 			title="{{t "action.delete"}}">×</button>
 	</div>
-	{{else}}
-	<p class="empty-hint">{{t "chat.none_yet"}}</p>
-	{{end}}
 {{end}}
 
 {{define "doclist"}}

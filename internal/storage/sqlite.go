@@ -198,6 +198,9 @@ CREATE TABLE IF NOT EXISTS model_catalog (
 	if err := s.migrateGenerations(ctx); err != nil {
 		return err
 	}
+	if err := s.migrateChatGroups(ctx); err != nil {
+		return err
+	}
 	// Older databases were created without auto_vacuum. The connection pragma
 	// only takes effect for the current file after a full VACUUM, which is run
 	// exactly once here.
@@ -273,7 +276,7 @@ func (s *Store) CreateChat(ctx context.Context, title, model, effort string) (in
 // ListChats returns all chats, most recently updated first.
 func (s *Store) ListChats(ctx context.Context) ([]Chat, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, title, model, image_model, mode, reasoning_effort, created_at, updated_at FROM chats ORDER BY updated_at DESC`)
+		`SELECT id, title, model, image_model, mode, reasoning_effort, created_at, updated_at, COALESCE(group_id, 0) FROM chats ORDER BY updated_at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +286,7 @@ func (s *Store) ListChats(ctx context.Context) ([]Chat, error) {
 	for rows.Next() {
 		var c Chat
 		var created, updated string
-		if err := rows.Scan(&c.ID, &c.Title, &c.Model, &c.ImageModel, &c.Mode, &c.ReasoningEffort, &created, &updated); err != nil {
+		if err := rows.Scan(&c.ID, &c.Title, &c.Model, &c.ImageModel, &c.Mode, &c.ReasoningEffort, &created, &updated, &c.GroupID); err != nil {
 			return nil, err
 		}
 		c.CreatedAt = parseTime(created)
@@ -298,8 +301,8 @@ func (s *Store) GetChat(ctx context.Context, id int64) (Chat, error) {
 	var c Chat
 	var created, updated string
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, title, model, image_model, mode, reasoning_effort, created_at, updated_at FROM chats WHERE id = ?`, id).
-		Scan(&c.ID, &c.Title, &c.Model, &c.ImageModel, &c.Mode, &c.ReasoningEffort, &created, &updated)
+		`SELECT id, title, model, image_model, mode, reasoning_effort, created_at, updated_at, COALESCE(group_id, 0) FROM chats WHERE id = ?`, id).
+		Scan(&c.ID, &c.Title, &c.Model, &c.ImageModel, &c.Mode, &c.ReasoningEffort, &created, &updated, &c.GroupID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, ErrNotFound
 	}
@@ -359,11 +362,13 @@ func (s *Store) DeleteChat(ctx context.Context, id int64) error {
 
 // DeleteEmptyChats removes chats that contain neither messages nor documents
 // (orphaned "new chat" entries). exceptID is kept (0 = keep none). It returns
-// the number of removed chats.
+// the number of removed chats. Explicitly organized chats are retained even
+// after their group is removed or they are moved back to ungrouped.
 func (s *Store) DeleteEmptyChats(ctx context.Context, exceptID int64) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
 		`DELETE FROM chats
 		 WHERE id != ?
+		   AND group_id IS NULL AND keep_empty = 0
 		   AND id NOT IN (SELECT DISTINCT chat_id FROM messages)
 		   AND id NOT IN (SELECT chat_id FROM documents WHERE chat_id IS NOT NULL)`,
 		exceptID)

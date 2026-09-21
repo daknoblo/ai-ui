@@ -114,7 +114,7 @@ export async function verifyChatScroll(page, base, index, mobile) {
   await assertPosition(page, finishedPosition, 'completion while reading earlier output');
 
   await openSidebar(page);
-  await page.locator('.btn-new').click();
+  await page.locator('.new-chat-form .btn-new').click();
   await page.waitForFunction(() => !document.querySelector('#messages [sse-connect]'));
   await settled(page);
   await assertFollowing(page, 'HTMX navigation to a new conversation');

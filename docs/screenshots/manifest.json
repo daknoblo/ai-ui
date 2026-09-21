@@ -28,6 +28,15 @@
       "caption": "Named, collapsible groups keep chats in an indented tree. Drag a chat into a group or use the Move action; removing a group keeps its conversations."
     },
     {
+      "id": "retry-response",
+      "lang": "en",
+      "file": "en/retry-response.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Retry without losing the previous answer",
+      "caption": "Retry runs the original question again after a cost confirmation. The old answer stays visible and a new labeled response is appended."
+    },
+    {
       "id": "streaming",
       "lang": "en",
       "file": "en/streaming.png",
@@ -170,6 +179,15 @@
       "height": 900,
       "title": "Chats in farbigen Gruppen ordnen",
       "caption": "Benannte, aufklappbare Gruppen zeigen Chats eingerückt an. Verschiebe sie per Drag-and-drop oder über die Verschieben-Aktion; beim Entfernen einer Gruppe bleiben die Chats erhalten."
+    },
+    {
+      "id": "retry-response",
+      "lang": "de",
+      "file": "de/retry-response.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Erneut ausführen und bisherige Antwort behalten",
+      "caption": "Retry verarbeitet die ursprüngliche Frage nach einem Kostenhinweis erneut. Die bisherige Antwort bleibt sichtbar; eine neue gekennzeichnete Antwort wird angefügt."
     },
     {
       "id": "stream-reading",

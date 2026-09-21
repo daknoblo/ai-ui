@@ -90,6 +90,9 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 			"chatNavRow": func(chat storage.Chat, current *storage.Chat) chatNavRow {
 				return chatNavRow{Chat: chat, CurrentChat: current}
 			},
+			"responseActions": func(chatID, turnID int64) streamView {
+				return streamView{ChatID: chatID, TurnID: turnID}
+			},
 			"renderMarkdown": renderMarkdown,
 			"lang":           cfg.Language,
 			"t": func(key string, args ...any) string {
@@ -219,6 +222,7 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/logs/clear", s.handleLogClear)
 
 	r.Post("/chat/{id}/send", s.handleSend)
+	r.Post("/chat/{id}/retry/{turn}", s.handleRetry)
 	r.Get("/chat/{id}/generate", s.handleGenerate)
 
 	r.Get("/config", s.handleConfigGet)

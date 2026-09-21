@@ -23,11 +23,13 @@ const (
 
 // Message is a single message within a chat.
 type Message struct {
-	ID        int64     `json:"id"`
-	ChatID    int64     `json:"chat_id"`
-	Role      string    `json:"role"` // "user" or "assistant"
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           int64     `json:"id"`
+	ChatID       int64     `json:"chat_id"`
+	Role         string    `json:"role"` // "user" or "assistant"
+	Content      string    `json:"content"`
+	CreatedAt    time.Time `json:"created_at"`
+	GenerationID int64     `json:"-"`
+	Retried      bool      `json:"-"`
 }
 
 // Document describes an uploaded document.

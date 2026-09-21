@@ -40,6 +40,8 @@ All screenshots are generated automatically from the demo instance
 - Answer streaming (token by token) via server-sent events
 - A copy icon below each completed answer copies the full response text with
   rich formatting (headings, emphasis, lists, tables and code) where supported
+- A retry icon beside Copy reprocesses the original question after confirmation,
+  retaining the previous answer and appending the new result
 - Streaming follows the latest output only while you stay at the bottom.
   Scrolling up preserves your reading position; a jump-to-latest control shows
   whether the response is still running, reconnecting, or has finished
@@ -597,6 +599,30 @@ fallback. A plain-text-only result or a denied clipboard operation is reported
 explicitly, not shown as a successful formatted copy. The complete answer is
 copied, including text outside the visible viewport. Images themselves are not
 copied as image files; their available alternative text is included instead.
+
+### Retrying an answer
+
+The retry icon beside Copy explicitly runs the request belonging to that
+answer again. A confirmation warns about additional API charges. The previous
+answer is never overwritten: the new attempt is labeled and appended at the
+end of the conversation, without adding a duplicate user message. Failed and
+interrupted attempts can also be retried.
+
+The original question and its conversation-history boundary are preserved,
+even if later questions already exist. Saved model/reasoning overrides,
+manual chat/image mode, image parameters and the saved image-edit source are
+reused. An edit whose original image was deleted is rejected instead of using
+a newer image. Current system settings, available attachments, retrieved
+document context and web results may differ; this is reprocessing, not a
+byte-for-byte replay of an old provider payload. Automatic tool selection is
+performed again by the chat model.
+
+Only one attempt may run per chat, subject to the application-wide generation
+limit. Retry controls are disabled during active generation; the backend also
+rejects overlapping requests. Reconnecting to an accepted retry only observes
+that job and does not create another attempt. Older imported conversations
+without saved request metadata show a disabled retry control: resend their
+question explicitly rather than guessing missing settings.
 
 ### Organizing chats
 

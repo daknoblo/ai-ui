@@ -18,6 +18,7 @@ import { chromium } from 'playwright';
 import { verifyChatScroll } from './scroll-checks.mjs';
 import { verifyResponseCopy } from './copy-checks.mjs';
 import { verifyChatGroups, createGroup } from './group-checks.mjs';
+import { verifyResponseRetry } from './retry-checks.mjs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
@@ -107,6 +108,31 @@ const SHOTS = [
       }
       await open(page, `/chat/${ctx.index.chats.chat}`);
       if (!(await page.locator(`[data-group-id="${second}"]`).isVisible())) throw new Error('Empty groups must remain visible');
+    },
+  },
+  {
+    id: 'retry-response',
+    langs: ['en', 'de'],
+    meta: {
+      en: {
+        title: 'Retry without losing the previous answer',
+        caption: 'Retry runs the original question again after a cost confirmation. The old answer stays visible and a new labeled response is appended.',
+      },
+      de: {
+        title: 'Erneut ausführen und bisherige Antwort behalten',
+        caption: 'Retry verarbeitet die ursprüngliche Frage nach einem Kostenhinweis erneut. Die bisherige Antwort bleibt sichtbar; eine neue gekennzeichnete Antwort wird angefügt.',
+      },
+    },
+    capture: async (page, ctx) => {
+      await open(page, '/');
+      await page.locator('#chat-form textarea').fill(ctx.index.stream_prompt);
+      await page.locator('#chat-form button[type="submit"]').click();
+      await page.waitForFunction(() => document.querySelector('#messages [sse-connect]')?.dataset.streamState === 'finished');
+      page.once('dialog', dialog => dialog.accept());
+      await page.locator('#messages .response-retry').first().click();
+      await page.waitForFunction(() => document.querySelectorAll('#messages .msg.assistant').length === 2 &&
+        Array.from(document.querySelectorAll('#messages [sse-connect]')).every(message => message.dataset.streamState === 'finished'));
+      await page.locator('#messages .response-retry').last().focus();
     },
   },
   {
@@ -454,6 +480,13 @@ async function main() {
             process.stdout.write(`copy checks passed (${lang}/${layout})\n`);
           } finally {
             await copyContext.close();
+          }
+          const retryContext = await browser.newContext({ ...options, reducedMotion: 'reduce' });
+          try {
+            await verifyResponseRetry(await retryContext.newPage(), base, index);
+            process.stdout.write(`retry checks passed (${lang}/${layout})\n`);
+          } finally {
+            await retryContext.close();
           }
           const groupContext = await browser.newContext({ ...options, reducedMotion: 'reduce' });
           try {

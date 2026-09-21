@@ -10,6 +10,24 @@
       "caption": "Conversations in the sidebar, a clear chat title, and answers rendered as sanitized Markdown including tables and code. Model defaults are managed in Settings."
     },
     {
+      "id": "copy-response",
+      "lang": "en",
+      "file": "en/copy-response.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Copy complete answers with formatting",
+      "caption": "The copy icon below each completed answer copies headings, emphasis, lists, tables and code without the surrounding model or usage indicators."
+    },
+    {
+      "id": "chat-groups",
+      "lang": "en",
+      "file": "en/chat-groups.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Organize chats in colored groups",
+      "caption": "Named, collapsible groups keep chats in an indented tree. Drag a chat into a group or use the Move action; removing a group keeps its conversations."
+    },
+    {
       "id": "streaming",
       "lang": "en",
       "file": "en/streaming.png",
@@ -134,6 +152,24 @@
       "height": 900,
       "title": "Chat mit Markdown-Antworten",
       "caption": "Unterhaltungen in der Seitenleiste, ein klarer Chat-Titel und Antworten als bereinigtes Markdown inklusive Tabellen und Code. Modellvorgaben stehen in den Einstellungen."
+    },
+    {
+      "id": "copy-response",
+      "lang": "de",
+      "file": "de/copy-response.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Vollständige Antworten formatiert kopieren",
+      "caption": "Das Kopier-Icon unter jeder abgeschlossenen Antwort übernimmt Überschriften, Hervorhebungen, Listen, Tabellen und Code ohne Modell- oder Verbrauchsanzeige."
+    },
+    {
+      "id": "chat-groups",
+      "lang": "de",
+      "file": "de/chat-groups.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Chats in farbigen Gruppen ordnen",
+      "caption": "Benannte, aufklappbare Gruppen zeigen Chats eingerückt an. Verschiebe sie per Drag-and-drop oder über die Verschieben-Aktion; beim Entfernen einer Gruppe bleiben die Chats erhalten."
     },
     {
       "id": "stream-reading",

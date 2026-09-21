@@ -586,7 +586,8 @@ output again. The same behavior applies on desktop and mobile.
 
 ### Copying answers
 
-The copy icon below a completed assistant answer copies only the response body,
+Copy and Retry use matching labeled icon buttons below the answer.
+The Copy button below a completed assistant answer copies only the response body,
 not the model name, tool notices or token usage. It is available both after a
 stream finishes and when reopening stored conversations. Rich HTML and plain
 text are supplied together, so the target application can use the format it

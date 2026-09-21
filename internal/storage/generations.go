@@ -24,6 +24,7 @@ const (
 // the latest bounded SSE view, not an event log.
 type Generation struct {
 	ID, ChatID, ResponseID int64
+	UserMessageID          int64
 	State, Request         string
 	Content, Snapshot      string
 	Error                  string
@@ -53,7 +54,11 @@ UPDATE messages SET content = (SELECT content FROM generations WHERE response_id
 	WHERE id IN (SELECT response_id FROM generations WHERE state IN ('pending','running'));
 UPDATE generations SET state = 'interrupted', error = 'server restarted', snapshot = ''
 	WHERE state IN ('pending','running');`)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.ensureColumn(ctx, `PRAGMA table_info(generations)`, "user_message_id",
+		`ALTER TABLE generations ADD COLUMN user_message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE`)
 }
 
 // CreateGeneration atomically stores both message positions and the pending
@@ -95,7 +100,57 @@ func (s *Store) CreateGeneration(ctx context.Context, chatID int64, content, req
 	if err := tx.Commit(); err != nil {
 		return Generation{}, err
 	}
-	return Generation{ID: id, ChatID: chatID, ResponseID: responseID, State: GenerationPending, Request: request}, nil
+	return Generation{ID: id, ChatID: chatID, ResponseID: responseID, UserMessageID: id, State: GenerationPending, Request: request}, nil
+}
+
+// RetryGeneration reserves only a new assistant message. The original user
+// message and its history boundary remain unchanged, even after later turns.
+func (s *Store) RetryGeneration(ctx context.Context, chatID, originalID int64, deadline time.Time) (Generation, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Generation{}, err
+	}
+	defer func() { _ = tx.Rollback() }() // No-op after commit.
+	var original Generation
+	err = tx.QueryRowContext(ctx, `SELECT g.state,g.request,COALESCE(g.user_message_id,g.id)
+		FROM generations g JOIN messages m ON m.id=COALESCE(g.user_message_id,g.id)
+		WHERE g.chat_id=? AND g.id=? AND m.chat_id=? AND m.role='user'`,
+		chatID, originalID, chatID).Scan(&original.State, &original.Request, &original.UserMessageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Generation{}, ErrNotFound
+	}
+	if err != nil {
+		return Generation{}, err
+	}
+	var active int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM generations WHERE chat_id=? AND state IN ('pending','running')`, chatID).Scan(&active); err != nil {
+		return Generation{}, err
+	}
+	if original.Active() || active != 0 {
+		return Generation{}, ErrGenerationBusy
+	}
+	answer, err := tx.ExecContext(ctx, `INSERT INTO messages(chat_id,role,content,created_at) VALUES (?,'assistant','',?)`, chatID, nowStr())
+	if err != nil {
+		return Generation{}, err
+	}
+	id, err := answer.LastInsertId()
+	if err != nil {
+		return Generation{}, err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO generations(id,chat_id,response_id,user_message_id,state,request,deadline,updated_at)
+		VALUES (?,?,?,?,'pending',?,?,?)`, id, chatID, id, original.UserMessageID, original.Request,
+		deadline.UTC().Format(timeLayout), nowStr())
+	if err != nil {
+		return Generation{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE chats SET updated_at=? WHERE id=?`, nowStr(), chatID); err != nil {
+		return Generation{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Generation{}, err
+	}
+	return Generation{ID: id, ChatID: chatID, ResponseID: id, UserMessageID: original.UserMessageID,
+		State: GenerationPending, Request: original.Request}, nil
 }
 
 // ClaimGeneration is the only transition that grants permission to call a
@@ -112,9 +167,9 @@ func (s *Store) ClaimGeneration(ctx context.Context, chatID, id int64) (bool, er
 
 func (s *Store) GetGeneration(ctx context.Context, chatID, id int64) (Generation, error) {
 	var g Generation
-	err := s.db.QueryRowContext(ctx, `SELECT id,chat_id,response_id,state,request,content,snapshot,error
+	err := s.db.QueryRowContext(ctx, `SELECT id,chat_id,response_id,state,request,content,snapshot,error,COALESCE(user_message_id,id)
 		FROM generations WHERE chat_id=? AND id=?`, chatID, id).
-		Scan(&g.ID, &g.ChatID, &g.ResponseID, &g.State, &g.Request, &g.Content, &g.Snapshot, &g.Error)
+		Scan(&g.ID, &g.ChatID, &g.ResponseID, &g.State, &g.Request, &g.Content, &g.Snapshot, &g.Error, &g.UserMessageID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return g, ErrNotFound
 	}
@@ -123,7 +178,7 @@ func (s *Store) GetGeneration(ctx context.Context, chatID, id int64) (Generation
 
 // ListGenerations omits the replay snapshots when constructing a chat page.
 func (s *Store) ListGenerations(ctx context.Context, chatID int64) ([]Generation, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,chat_id,response_id,state,request FROM generations WHERE chat_id=? ORDER BY id`, chatID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,chat_id,response_id,state,request,COALESCE(user_message_id,id) FROM generations WHERE chat_id=? ORDER BY id`, chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +186,7 @@ func (s *Store) ListGenerations(ctx context.Context, chatID int64) ([]Generation
 	var out []Generation
 	for rows.Next() {
 		var g Generation
-		if err := rows.Scan(&g.ID, &g.ChatID, &g.ResponseID, &g.State, &g.Request); err != nil {
+		if err := rows.Scan(&g.ID, &g.ChatID, &g.ResponseID, &g.State, &g.Request, &g.UserMessageID); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -143,7 +198,7 @@ func (s *Store) ListGenerations(ctx context.Context, chatID int64) ([]Generation
 // snapshot, so refreshing during a completion cannot render an empty response.
 func (s *Store) Conversation(ctx context.Context, chatID int64) ([]Message, []Generation, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.chat_id,m.role,m.content,m.created_at,
-		COALESCE(g.id,0),COALESCE(g.state,''),COALESCE(g.request,'')
+		COALESCE(g.id,0),COALESCE(g.state,''),COALESCE(g.request,''),COALESCE(g.user_message_id,g.id,0)
 		FROM messages m LEFT JOIN generations g ON g.response_id=m.id WHERE m.chat_id=? ORDER BY m.id`, chatID)
 	if err != nil {
 		return nil, nil, err
@@ -155,10 +210,12 @@ func (s *Store) Conversation(ctx context.Context, chatID int64) ([]Message, []Ge
 		var m Message
 		var g Generation
 		var created string
-		if err := rows.Scan(&m.ID, &m.ChatID, &m.Role, &m.Content, &created, &g.ID, &g.State, &g.Request); err != nil {
+		if err := rows.Scan(&m.ID, &m.ChatID, &m.Role, &m.Content, &created, &g.ID, &g.State, &g.Request, &g.UserMessageID); err != nil {
 			return nil, nil, err
 		}
 		m.CreatedAt = parseTime(created)
+		m.GenerationID = g.ID
+		m.Retried = g.ID != 0 && g.ID != g.UserMessageID
 		messages = append(messages, m)
 		if g.ID != 0 {
 			g.ChatID, g.ResponseID = chatID, m.ID
@@ -171,8 +228,8 @@ func (s *Store) Conversation(ctx context.Context, chatID int64) ([]Message, []Ge
 // GenerationHistory excludes the reserved response and every later turn.
 func (s *Store) GenerationHistory(ctx context.Context, chatID, id int64) ([]Message, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id,chat_id,role,content,created_at FROM messages
-		WHERE chat_id=? AND id<=? AND EXISTS (SELECT 1 FROM generations WHERE id=? AND chat_id=?)
-		ORDER BY id`, chatID, id, id, chatID)
+		WHERE chat_id=? AND id<=(SELECT COALESCE(user_message_id,id) FROM generations WHERE id=? AND chat_id=?)
+		ORDER BY id`, chatID, id, chatID)
 	if err != nil {
 		return nil, err
 	}

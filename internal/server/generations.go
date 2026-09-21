@@ -37,12 +37,14 @@ type generationJob struct {
 type streamView struct {
 	ChatID, TurnID   int64
 	Web, Image, Edit bool
+	Retried          bool
 }
 
 func generationView(g storage.Generation) (streamView, error) {
 	var opts generationOptions
 	err := json.Unmarshal([]byte(g.Request), &opts)
-	return streamView{ChatID: g.ChatID, TurnID: g.ID, Web: opts.Web, Image: opts.Image, Edit: opts.Edit}, err
+	return streamView{ChatID: g.ChatID, TurnID: g.ID, Web: opts.Web, Image: opts.Image, Edit: opts.Edit,
+		Retried: g.UserMessageID != 0 && g.UserMessageID != g.ID}, err
 }
 
 // generationStream is owned by one worker. Only a bounded current snapshot is

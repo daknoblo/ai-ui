@@ -165,7 +165,8 @@
 		var state = initialize();
 		if (!state) return;
 		var request = event.detail.requestConfig;
-		if (event.detail.target === state.box && request && request.elt && request.elt.closest("#chat-form") &&
+		if (event.detail.target === state.box && request && request.elt &&
+			(request.elt.closest("#chat-form") || request.elt.matches(".response-retry")) &&
 			event.detail.shouldSwap) {
 			state.following = true;
 			state.finished = false;

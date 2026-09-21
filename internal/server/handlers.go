@@ -469,7 +469,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Append the user bubble plus the streaming shell.
-	s.render(w, "message", storage.Message{Role: "user", Content: message})
+	s.render(w, "message", storage.Message{ID: turn.UserMessageID, ChatID: chatID, Role: "user", Content: message})
 	s.render(w, "assistant-stream", streamView{ChatID: chatID, TurnID: turn.ID, Web: web, Image: image, Edit: edit})
 	if titleChanged {
 		s.render(w, "title-oob", struct{ Title string }{Title: chat.Title})
@@ -493,7 +493,7 @@ func (s *Server) generateTurn(ctx context.Context, sse *generationStream, turn s
 	}
 
 	history, err := s.store.GenerationHistory(ctx, id, turn.ID)
-	if err != nil || len(history) == 0 || history[len(history)-1].ID != turn.ID || history[len(history)-1].Role != "user" {
+	if err != nil || len(history) == 0 || history[len(history)-1].ID != turn.UserMessageID || history[len(history)-1].Role != "user" {
 		fail(s.t("stream.no_message"))
 		return
 	}
@@ -533,6 +533,9 @@ func (s *Server) generateTurn(ctx context.Context, sse *generationStream, turn s
 			return
 		}
 		instructions := s.t("prompt.image_tools") + "\n" + s.t("prompt.image_context", count > 0)
+		if turn.UserMessageID != turn.ID {
+			instructions = s.t("prompt.image_tools") + "\n" + s.t("prompt.image_context", options.SourceImageID > 0)
+		}
 		if len(messages) > 0 && messages[0].Role == "system" {
 			messages[0].Content += "\n\n" + instructions
 		} else {

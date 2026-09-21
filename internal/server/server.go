@@ -86,7 +86,10 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 	// field that would have to be threaded through every template data struct.
 	tmpl := template.Must(template.New("").
 		Funcs(template.FuncMap{
-			"assetURL":       assets.URL,
+			"assetURL": assets.URL,
+			"chatNavRow": func(chat storage.Chat, current *storage.Chat) chatNavRow {
+				return chatNavRow{Chat: chat, CurrentChat: current}
+			},
 			"renderMarkdown": renderMarkdown,
 			"lang":           cfg.Language,
 			"t": func(key string, args ...any) string {
@@ -202,6 +205,14 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/chat/{id}", s.handleChat)
 	r.Post("/chats", s.handleCreateChat)
 	r.Delete("/chats/{id}", s.handleDeleteChat)
+	r.Get("/groups/new", s.handleNewChatGroup)
+	r.Get("/groups/{id}/edit", s.handleEditChatGroup)
+	r.Post("/groups", s.handleCreateChatGroup)
+	r.Post("/groups/{id}", s.handleUpdateChatGroup)
+	r.Post("/groups/{id}/collapse", s.handleCollapseChatGroup)
+	r.Delete("/groups/{id}", s.handleDeleteChatGroup)
+	r.Get("/chats/{id}/move", s.handleMoveChatDialog)
+	r.Post("/chats/{id}/group", s.handleMoveChatGroup)
 	r.Get("/stats", s.handleStats)
 	r.Get("/logs", s.handleLogs)
 	r.Get("/logs/tail", s.handleLogTail)

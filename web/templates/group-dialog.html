@@ -1,0 +1,37 @@
+{{define "group-dialog"}}
+<dialog id="group-dialog" class="group-dialog" aria-labelledby="group-dialog-title">
+	<h2 id="group-dialog-title">{{if .Chat}}{{t "group.move_title"}}{{else if .Group.ID}}{{t "group.edit_title"}}{{else}}{{t "group.new"}}{{end}}</h2>
+	<form class="group-form" data-group-action
+		hx-post="{{if .Chat}}/chats/{{.Chat.ID}}/group{{else if .Group.ID}}/groups/{{.Group.ID}}{{else}}/groups{{end}}"
+		hx-target="#chat-list" hx-swap="outerHTML" hx-disabled-elt="find button">
+		{{if .Chat}}
+		<p class="group-chat-title">{{chatTitle .Chat.Title}}</p>
+		<label for="move-group">{{t "group.destination"}}</label>
+		<select id="move-group" name="group_id" autofocus>
+			<option value="0" {{if eq .Chat.GroupID 0}}selected{{end}}>{{t "group.ungrouped"}}</option>
+			{{range .Groups}}<option value="{{.ID}}" {{if eq .ID $.Chat.GroupID}}selected{{end}}>{{.Title}}</option>{{end}}
+		</select>
+		{{else}}
+		<label for="group-title">{{t "group.name"}}</label>
+		<input id="group-title" name="title" value="{{.Group.Title}}" required maxlength="80" autocomplete="off" autofocus>
+		<label for="group-color">{{t "group.color"}}</label>
+		<select id="group-color" name="color">
+			{{range .Colors}}<option value="{{.}}" {{if eq . $.Group.Color}}selected{{end}}>{{if .}}{{t (printf "group.color_%s" .)}}{{else}}{{t "group.color_none"}}{{end}}</option>{{end}}
+		</select>
+		{{end}}
+		<p id="group-dialog-error" class="group-feedback" role="alert" hidden data-error="{{t "group.request_failed"}}"></p>
+		<div class="group-dialog-actions">
+			<button type="button" class="btn btn-ghost" data-group-cancel>{{t "group.cancel"}}</button>
+			<button type="submit" class="btn">{{if .Chat}}{{t "group.move"}}{{else}}{{t "group.save"}}{{end}}</button>
+		</div>
+	</form>
+	{{if .Group.ID}}
+	<div class="group-delete-section">
+		<p>{{t "group.delete_hint"}}</p>
+		<button type="button" class="btn btn-ghost" data-group-action
+			hx-delete="/groups/{{.Group.ID}}" hx-target="#chat-list" hx-swap="outerHTML"
+			hx-confirm="{{t "group.delete_confirm" .Group.Title}}" hx-disabled-elt="this">{{t "group.delete"}}</button>
+	</div>
+	{{end}}
+</dialog>
+{{end}}

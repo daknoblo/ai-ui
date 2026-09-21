@@ -16,6 +16,8 @@ import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { verifyChatScroll } from './scroll-checks.mjs';
+import { verifyResponseCopy } from './copy-checks.mjs';
+import { verifyChatGroups, createGroup } from './group-checks.mjs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
@@ -61,6 +63,51 @@ const SHOTS = [
       },
     },
     capture: (page, ctx) => open(page, `/chat/${ctx.index.chats.chat}`),
+  },
+  {
+    id: 'copy-response',
+    langs: ['en', 'de'],
+    meta: {
+      en: {
+        title: 'Copy complete answers with formatting',
+        caption: 'The copy icon below each completed answer copies headings, emphasis, lists, tables and code without the surrounding model or usage indicators.',
+      },
+      de: {
+        title: 'Vollständige Antworten formatiert kopieren',
+        caption: 'Das Kopier-Icon unter jeder abgeschlossenen Antwort übernimmt Überschriften, Hervorhebungen, Listen, Tabellen und Code ohne Modell- oder Verbrauchsanzeige.',
+      },
+    },
+    capture: async (page, ctx) => {
+      await open(page, `/chat/${ctx.index.chats.chat}`);
+      const copy = page.locator('#messages .msg.assistant .response-copy').last();
+      await copy.scrollIntoViewIfNeeded();
+      await copy.focus();
+    },
+  },
+  {
+    id: 'chat-groups',
+    langs: ['en', 'de'],
+    meta: {
+      en: {
+        title: 'Organize chats in colored groups',
+        caption: 'Named, collapsible groups keep chats in an indented tree. Drag a chat into a group or use the Move action; removing a group keeps its conversations.',
+      },
+      de: {
+        title: 'Chats in farbigen Gruppen ordnen',
+        caption: 'Benannte, aufklappbare Gruppen zeigen Chats eingerückt an. Verschiebe sie per Drag-and-drop oder über die Verschieben-Aktion; beim Entfernen einer Gruppe bleiben die Chats erhalten.',
+      },
+    },
+    capture: async (page, ctx) => {
+      await open(page, `/chat/${ctx.index.chats.chat}`);
+      const group = await createGroup(page, ctx.lang === 'de' ? 'Meine Projekte' : 'My projects', 'blue');
+      const second = await createGroup(page, ctx.lang === 'de' ? 'Ideen' : 'Ideas', 'violet');
+      for (const chat of [ctx.index.chats.chat, ctx.index.chats.documents]) {
+        const result = await page.request.post(`${base}/chats/${chat}/group`, { form: { group_id: group } });
+        if (!result.ok()) throw new Error('Could not organize demo chats for the screenshot');
+      }
+      await open(page, `/chat/${ctx.index.chats.chat}`);
+      if (!(await page.locator(`[data-group-id="${second}"]`).isVisible())) throw new Error('Empty groups must remain visible');
+    },
   },
   {
     id: 'streaming',
@@ -400,6 +447,20 @@ async function main() {
             process.stdout.write(`scroll checks passed (${lang}/${layout})\n`);
           } finally {
             await context.close();
+          }
+          const copyContext = await browser.newContext({ ...options, reducedMotion: 'reduce' });
+          try {
+            await verifyResponseCopy(await copyContext.newPage(), base, index);
+            process.stdout.write(`copy checks passed (${lang}/${layout})\n`);
+          } finally {
+            await copyContext.close();
+          }
+          const groupContext = await browser.newContext({ ...options, reducedMotion: 'reduce' });
+          try {
+            await verifyChatGroups(await groupContext.newPage(), base, index, layout === 'mobile');
+            process.stdout.write(`group checks passed (${lang}/${layout})\n`);
+          } finally {
+            await groupContext.close();
           }
         }
         await mkdir(join(outDir, lang), { recursive: true });

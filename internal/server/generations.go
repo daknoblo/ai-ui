@@ -282,14 +282,11 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 			}
 			current["token"] = renderMarkdownString(content)
 			// Replaying an older turn must not restore an obsolete title/sidebar.
-			chats, listErr := s.store.ListChats(r.Context())
-			chat, chatErr := s.store.GetChat(r.Context(), chatID)
-			if listErr == nil && chatErr == nil {
-				current["title"] = s.renderString("title-update", struct {
-					Title       string
-					Chats       []storage.Chat
-					CurrentChat *storage.Chat
-				}{Title: chat.Title, Chats: chats, CurrentChat: &chat})
+			sidebar, sidebarErr := s.buildSidebarData(r.Context(), chatID)
+			if sidebarErr != nil {
+				slog.Warn("refresh sidebar after generation", "chat", chatID, "err", sidebarErr)
+			} else if sidebar.CurrentChat != nil {
+				current["title"] = s.renderString("title-update", sidebar)
 			}
 		}
 		for _, event := range []string{"tool", "token", "model", "usage", "title"} {

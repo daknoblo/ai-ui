@@ -2,6 +2,8 @@
 <div class="modal-overlay" hx-on:click="if(event.target===this)this.remove()">
 	<link rel="stylesheet" href="{{assetURL "app.css"}}"
 		hx-swap-oob="outerHTML:head link[rel='stylesheet'][href^='/static/app.css']">
+	<link rel="stylesheet" href="{{assetURL "chat-groups.css"}}"
+		hx-swap-oob="outerHTML:head link[rel='stylesheet'][href^='/static/chat-groups.css']">
 	<div class="modal">
 		<div class="modal-head">
 			<h2>{{t "config.title"}}</h2>

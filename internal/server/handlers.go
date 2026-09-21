@@ -69,6 +69,8 @@ type pageData struct {
 	Title             string
 	Chats             []storage.Chat
 	CurrentChat       *storage.Chat
+	Groups            []chatGroupView
+	Ungrouped         []storage.Chat
 	Messages          []storage.Message
 	Streams           map[int64]*streamView
 	Documents         []storage.Document
@@ -114,7 +116,7 @@ func imageModelOf(cfg config.Config, chat *storage.Chat) string {
 // buildPageData loads chats, documents and – if given – the current chat with
 // its messages.
 func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (pageData, error) {
-	chats, err := s.store.ListChats(ctx)
+	sidebar, err := s.buildSidebarData(ctx, 0)
 	if err != nil {
 		return pageData{}, err
 	}
@@ -122,7 +124,9 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 
 	pd := pageData{
 		Title:             "AI UI",
-		Chats:             chats,
+		Chats:             sidebar.Chats,
+		Groups:            sidebar.Groups,
+		Ungrouped:         sidebar.Ungrouped,
 		CurrentChat:       current,
 		Configured:        s.cfg.IsConfigured(),
 		UploadsReady:      s.ready.uploadsAllowed(),

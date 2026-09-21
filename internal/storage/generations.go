@@ -198,7 +198,8 @@ func (s *Store) ListGenerations(ctx context.Context, chatID int64) ([]Generation
 // snapshot, so refreshing during a completion cannot render an empty response.
 func (s *Store) Conversation(ctx context.Context, chatID int64) ([]Message, []Generation, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.chat_id,m.role,m.content,m.created_at,
-		COALESCE(g.id,0),COALESCE(g.state,''),COALESCE(g.request,''),COALESCE(g.user_message_id,g.id,0)
+		COALESCE(g.id,0),COALESCE(g.state,''),COALESCE(g.request,''),COALESCE(g.user_message_id,g.id,0),
+		CASE WHEN g.state IN ('pending','running') THEN '' ELSE COALESCE(g.snapshot,'') END
 		FROM messages m LEFT JOIN generations g ON g.response_id=m.id WHERE m.chat_id=? ORDER BY m.id`, chatID)
 	if err != nil {
 		return nil, nil, err
@@ -210,7 +211,7 @@ func (s *Store) Conversation(ctx context.Context, chatID int64) ([]Message, []Ge
 		var m Message
 		var g Generation
 		var created string
-		if err := rows.Scan(&m.ID, &m.ChatID, &m.Role, &m.Content, &created, &g.ID, &g.State, &g.Request, &g.UserMessageID); err != nil {
+		if err := rows.Scan(&m.ID, &m.ChatID, &m.Role, &m.Content, &created, &g.ID, &g.State, &g.Request, &g.UserMessageID, &g.Snapshot); err != nil {
 			return nil, nil, err
 		}
 		m.CreatedAt = parseTime(created)

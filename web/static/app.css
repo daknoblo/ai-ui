@@ -217,13 +217,21 @@ html, body {
 }
 .usage-row:hover { color: var(--text); background: var(--bg-elev); }
 .usage-cell { white-space: nowrap; }
-.msg-usage:empty { display: none; }
-.msg-usage {
+.msg-metadata {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	column-gap: 6px;
 	font-size: 11px;
 	color: var(--text-dim);
 	margin-top: 4px;
 	opacity: .85;
 }
+.msg-metadata:not(:has(> :not(:empty))) { display: none; }
+.msg-usage:empty, .msg-model:empty { display: none; }
+.msg-usage, .msg-model, .model-badge { font: inherit; color: inherit; }
+.msg-usage:not(:empty) + .msg-model:not(:empty)::before { content: "·"; margin-right: 6px; }
+.msg-model { overflow-wrap: anywhere; min-width: 0; }
 .empty-hint { color: var(--text-dim); font-size: 13px; padding: 4px 8px; }
 
 /* ---------- Buttons ---------- */
@@ -367,6 +375,7 @@ html, body {
 	gap: 8px;
 	margin-top: 4px;
 	min-height: 32px;
+	flex-wrap: wrap;
 }
 .msg[data-stream-state]:not([data-stream-state="finished"]) > .response-actions { display: none; }
 .response-copy, .response-retry {
@@ -382,6 +391,17 @@ html, body {
 	color: var(--text-dim);
 	cursor: pointer;
 }
+.response-retry {
+	width: auto;
+	min-width: 32px;
+	gap: 5px;
+	padding-inline: 8px;
+	flex-shrink: 0;
+	font: inherit;
+	font-size: 12px;
+	color: var(--text);
+	border-color: var(--border);
+}
 .response-copy:hover, .response-retry:hover { color: var(--text); background: var(--bg-elev); border-color: var(--border); }
 .response-copy:focus-visible, .response-retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .response-copy:disabled, .response-retry:disabled { opacity: .5; cursor: not-allowed; }
@@ -391,6 +411,7 @@ html, body {
 .response-copy-status[data-state="error"] { color: var(--warn); }
 @media (pointer: coarse) {
 	.response-copy, .response-retry { width: 44px; height: 44px; }
+	.response-retry { width: auto; min-width: 44px; }
 }
 @keyframes blink { 50% { opacity: 0; } }
 
@@ -628,20 +649,6 @@ html, body {
 	border-radius: 8px;
 	padding: 5px 10px;
 	align-self: flex-start;
-}
-.msg-model:empty { display: none; }
-.model-badge {
-	display: inline-block;
-	font-size: 10px;
-	font-weight: 600;
-	letter-spacing: .02em;
-	color: var(--accent);
-	background: rgba(16,163,127,.12);
-	border: 1px solid rgba(16,163,127,.3);
-	border-radius: 10px;
-	padding: 1px 7px;
-	margin-left: 6px;
-	vertical-align: middle;
 }
 
 /* ---------- Modal ---------- */

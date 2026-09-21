@@ -9,6 +9,7 @@ export async function verifyResponseRetry(page, base, index) {
   await page.waitForFunction(() => document.querySelector('#messages [sse-connect]')?.dataset.streamState === 'finished');
   await page.waitForFunction(() => !document.querySelector('#messages .htmx-settling, #messages .htmx-added'));
   const first = page.locator('#messages .msg.assistant').first();
+  await verifyFooter(first);
   const original = await first.locator('.bubble').innerHTML();
   const requestURL = await first.locator('.response-retry').getAttribute('hx-post');
   if (!requestURL?.startsWith(`/chat/${chatID}/retry/`)) throw new Error('Response retry is not bound to its own turn');
@@ -43,6 +44,7 @@ export async function verifyResponseRetry(page, base, index) {
       await first.locator('.response-retry').isDisabled()) {
     throw new Error('Retry results or controls did not survive reload');
   }
+  await verifyFooter(first);
 
   // Server errors must remain visible without losing existing outputs.
   await page.route(base + requestURL, route => route.fulfill({
@@ -54,6 +56,27 @@ export async function verifyResponseRetry(page, base, index) {
   await page.waitForFunction(() => !document.querySelector('#messages .response-retry').disabled);
   if (await page.locator('#messages .msg.assistant').count() !== 2) {
     throw new Error('Failed retry submission inserted a response');
+  }
+
+  async function verifyFooter(response) {
+    const copy = await response.locator('.response-copy').boundingBox();
+    const retry = await response.locator('.response-retry').boundingBox();
+    if (!copy || !retry || retry.x < copy.x + copy.width || retry.x - copy.x - copy.width > 12 ||
+        Math.abs(retry.y - copy.y) > 2 || !(await response.locator('.response-retry-label').innerText()).trim()) {
+      throw new Error(`Retry must be visibly labeled directly beside Copy: ${JSON.stringify({ copy, retry })}`);
+    }
+    if (await response.locator('.msg-role .msg-model').count()) {
+      throw new Error('Model metadata must not remain beside the Assistant heading');
+    }
+    await response.locator('.msg-metadata .msg-usage').waitFor({ state: 'visible' });
+    await response.locator('.msg-metadata .model-badge').waitFor({ state: 'visible' });
+    const equalTypography = await response.locator('.msg-metadata').evaluate(footer => {
+      const usage = getComputedStyle(footer.querySelector('.msg-usage'));
+      const model = getComputedStyle(footer.querySelector('.model-badge'));
+      return ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].every(key => usage[key] === model[key]) &&
+        model.backgroundColor === 'rgba(0, 0, 0, 0)' && model.borderTopWidth === '0px';
+    });
+    if (!equalTypography) throw new Error('Model and token usage have different typography or badge styling');
   }
   await page.unroute(base + requestURL);
   const removed = await page.request.delete(`${base}/chats/${chatID}`);

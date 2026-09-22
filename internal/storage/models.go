@@ -29,6 +29,7 @@ type Message struct {
 	Content      string    `json:"content"`
 	CreatedAt    time.Time `json:"created_at"`
 	GenerationID int64     `json:"-"`
+	QuestionID   int64     `json:"-"`
 	Retried      bool      `json:"-"`
 	ModelUsed    string    `json:"-"`
 	UsageText    string    `json:"-"`

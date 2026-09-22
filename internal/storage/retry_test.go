@@ -2,106 +2,94 @@ package storage
 
 import (
 	"errors"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
 
-func TestRetryPreservesOriginalMessagesAndHistory(t *testing.T) {
+func TestRetryQuestionThroughoutHistory(t *testing.T) {
 	s := newTestStore(t)
 	ctx := t.Context()
 	chat, err := s.CreateChat(ctx, "Retry", "", "auto")
 	if err != nil {
 		t.Fatal(err)
 	}
-	original, err := s.CreateGeneration(ctx, chat, "Original question", `{"model":"original"}`, time.Now().Add(time.Minute))
+	add := func(role, content string) int64 {
+		t.Helper()
+		id, err := s.AddMessage(ctx, chat, role, content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	orphan := add("assistant", "No question")
+	legacyUser := add("user", "Legacy question")
+	legacyAnswer := add("assistant", "Legacy answer")
+	original, err := s.CreateGeneration(ctx, chat, "Original question", "{}", time.Now().Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.FinishGeneration(ctx, original.ID, GenerationFailed, "Original failure", "", "failed", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	later, err := s.CreateGeneration(ctx, chat, "Later question", "{}", time.Now().Add(time.Minute))
+	laterUser := add("user", "Later question")
+	laterAnswer := add("assistant", "Later answer")
+	// Existing assistant-only retries must keep their explicit earlier question.
+	oldRetry := add("assistant", "Old retry of original question")
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO generations
+		(id,chat_id,response_id,user_message_id,state,request,deadline,updated_at)
+		VALUES (?,?,?,?,'completed','{}',?,?)`, oldRetry, chat, oldRetry, original.ID, nowStr(), nowStr()); err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := s.CreateGeneration(ctx, chat, "Original question", "{}", time.Now().Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.FinishGeneration(ctx, later.ID, GenerationCompleted, "Later answer", "", "", nil, nil); err != nil {
-		t.Fatal(err)
+	expected := map[int64]int64{
+		legacyUser: legacyUser, legacyAnswer: legacyUser,
+		original.ID: original.ID, original.ResponseID: original.ID,
+		laterUser: laterUser, laterAnswer: laterUser, oldRetry: original.ID,
+		repeated.ID: repeated.ID, repeated.ResponseID: repeated.ID,
 	}
-	retry, err := s.RetryGeneration(ctx, chat, original.ID, time.Now().Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
+	check := func() {
+		t.Helper()
+		messages, _, err := s.Conversation(ctx, chat)
+		if err != nil || len(messages) != 10 {
+			t.Fatalf("conversation: %+v, %v", messages, err)
+		}
+		for _, message := range messages {
+			if message.QuestionID != expected[message.ID] {
+				t.Errorf("message %d question = %d, want %d", message.ID, message.QuestionID, expected[message.ID])
+			}
+			question, err := s.RetryQuestion(ctx, chat, message.ID)
+			if message.ID == orphan {
+				if !errors.Is(err, ErrNotFound) {
+					t.Errorf("orphan answer resolved a question: %+v, %v", question, err)
+				}
+				continue
+			}
+			if err != nil || question.ID != expected[message.ID] || question.Role != "user" || question.Content == "" {
+				t.Errorf("retry question for %d: %+v, %v", message.ID, question, err)
+			}
+		}
 	}
-	if retry.ID != retry.ResponseID || retry.ID == original.ID || retry.UserMessageID != original.ID || retry.Request != original.Request {
-		t.Fatalf("retry identity is incorrect: %+v", retry)
-	}
-	history, err := s.GenerationHistory(ctx, chat, retry.ID)
-	if err != nil || len(history) != 1 || history[0].Content != "Original question" {
-		t.Fatalf("retry used later history: %+v, %v", history, err)
-	}
-	if _, err := s.FinishGeneration(ctx, retry.ID, GenerationCompleted, "New answer", "", "", nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	messages, turns, err := s.Conversation(ctx, chat)
-	if err != nil || len(messages) != 5 || len(turns) != 3 ||
-		messages[1].Content != "Original failure" || messages[3].Content != "Later answer" ||
-		messages[4].Content != "New answer" || !messages[4].Retried || messages[4].GenerationID != retry.ID {
-		t.Fatalf("retry modified prior messages or inserted another question: %+v, %v", messages, err)
-	}
-	retryAgain, err := s.RetryGeneration(ctx, chat, retry.ID, time.Now().Add(time.Minute))
-	if err != nil || retryAgain.UserMessageID != original.ID {
-		t.Fatalf("retry chain lost its original question: %+v, %v", retryAgain, err)
-	}
+	check()
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	interrupted, err := s.GetGeneration(ctx, chat, retryAgain.ID)
-	if err != nil || interrupted.State != GenerationInterrupted || interrupted.UserMessageID != original.ID {
-		t.Fatalf("restart lost retry linkage: %+v, %v", interrupted, err)
+	check()
+	for _, scope := range [][2]int64{{chat + 1, original.ID}, {chat, oldRetry + 100}} {
+		if _, err := s.RetryQuestion(ctx, scope[0], scope[1]); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("invalid retry scope %v: %v", scope, err)
+		}
+	}
+	history, err := s.GenerationHistory(ctx, chat, repeated.ID)
+	if err != nil || len(history) != 9 || history[len(history)-1].ID != repeated.ID {
+		t.Fatalf("new submission did not include current history: %+v, %v", history, err)
 	}
 	if err := s.DeleteChat(ctx, chat); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetGeneration(ctx, chat, retry.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("retry survived deletion of its chat: %v", err)
-	}
-}
-
-func TestRetryConcurrentAdmissionAndChatScope(t *testing.T) {
-	s := newTestStore(t)
-	ctx := t.Context()
-	chat, err := s.CreateChat(ctx, "Retry", "", "auto")
-	if err != nil {
-		t.Fatal(err)
-	}
-	original, err := s.CreateGeneration(ctx, chat, "Original question", "{}", time.Now().Add(time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.RetryGeneration(ctx, chat, original.ID, time.Now().Add(time.Minute)); !errors.Is(err, ErrGenerationBusy) {
-		t.Fatalf("active request was retried: %v", err)
-	}
-	if _, err := s.FinishGeneration(ctx, original.ID, GenerationCompleted, "Answer", "", "", nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.RetryGeneration(ctx, chat+1, original.ID, time.Now().Add(time.Minute)); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("retry ignored chat scope: %v", err)
-	}
-	var accepted atomic.Int64
-	var callers sync.WaitGroup
-	for range 8 {
-		callers.Go(func() {
-			_, err := s.RetryGeneration(ctx, chat, original.ID, time.Now().Add(time.Minute))
-			if err == nil {
-				accepted.Add(1)
-			} else if !errors.Is(err, ErrGenerationBusy) {
-				t.Errorf("retry: %v", err)
-			}
-		})
-	}
-	callers.Wait()
-	if accepted.Load() != 1 {
-		t.Fatalf("accepted %d simultaneous retry jobs", accepted.Load())
+	if _, err := s.RetryQuestion(ctx, chat, oldRetry); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("question survived deletion of its chat: %v", err)
 	}
 }

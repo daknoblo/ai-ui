@@ -70,12 +70,12 @@ const SHOTS = [
     langs: ['en', 'de'],
     meta: {
       en: {
-        title: 'Copy complete answers with formatting',
-        caption: 'The copy icon below each completed answer copies headings, emphasis, lists, tables and code without the surrounding model or usage indicators.',
+        title: 'Copy inputs and answers with formatting',
+        caption: 'Copy is available on every input and completed answer throughout the conversation. It preserves formatting without surrounding model or usage indicators.',
       },
       de: {
-        title: 'Vollständige Antworten formatiert kopieren',
-        caption: 'Das Kopier-Icon unter jeder abgeschlossenen Antwort übernimmt Überschriften, Hervorhebungen, Listen, Tabellen und Code ohne Modell- oder Verbrauchsanzeige.',
+        title: 'Eingaben und Antworten formatiert kopieren',
+        caption: 'Kopieren steht an jeder Eingabe und abgeschlossenen Antwort im gesamten Verlauf zur Verfügung. Die Formatierung bleibt ohne Modell- oder Verbrauchsanzeige erhalten.',
       },
     },
     capture: async (page, ctx) => {
@@ -115,12 +115,12 @@ const SHOTS = [
     langs: ['en', 'de'],
     meta: {
       en: {
-        title: 'Retry without losing the previous answer',
-        caption: 'Retry runs the original question again after a cost confirmation. The old answer stays visible and a new labeled response is appended.',
+        title: 'Send any previous question again',
+        caption: 'Retry on an input or answer sends the original question as a new message with the current conversation and settings. Previous messages stay unchanged.',
       },
       de: {
-        title: 'Erneut ausführen und bisherige Antwort behalten',
-        caption: 'Retry verarbeitet die ursprüngliche Frage nach einem Kostenhinweis erneut. Die bisherige Antwort bleibt sichtbar; eine neue gekennzeichnete Antwort wird angefügt.',
+        title: 'Beliebige frühere Fragen erneut senden',
+        caption: 'Retry an einer Eingabe oder Antwort sendet die ursprüngliche Frage als neue Nachricht mit dem aktuellen Verlauf und den aktuellen Einstellungen. Bisherige Nachrichten bleiben unverändert.',
       },
     },
     capture: async (page, ctx) => {

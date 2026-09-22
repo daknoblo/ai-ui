@@ -584,15 +584,17 @@ as completion. Click the button or scroll back to the bottom to resume following
 Sending a new message or opening another conversation starts at the latest
 output again. The same behavior applies on desktop and mobile.
 
-### Copying answers
+### Copying messages
 
 Copy and Retry use matching, borderless labeled icon buttons on the right of the
-answer footer. Token usage and the actual model stay on the left, using the same
+footer of every input and output throughout the conversation, not just the latest
+answer. Token usage and the actual model stay on the left of assistant footers, using the same
 font and size as the actions. On narrow screens the actions wrap onto the next
 line and remain right-aligned.
-The Copy button below a completed assistant answer copies only the response body,
-not the model name, tool notices or token usage. It is available both after a
-stream finishes and when reopening stored conversations. Rich HTML and plain
+Copy copies only the selected message body, not the model name, tool notices or
+token usage. Inputs can be copied immediately, even during generation; assistant
+answers can be copied once their stream finishes. Both actions remain available
+throughout reopened and older conversations. Rich HTML and plain
 text are supplied together, so the target application can use the format it
 supports. Headings, emphasis, lists, tables and code structure are retained;
 the target editor controls the final appearance.
@@ -604,29 +606,33 @@ explicitly, not shown as a successful formatted copy. The complete answer is
 copied, including text outside the visible viewport. Images themselves are not
 copied as image files; their available alternative text is included instead.
 
-### Retrying an answer
+### Sending a previous question again
 
-The labeled Retry button directly beside Copy explicitly runs the request belonging to that
-answer again. A confirmation warns about additional API charges. The previous
-answer is never overwritten: the new attempt is labeled and appended at the
-end of the conversation, without adding a duplicate user message. Failed and
-interrupted attempts can also be retried.
+The labeled Retry button beside Copy sends a previous question as a **new user
+message at the end of the current chat**, just like entering it in the composer
+again. On an input it sends that input; on an assistant answer it sends the
+question belonging to that answer, **not the answer text**. The new user message
+and a new answer are appended; existing messages are never overwritten. A
+confirmation warns about additional API charges. Failed and interrupted
+attempts can also be retried.
 
-The original question and its conversation-history boundary are preserved,
-even if later questions already exist. Saved model/reasoning overrides,
-manual chat/image mode, image parameters and the saved image-edit source are
-reused. An edit whose original image was deleted is rejected instead of using
-a newer image. Current system settings, available attachments, retrieved
-document context and web results may differ; this is reprocessing, not a
-byte-for-byte replay of an old provider payload. Automatic tool selection is
-performed again by the chat model.
+The **current conversation history**, including later questions and answers,
+is used. Model and reasoning settings, composer chat/image mode, web-search and
+image-edit toggles, image parameters and available attachments are read again.
+In image-edit mode this uses the current latest image, exactly like a new
+submission. This intentionally differs from the former retry behavior that
+reused saved options and the original history boundary. Automatic tool selection
+and document/web retrieval are performed again. A draft in the composer is not
+sent or overwritten by Retry.
 
 Only one attempt may run per chat, subject to the application-wide generation
 limit. Retry controls are disabled during active generation; the backend also
 rejects overlapping requests. Reconnecting to an accepted retry only observes
-that job and does not create another attempt. Older imported conversations
-without saved request metadata show a disabled retry control: resend their
-question explicitly rather than guessing missing settings.
+that job and does not create another attempt. Older conversations without saved
+generation metadata use the user question preceding the selected answer.
+Previously generated retry answers retain their explicit original-question
+link, even when newer questions appear before them. Only answers with no
+associated user question have an unavailable Retry action; copying still works.
 
 The model reported by the provider appears beside the token/input/output
 figures below the answer, not as a separate badge beside the assistant heading.

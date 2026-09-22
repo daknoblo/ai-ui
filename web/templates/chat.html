@@ -153,8 +153,10 @@
 	{{if .Retried}}<p class="retry-note">{{t "retry.answer"}}</p>{{end}}
 	<div class="bubble">{{renderMarkdown .Content}}</div>
 	{{if eq .Role "assistant"}}
-	<div class="msg-metadata"><span class="msg-usage">{{.UsageText}}</span><span class="msg-model">{{if .ModelUsed}}{{template "model-tag" .ModelUsed}}{{end}}</span></div>
-	{{template "response-copy" (responseActions .ChatID .GenerationID)}}
+	<div class="msg-footer">
+		<div class="msg-metadata"><span class="msg-usage">{{.UsageText}}</span><span class="msg-model">{{if .ModelUsed}}{{template "model-tag" .ModelUsed}}{{end}}</span></div>
+		{{template "response-copy" (responseActions .ChatID .GenerationID)}}
+	</div>
 	{{end}}
 </div>
 {{end}}
@@ -191,8 +193,10 @@
 	{{if .Retried}}<p class="retry-note">{{t "retry.answer"}}</p>{{end}}
 	<div class="msg-tools" sse-swap="tool" hx-swap="innerHTML"></div>
 	<div class="bubble" sse-swap="token" hx-swap="innerHTML"><div class="pending" role="status"><span class="pending-label">{{if .Image}}{{if .Edit}}{{t "stream.pending_image_edit"}}{{else}}{{t "stream.pending_image"}}{{end}}{{else}}{{t "stream.pending_chat"}}{{end}}</span><span class="pending-bar"><span class="pending-fill"></span></span></div></div>
-	<div class="msg-metadata"><span class="msg-usage" sse-swap="usage" hx-swap="innerHTML"></span><span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span></div>
-	{{template "response-copy" .}}
+	<div class="msg-footer">
+		<div class="msg-metadata"><span class="msg-usage" sse-swap="usage" hx-swap="innerHTML"></span><span class="msg-model" sse-swap="model" hx-swap="innerHTML"></span></div>
+		{{template "response-copy" .}}
+	</div>
 	<div class="msg-title-sink" sse-swap="title" hx-swap="innerHTML" hidden></div>
 </div>
 {{end}}

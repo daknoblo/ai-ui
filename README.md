@@ -597,7 +597,8 @@ answers can be copied once their stream finishes. Both actions remain available
 throughout reopened and older conversations. Rich HTML and plain
 text are supplied together, so the target application can use the format it
 supports. Headings, emphasis, lists, tables and code structure are retained;
-the target editor controls the final appearance.
+the target editor controls the final appearance. Successful formatted copying
+does not display a confirmation message.
 
 Clipboard access generally works best over HTTPS or localhost. If the browser
 does not support rich clipboard access, the app attempts a user-initiated copy

@@ -44,7 +44,7 @@ export async function verifyResponseCopy(page, base, index) {
     bubble.innerHTML = '<p>USER-ONLY <strong>formatted input</strong> FINAL-INPUT</p>';
   });
   await input.locator('.response-copy').click();
-  await assertStatus(input, 'copySuccess', 'success');
+  await assertSilentCopy(page, input, 1);
   const inputCopy = await page.evaluate(() => window.copyWrites.at(-1));
   if (inputCopy.text !== 'USER-ONLY formatted input FINAL-INPUT' || !inputCopy.html.includes('<strong>formatted input</strong>')) {
     throw new Error('Input copy did not copy only its own formatted content');
@@ -73,7 +73,7 @@ export async function verifyResponseCopy(page, base, index) {
       /javascript:|data-secret|response-copy|msg-model|<img/.test(rich.html)) {
     throw new Error('Clipboard contains unsafe URLs, image bytes or application UI');
   }
-  await assertStatus(response, 'copySuccess', 'success');
+  await assertSilentCopy(page, response, 1);
 
   // Also exercise user-initiated copy-event support on HTTP-only installations.
   await page.evaluate(() => { window.copyMode = 'legacy'; });
@@ -83,7 +83,7 @@ export async function verifyResponseCopy(page, base, index) {
   if (legacy.mode !== 'legacy' || legacy.html !== rich.html || legacy.text !== rich.text) {
     throw new Error('Copy-event fallback did not preserve both formats');
   }
-  await assertStatus(response, 'copySuccess', 'success');
+  await assertSilentCopy(page, response, 2);
 
   await page.evaluate(() => { window.copyMode = 'plain'; });
   await copy.click();
@@ -98,6 +98,17 @@ export async function verifyResponseCopy(page, base, index) {
   await assertStatus(response, 'copyFailed', 'error');
   if (await copy.isDisabled()) throw new Error('A denied clipboard left the control disabled');
 
+  // A later successful copy must clear previous error or plain-text notices.
+  await page.evaluate(() => { window.copyMode = 'rich'; });
+  await copy.click();
+  await assertSilentCopy(page, response, 4);
+  await page.evaluate(() => { window.copyMode = 'plain'; });
+  await copy.click();
+  await assertStatus(response, 'copyPlain', 'success');
+  await page.evaluate(() => { window.copyMode = 'legacy'; });
+  await copy.click();
+  await assertSilentCopy(page, response, 6);
+
   // Live replies must not expose a misleading "copy complete" action early.
   await page.goto(`${base}/`, { waitUntil: 'networkidle' });
   const testChat = new URL(page.url()).pathname;
@@ -111,13 +122,13 @@ export async function verifyResponseCopy(page, base, index) {
   }
   const liveInput = page.locator('#messages .msg.user').last();
   await liveInput.locator('.response-copy').click();
-  await assertStatus(liveInput, 'copySuccess', 'success');
+  await assertSilentCopy(page, liveInput, 1);
   if ((await page.evaluate(() => window.copyWrites.at(-1).text)) !== index.stream_prompt) {
     throw new Error('New inputs must be copyable while their answer is streaming');
   }
   await streamed.locator('.response-copy').waitFor({ state: 'visible', timeout: 30_000 });
   await streamed.locator('.response-copy').click();
-  await assertStatus(streamed, 'copySuccess', 'success');
+  await assertSilentCopy(page, streamed, 2);
   const streamedText = await streamed.locator('.bubble').innerText();
   const lastCopy = await page.evaluate(() => window.copyWrites.at(-1));
   if (!lastCopy.text.includes(streamedText.trim().split('\n').at(-1))) {
@@ -133,6 +144,15 @@ export async function verifyResponseCopy(page, base, index) {
   }
   const removed = await page.request.delete(`${base}/chats/${match[1]}`);
   if (!removed.ok()) throw new Error(`Could not clean up the clipboard test chat: ${removed.status()}`);
+}
+
+async function assertSilentCopy(page, response, writes) {
+  await page.waitForFunction(count => window.copyWrites.length === count, writes);
+  await response.locator('.response-copy:not(:disabled)').waitFor();
+  const status = response.locator('.response-copy-status');
+  if (await status.textContent() || await status.getAttribute('data-state') || await status.isVisible()) {
+    throw new Error('Successful formatted copy must not show a status message');
+  }
 }
 
 async function assertStatus(response, key, state) {

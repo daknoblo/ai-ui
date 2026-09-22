@@ -10,6 +10,7 @@ export async function verifyResponseRetry(page, base, index) {
   await page.waitForFunction(() => !document.querySelector('#messages .htmx-settling, #messages .htmx-added'));
   const first = page.locator('#messages .msg.assistant').first();
   await verifyFooter(first);
+  await verifyFooterEdgeCases(first);
   const original = await first.locator('.bubble').innerHTML();
   const requestURL = await first.locator('.response-retry').getAttribute('hx-post');
   if (!requestURL?.startsWith(`/chat/${chatID}/retry/`)) throw new Error('Response retry is not bound to its own turn');
@@ -54,13 +55,17 @@ export async function verifyResponseRetry(page, base, index) {
   await first.locator('.response-retry').click();
   await first.locator('.response-retry-status').filter({ hasText: 'Temporary retry failure' }).waitFor();
   await page.waitForFunction(() => !document.querySelector('#messages .response-retry').disabled);
+  await verifyFooter(first);
   if (await page.locator('#messages .msg.assistant').count() !== 2) {
     throw new Error('Failed retry submission inserted a response');
   }
 
   async function verifyFooter(response) {
-    const copy = await response.locator('.response-copy').boundingBox();
-    const retry = await response.locator('.response-retry').boundingBox();
+    await page.mouse.move(0, 0);
+    const { copy, retry } = await response.evaluate(message => ({
+      copy: message.querySelector('.response-copy').getBoundingClientRect().toJSON(),
+      retry: message.querySelector('.response-retry').getBoundingClientRect().toJSON(),
+    }));
     if (!copy || !retry || retry.x < copy.x + copy.width || retry.x - copy.x - copy.width > 12 ||
         Math.abs(retry.y - copy.y) > 2 || !(await response.locator('.response-retry-label').innerText()).trim()) {
       throw new Error(`Retry must be visibly labeled directly beside Copy: ${JSON.stringify({ copy, retry })}`);
@@ -82,13 +87,73 @@ export async function verifyResponseRetry(page, base, index) {
     }
     await response.locator('.msg-metadata .msg-usage').waitFor({ state: 'visible' });
     await response.locator('.msg-metadata .model-badge').waitFor({ state: 'visible' });
-    const equalTypography = await response.locator('.msg-metadata').evaluate(footer => {
+    const equalTypography = await response.locator('.msg-footer').evaluate(footer => {
       const usage = getComputedStyle(footer.querySelector('.msg-usage'));
       const model = getComputedStyle(footer.querySelector('.model-badge'));
-      return ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].every(key => usage[key] === model[key]) &&
-        model.backgroundColor === 'rgba(0, 0, 0, 0)' && model.borderTopWidth === '0px';
+      const actions = [...footer.querySelectorAll('.response-copy, .response-retry')].map(button => getComputedStyle(button));
+      return ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color']
+        .every(key => [model, ...actions].every(style => usage[key] === style[key])) &&
+        [model, ...actions].every(style => style.borderTopWidth === '0px');
     });
-    if (!equalTypography) throw new Error('Model and token usage have different typography or badge styling');
+    if (!equalTypography) throw new Error('Footer metadata and actions must use the same borderless typography');
+    await verifyFooterLayout(response);
+  }
+
+  async function verifyFooterLayout(response) {
+    const layout = await response.locator('.msg-footer').evaluate(footer => {
+      const metadata = footer.querySelector('.msg-metadata');
+      const actions = footer.querySelector('.response-actions');
+      const copy = footer.querySelector('.response-copy');
+      const retry = footer.querySelector('.response-retry');
+      const box = footer.getBoundingClientRect();
+      const details = metadata.getBoundingClientRect();
+      const left = copy.getBoundingClientRect();
+      const right = retry.getBoundingClientRect();
+      const visible = getComputedStyle(metadata).display !== 'none';
+      const fits = visible && details.width + actions.getBoundingClientRect().width + 12 <= box.width + 1;
+      const usage = metadata.querySelector('.msg-usage').getBoundingClientRect();
+      const label = copy.querySelector('.response-copy-label').getBoundingClientRect();
+      const sameRow = !fits || (Math.abs(details.y - left.y) <= 1 &&
+        Math.abs(usage.y + usage.height / 2 - (label.y + label.height / 2)) <= 1);
+      return {
+        aligned: Math.abs(right.right - box.right) <= 1 && (!visible || Math.abs(details.left - box.left) <= 1),
+        sameRow,
+        contained: footer.scrollWidth <= footer.clientWidth && left.left >= box.left &&
+          (!visible || right.y >= details.bottom - 1 || left.left >= details.right),
+      };
+    });
+    if (!layout.aligned || !layout.sameRow || !layout.contained) {
+      throw new Error(`Footer must align metadata left and actions right without overlap: ${JSON.stringify(layout)}`);
+    }
+  }
+
+  async function verifyFooterEdgeCases(response) {
+    const original = await response.locator('.msg-metadata').innerHTML();
+    const viewport = page.viewportSize();
+    await page.setViewportSize({ width: 320, height: viewport.height });
+    await verifyFooter(response);
+    await response.locator('.msg-metadata').evaluate(metadata => {
+      metadata.querySelector('.msg-model').textContent = 'long-deployment-name-'.repeat(20);
+    });
+    // Long names may wrap; only test containment and right alignment here.
+    const longName = await response.locator('.msg-footer').evaluate(footer => {
+      const box = footer.getBoundingClientRect();
+      const retry = footer.querySelector('.response-retry').getBoundingClientRect();
+      return footer.scrollWidth <= footer.clientWidth && Math.abs(retry.right - box.right) <= 1;
+    });
+    if (!longName) throw new Error('Long model names overflowed the response footer');
+    await response.locator('.msg-metadata').evaluate(metadata => {
+      metadata.querySelector('.msg-model').textContent = '';
+      metadata.querySelector('.msg-usage').textContent = '';
+    });
+    await verifyFooterLayout(response);
+    await response.locator('.response-copy-status').evaluate(status => {
+      status.textContent = 'Long clipboard notice '.repeat(15);
+    });
+    await verifyFooterLayout(response);
+    await response.locator('.response-copy-status').evaluate(status => { status.textContent = ''; });
+    await response.locator('.msg-metadata').evaluate((metadata, html) => { metadata.innerHTML = html; }, original);
+    await page.setViewportSize(viewport);
   }
   await page.unroute(base + requestURL);
   const removed = await page.request.delete(`${base}/chats/${chatID}`);

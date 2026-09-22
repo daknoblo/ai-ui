@@ -217,21 +217,30 @@ html, body {
 }
 .usage-row:hover { color: var(--text); background: var(--bg-elev); }
 .usage-cell { white-space: nowrap; }
-.msg-metadata {
+.msg-footer {
 	display: flex;
 	flex-wrap: wrap;
-	align-items: baseline;
-	column-gap: 6px;
+	align-items: flex-start;
+	gap: 4px 12px;
 	font-size: 11px;
+	line-height: 1.5;
 	color: var(--text-dim);
 	margin-top: 4px;
-	opacity: .85;
+}
+.msg-metadata {
+	display: flex;
+	flex: 1 1 auto;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0 6px;
+	min-width: 0;
+	min-height: 32px;
 }
 .msg-metadata:not(:has(> :not(:empty))) { display: none; }
 .msg-usage:empty, .msg-model:empty { display: none; }
 .msg-usage, .msg-model, .model-badge { font: inherit; color: inherit; }
 .msg-usage:not(:empty) + .msg-model:not(:empty)::before { content: "·"; margin-right: 6px; }
-.msg-model { overflow-wrap: anywhere; min-width: 0; }
+.msg-usage, .msg-model { overflow-wrap: anywhere; min-width: 0; }
 .empty-hint { color: var(--text-dim); font-size: 13px; padding: 4px 8px; }
 
 /* ---------- Buttons ---------- */
@@ -370,14 +379,15 @@ html, body {
 /* Generated images are inserted as Markdown images. */
 .bubble img { max-width: 100%; height: auto; border-radius: 10px; display: block; }
 .response-actions {
-	display: flex;
+	display: grid;
+	grid-template-columns: auto auto;
 	align-items: center;
-	gap: 8px;
-	margin-top: 4px;
-	min-height: 32px;
-	flex-wrap: wrap;
+	gap: 4px 8px;
+	margin-left: auto;
+	flex-shrink: 0;
+	max-width: 100%;
 }
-.msg[data-stream-state]:not([data-stream-state="finished"]) > .response-actions { display: none; }
+.msg[data-stream-state]:not([data-stream-state="finished"]) > .msg-footer > .response-actions { display: none; }
 .response-copy, .response-retry {
 	display: inline-flex;
 	align-items: center;
@@ -389,21 +399,28 @@ html, body {
 	padding: 6px 8px;
 	flex-shrink: 0;
 	font: inherit;
-	font-size: 12px;
 	background: transparent;
-	border: 1px solid var(--border);
+	border: none;
 	border-radius: 6px;
-	color: var(--text);
+	color: inherit;
 	cursor: pointer;
 }
-.response-copy:hover, .response-retry:hover { color: var(--text); background: var(--bg-elev); border-color: var(--border); }
+.response-copy:hover, .response-retry:hover { background: var(--bg-elev); }
 .response-copy:focus-visible, .response-retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .response-copy:disabled, .response-retry:disabled { opacity: .5; cursor: not-allowed; }
 .retry-note { color: var(--text-dim); font-size: 12px; margin: 0 0 6px; }
-.response-retry-status { color: var(--warn); font-size: 12px; }
-.response-copy-status { color: var(--text-dim); font-size: 12px; }
+.response-copy-status, .response-retry-status {
+	grid-column: 1 / -1;
+	/* Notices wrap below the controls without moving or widening them. */
+	contain: inline-size;
+	overflow-wrap: anywhere;
+	text-align: right;
+}
+.response-copy-status:empty, .response-retry-status:empty { display: none; }
+.response-retry-status { color: var(--warn); }
 .response-copy-status[data-state="error"] { color: var(--warn); }
 @media (pointer: coarse) {
+	.msg-metadata { min-height: 44px; }
 	.response-copy, .response-retry { min-width: 44px; height: 44px; }
 }
 @keyframes blink { 50% { opacity: 0; } }

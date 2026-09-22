@@ -586,7 +586,10 @@ output again. The same behavior applies on desktop and mobile.
 
 ### Copying answers
 
-Copy and Retry use matching labeled icon buttons below the answer.
+Copy and Retry use matching, borderless labeled icon buttons on the right of the
+answer footer. Token usage and the actual model stay on the left, using the same
+font and size as the actions. On narrow screens the actions wrap onto the next
+line and remain right-aligned.
 The Copy button below a completed assistant answer copies only the response body,
 not the model name, tool notices or token usage. It is available both after a
 stream finishes and when reopening stored conversations. Rich HTML and plain

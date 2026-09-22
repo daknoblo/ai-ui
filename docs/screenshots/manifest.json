@@ -1,6 +1,15 @@
 {
   "shots": [
     {
+      "id": "sidebar-resize",
+      "lang": "en",
+      "file": "en/sidebar-resize.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Adjust the sidebar width",
+      "caption": "Drag the right edge to give chat titles more room. The width is saved in this browser; double-click resets it. Mobile navigation stays unchanged."
+    },
+    {
       "id": "chat",
       "lang": "en",
       "file": "en/chat.png",
@@ -152,6 +161,15 @@
       "height": 844,
       "title": "Phone layout",
       "caption": "On a narrow viewport the sidebar turns into an off-canvas drawer behind the ☰ button, so the conversation keeps the full width."
+    },
+    {
+      "id": "sidebar-resize",
+      "lang": "de",
+      "file": "de/sidebar-resize.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Breite der Seitenleiste anpassen",
+      "caption": "Ziehe den rechten Rand, um Chattiteln mehr Platz zu geben. Die Breite wird in diesem Browser gespeichert; ein Doppelklick setzt sie zurück. Das mobile Menü bleibt unverändert."
     },
     {
       "id": "chat",

@@ -116,7 +116,7 @@
 	}
 
 	async function copyResponse(button) {
-		var message = button.closest(".msg.assistant");
+		var message = button.closest(".msg");
 		if (!message || (message.hasAttribute("data-stream-state") && message.dataset.streamState !== "finished")) return;
 		var bubble = message.querySelector(".bubble");
 		if (!bubble) {

@@ -434,7 +434,12 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	s.sendMessage(w, r, chat, message)
+}
 
+// sendMessage uses the current composer options for both typed and repeated input.
+func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request, chat storage.Chat, message string) {
+	ctx, chatID := r.Context(), chat.ID
 	// Only honor web search when it was requested AND is configured.
 	web := r.FormValue("web") == "1" && s.search.Enabled()
 	// Image mode replaces the chat answer with a generated image.
@@ -476,8 +481,8 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Append the user bubble plus the streaming shell.
-	s.render(w, "message", storage.Message{ID: turn.UserMessageID, ChatID: chatID, Role: "user", Content: message})
-	s.render(w, "assistant-stream", streamView{ChatID: chatID, TurnID: turn.ID, Web: web, Image: image, Edit: edit})
+	s.render(w, "message", storage.Message{ID: turn.UserMessageID, ChatID: chatID, QuestionID: turn.UserMessageID, Role: "user", Content: message})
+	s.render(w, "assistant-stream", streamView{ChatID: chatID, TurnID: turn.ID, QuestionID: turn.UserMessageID, Web: web, Image: image, Edit: edit})
 	if titleChanged {
 		s.render(w, "title-oob", struct{ Title string }{Title: chat.Title})
 	}

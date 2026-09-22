@@ -31,9 +31,25 @@ export async function verifyResponseCopy(page, base, index) {
   const response = page.locator('#messages .msg.assistant').first();
   const copy = response.locator('.response-copy');
   await copy.waitFor({ state: 'visible' });
-  if (await page.locator('#messages .msg.user .response-copy').count()) {
-    throw new Error('Copy response controls must not appear on user messages');
+  const history = page.locator('#messages .msg');
+  for (const message of await history.all()) {
+    if (await message.locator('.response-copy').count() !== 1 || await message.locator('.response-retry').count() !== 1) {
+      throw new Error('Every input and output in the history must have both controls');
+    }
+    await message.locator('.response-copy').scrollIntoViewIfNeeded();
+    if (!(await message.locator('.response-copy').isVisible())) throw new Error('Earlier copy control is hidden');
   }
+  const input = page.locator('#messages .msg.user').first();
+  await input.locator('.bubble').evaluate(bubble => {
+    bubble.innerHTML = '<p>USER-ONLY <strong>formatted input</strong> FINAL-INPUT</p>';
+  });
+  await input.locator('.response-copy').click();
+  await assertStatus(input, 'copySuccess', 'success');
+  const inputCopy = await page.evaluate(() => window.copyWrites.at(-1));
+  if (inputCopy.text !== 'USER-ONLY formatted input FINAL-INPUT' || !inputCopy.html.includes('<strong>formatted input</strong>')) {
+    throw new Error('Input copy did not copy only its own formatted content');
+  }
+  await page.evaluate(() => { window.copyWrites = []; });
   await response.locator('.bubble').evaluate(bubble => {
     bubble.innerHTML = '<h2>Exercise overview</h2><p><strong>Bold</strong> and <em>italic</em> text with <a href="/docs/example">a link</a>.</p>' +
       '<ol start="3"><li>First instruction</li><li>Second instruction</li></ol>' +
@@ -93,6 +109,12 @@ export async function verifyResponseCopy(page, base, index) {
   if (await streamed.locator('.response-copy').isVisible()) {
     throw new Error('Copy complete response was visible before streaming finished');
   }
+  const liveInput = page.locator('#messages .msg.user').last();
+  await liveInput.locator('.response-copy').click();
+  await assertStatus(liveInput, 'copySuccess', 'success');
+  if ((await page.evaluate(() => window.copyWrites.at(-1).text)) !== index.stream_prompt) {
+    throw new Error('New inputs must be copyable while their answer is streaming');
+  }
   await streamed.locator('.response-copy').waitFor({ state: 'visible', timeout: 30_000 });
   await streamed.locator('.response-copy').click();
   await assertStatus(streamed, 'copySuccess', 'success');
@@ -102,8 +124,8 @@ export async function verifyResponseCopy(page, base, index) {
     throw new Error('The last streamed lines are missing from the copied response');
   }
   await page.reload({ waitUntil: 'networkidle' });
-  if (!(await page.locator('#messages .msg.assistant .response-copy').last().isVisible())) {
-    throw new Error('Persisted replies lost their copy control on reload');
+  if (await page.locator('#messages .response-copy').count() !== await page.locator('#messages .msg').count()) {
+    throw new Error('Persisted inputs or replies lost their copy controls on reload');
   }
   const match = testChat.match(/^\/chat\/(\d+)$/);
   if (!match || Object.values(index.chats).includes(Number(match[1]))) {

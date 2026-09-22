@@ -90,8 +90,8 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 			"chatNavRow": func(chat storage.Chat, current *storage.Chat) chatNavRow {
 				return chatNavRow{Chat: chat, CurrentChat: current}
 			},
-			"responseActions": func(chatID, turnID int64) streamView {
-				return streamView{ChatID: chatID, TurnID: turnID}
+			"responseActions": func(chatID, questionID int64) streamView {
+				return streamView{ChatID: chatID, QuestionID: questionID}
 			},
 			"renderMarkdown": renderMarkdown,
 			"lang":           cfg.Language,

@@ -152,12 +152,12 @@
 	<div class="msg-role">{{if eq .Role "user"}}{{t "role.user"}}{{else}}{{t "role.assistant"}}{{end}}</div>
 	{{if .Retried}}<p class="retry-note">{{t "retry.answer"}}</p>{{end}}
 	<div class="bubble">{{renderMarkdown .Content}}</div>
-	{{if eq .Role "assistant"}}
 	<div class="msg-footer">
+		{{if eq .Role "assistant"}}
 		<div class="msg-metadata"><span class="msg-usage">{{.UsageText}}</span><span class="msg-model">{{if .ModelUsed}}{{template "model-tag" .ModelUsed}}{{end}}</span></div>
-		{{template "response-copy" (responseActions .ChatID .GenerationID)}}
+		{{end}}
+		{{template "response-copy" (responseActions .ChatID .QuestionID)}}
 	</div>
-	{{end}}
 </div>
 {{end}}
 
@@ -169,11 +169,12 @@
 		<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
 		<span class="response-copy-label">{{t "copy.label"}}</span>
 	</button>
-	<button type="button" class="response-retry" title="{{if .TurnID}}{{t "retry.title"}}{{else}}{{t "retry.unavailable"}}{{end}}"
-		aria-label="{{t "retry.title"}}" data-retry-unavailable="{{if .TurnID}}0{{else}}1{{end}}"
+	<button type="button" class="response-retry" title="{{if .QuestionID}}{{t "retry.title"}}{{else}}{{t "retry.unavailable"}}{{end}}"
+		aria-label="{{t "retry.title"}}" data-retry-unavailable="{{if .QuestionID}}0{{else}}1{{end}}"
 		data-retry-error="{{t "retry.failed"}}"
-		{{if .TurnID}}hx-post="/chat/{{.ChatID}}/retry/{{.TurnID}}" hx-target="#messages" hx-swap="beforeend"
-		hx-params="none" hx-disabled-elt="this" hx-confirm="{{t "retry.confirm"}}"{{else}}disabled{{end}}>
+		{{if .QuestionID}}hx-post="/chat/{{.ChatID}}/retry/{{.QuestionID}}" hx-target="#messages" hx-swap="beforeend"
+		hx-include="#web-flag, #mode-flag, #edit-flag" hx-params="web,mode,edit"
+		hx-disabled-elt="this" hx-confirm="{{t "retry.confirm"}}"{{else}}disabled{{end}}>
 		<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 12l-4-5"/></svg>
 		<span class="response-retry-label">{{t "retry.label"}}</span>
 	</button>

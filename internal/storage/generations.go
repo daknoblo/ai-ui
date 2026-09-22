@@ -103,54 +103,26 @@ func (s *Store) CreateGeneration(ctx context.Context, chatID int64, content, req
 	return Generation{ID: id, ChatID: chatID, ResponseID: responseID, UserMessageID: id, State: GenerationPending, Request: request}, nil
 }
 
-// RetryGeneration reserves only a new assistant message. The original user
-// message and its history boundary remain unchanged, even after later turns.
-func (s *Store) RetryGeneration(ctx context.Context, chatID, originalID int64, deadline time.Time) (Generation, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return Generation{}, err
-	}
-	defer func() { _ = tx.Rollback() }() // No-op after commit.
-	var original Generation
-	err = tx.QueryRowContext(ctx, `SELECT g.state,g.request,COALESCE(g.user_message_id,g.id)
-		FROM generations g JOIN messages m ON m.id=COALESCE(g.user_message_id,g.id)
-		WHERE g.chat_id=? AND g.id=? AND m.chat_id=? AND m.role='user'`,
-		chatID, originalID, chatID).Scan(&original.State, &original.Request, &original.UserMessageID)
+// RetryQuestion resolves a message to its user input, including older turns
+// without generation metadata and replies created by the former retry behavior.
+func (s *Store) RetryQuestion(ctx context.Context, chatID, messageID int64) (Message, error) {
+	var question Message
+	var created string
+	err := s.db.QueryRowContext(ctx, `SELECT q.id,q.chat_id,q.role,q.content,q.created_at
+		FROM messages m LEFT JOIN generations g ON g.response_id=m.id AND g.chat_id=m.chat_id
+		JOIN messages q ON q.id=CASE
+			WHEN m.role='user' THEN m.id
+			WHEN m.role='assistant' THEN COALESCE(g.user_message_id,g.id,
+				(SELECT MAX(id) FROM messages WHERE chat_id=m.chat_id AND role='user' AND id<m.id))
+			END AND q.chat_id=m.chat_id AND q.role='user'
+		WHERE m.chat_id=? AND m.id=?`, chatID, messageID).
+		Scan(&question.ID, &question.ChatID, &question.Role, &question.Content, &created)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Generation{}, ErrNotFound
+		return question, ErrNotFound
 	}
-	if err != nil {
-		return Generation{}, err
-	}
-	var active int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM generations WHERE chat_id=? AND state IN ('pending','running')`, chatID).Scan(&active); err != nil {
-		return Generation{}, err
-	}
-	if original.Active() || active != 0 {
-		return Generation{}, ErrGenerationBusy
-	}
-	answer, err := tx.ExecContext(ctx, `INSERT INTO messages(chat_id,role,content,created_at) VALUES (?,'assistant','',?)`, chatID, nowStr())
-	if err != nil {
-		return Generation{}, err
-	}
-	id, err := answer.LastInsertId()
-	if err != nil {
-		return Generation{}, err
-	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO generations(id,chat_id,response_id,user_message_id,state,request,deadline,updated_at)
-		VALUES (?,?,?,?,'pending',?,?,?)`, id, chatID, id, original.UserMessageID, original.Request,
-		deadline.UTC().Format(timeLayout), nowStr())
-	if err != nil {
-		return Generation{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE chats SET updated_at=? WHERE id=?`, nowStr(), chatID); err != nil {
-		return Generation{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Generation{}, err
-	}
-	return Generation{ID: id, ChatID: chatID, ResponseID: id, UserMessageID: original.UserMessageID,
-		State: GenerationPending, Request: original.Request}, nil
+	question.CreatedAt = parseTime(created)
+	question.QuestionID = question.ID
+	return question, err
 }
 
 // ClaimGeneration is the only transition that grants permission to call a
@@ -207,6 +179,7 @@ func (s *Store) Conversation(ctx context.Context, chatID int64) ([]Message, []Ge
 	defer func() { _ = rows.Close() }() // Read-only cursor cleanup.
 	var messages []Message
 	var turns []Generation
+	var latestQuestionID int64
 	for rows.Next() {
 		var m Message
 		var g Generation
@@ -217,6 +190,16 @@ func (s *Store) Conversation(ctx context.Context, chatID int64) ([]Message, []Ge
 		m.CreatedAt = parseTime(created)
 		m.GenerationID = g.ID
 		m.Retried = g.ID != 0 && g.ID != g.UserMessageID
+		switch m.Role {
+		case "user":
+			latestQuestionID = m.ID
+			m.QuestionID = m.ID
+		case "assistant":
+			m.QuestionID = g.UserMessageID
+			if g.ID == 0 {
+				m.QuestionID = latestQuestionID
+			}
+		}
 		messages = append(messages, m)
 		if g.ID != 0 {
 			g.ChatID, g.ResponseID = chatID, m.ID

@@ -26,8 +26,10 @@ func TestResponseCopyControls(t *testing.T) {
 			result := httptest.NewRecorder()
 			handler.ServeHTTP(result, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/chat/%d", id), nil))
 			body := result.Body.String()
-			if result.Code != http.StatusOK || strings.Count(body, `class="response-copy"`) != 1 {
-				t.Fatalf("expected one copy control only on assistant reply: %d", result.Code)
+			if result.Code != http.StatusOK || strings.Count(body, `class="response-copy"`) != 2 ||
+				strings.Count(body, `class="response-retry"`) != 2 ||
+				strings.Count(body, `data-retry-unavailable="0"`) != 2 {
+				t.Fatalf("expected copy and retry on legacy input and output: %d", result.Code)
 			}
 			for _, expected := range []string{
 				`src="/static/copy-response.js?v=`, s.t("copy.response"),
@@ -37,15 +39,16 @@ func TestResponseCopyControls(t *testing.T) {
 					t.Errorf("copy controls omit %q", expected)
 				}
 			}
-			stream := s.renderString("assistant-stream", streamView{ChatID: id, TurnID: 1})
+			stream := s.renderString("assistant-stream", streamView{ChatID: id, TurnID: 1, QuestionID: 1})
 			if !strings.Contains(stream, `data-stream-state="pending"`) ||
 				strings.Count(stream, `class="response-copy"`) != 1 ||
 				strings.Index(stream, `class="response-copy"`) < strings.Index(stream, `class="bubble"`) {
 				t.Fatal("stream copy control must be after the response and gated by completion")
 			}
-			user := s.renderString("message", storage.Message{Role: "user", Content: "Question"})
-			if strings.Contains(user, "response-copy") {
-				t.Fatal("user messages unexpectedly contain response copy controls")
+			user := s.renderString("message", storage.Message{ID: 1, ChatID: id, QuestionID: 1, Role: "user", Content: "Question"})
+			if !strings.Contains(user, `class="response-copy"`) ||
+				!strings.Contains(user, fmt.Sprintf(`hx-post="/chat/%d/retry/1"`, id)) {
+				t.Fatal("user messages must contain copy and retry controls")
 			}
 		})
 	}

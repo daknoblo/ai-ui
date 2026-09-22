@@ -9,7 +9,7 @@
 	const dragType = "application/x-ai-ui-chat";
 
 	function source(event) {
-		return event.detail.elt || event.detail.requestConfig?.elt;
+		return event.detail.requestConfig?.elt || event.detail.elt;
 	}
 	function isGroupRequest(event) {
 		return !!source(event)?.closest("[data-group-action]");
@@ -20,8 +20,8 @@
 	function feedback(message, failed) {
 		const box = document.getElementById(failed && document.getElementById("group-dialog") ? "group-dialog-error" : "group-feedback");
 		if (!box) return;
-		box.textContent = message || box.dataset[failed ? "error" : "success"];
-		box.hidden = false;
+		box.textContent = failed ? (message || box.dataset.error) : "";
+		box.hidden = !failed;
 	}
 	function restoreFocus() {
 		let element = document.getElementById(returnFocus);

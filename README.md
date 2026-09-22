@@ -647,6 +647,8 @@ The sidebar has **New chat** and **New group** actions side by side. Give a
 group a name and optionally choose a color; its conversations appear indented
 under an expandable heading. Groups have one level, not nested subgroups.
 Use the group menu to rename it, change its color or remove it.
+Successful group updates do not display a confirmation message; errors remain
+visible.
 
 Drag a conversation onto a group, including a collapsed group, to move it.
 The **Move chat** action provides the same operation without dragging for

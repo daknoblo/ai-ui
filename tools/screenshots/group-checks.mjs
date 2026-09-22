@@ -22,8 +22,18 @@ export async function verifyChatGroups(page, base, index, mobile) {
   if (!(await page.locator(`#chat-row-${chatID}`).getAttribute('class')).includes('active')) {
     throw new Error('Moving the current chat lost its selected state');
   }
+  const collapseURL = `${base}/groups/${groupA}/collapse`;
+  await page.route(collapseURL, route => route.fulfill({ status: 500, body: 'Simulated group failure' }));
+  await page.locator(`#group-toggle-${groupA}`).click();
+  const feedback = page.locator('#group-feedback');
+  await feedback.waitFor({ state: 'visible' });
+  if (await feedback.textContent() !== await feedback.getAttribute('data-error')) {
+    throw new Error('Group request failures must remain visible');
+  }
+  await page.unroute(collapseURL);
   await page.locator(`#group-toggle-${groupA}`).click();
   await page.locator(`#group-toggle-${groupA}[aria-expanded="false"]`).waitFor();
+  await assertNoGroupFeedback(page);
   await page.reload({ waitUntil: 'networkidle' });
   await showSidebar(page);
   if (await page.locator(`#group-toggle-${groupA}`).getAttribute('aria-expanded') !== 'false' ||
@@ -51,6 +61,7 @@ export async function verifyChatGroups(page, base, index, mobile) {
       !(await page.locator(`[data-group-id="${groupA}"]`).getAttribute('class')).includes('group-color-violet')) {
     throw new Error('Group rename or color update failed');
   }
+  await assertNoGroupFeedback(page);
   await page.evaluate(() => { window.originalMessages = document.getElementById('messages'); });
   if (mobile) await page.keyboard.press('Escape');
   await page.locator('#chat-form textarea').fill(index.stream_prompt);
@@ -130,5 +141,14 @@ async function assertSameConversation(page, path) {
   if (new URL(page.url()).pathname !== path ||
       !(await page.evaluate(() => document.getElementById('messages') === window.originalMessages))) {
     throw new Error('A sidebar-only action navigated away or replaced the active conversation');
+  }
+  await assertNoGroupFeedback(page);
+}
+
+async function assertNoGroupFeedback(page) {
+  const feedback = page.locator('#group-feedback');
+  await feedback.waitFor({ state: 'hidden' });
+  if (await feedback.textContent() || await feedback.isVisible()) {
+    throw new Error('Successful group updates must not show a status message or leave stale errors');
   }
 }

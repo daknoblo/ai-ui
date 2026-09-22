@@ -29,6 +29,8 @@ func TestConversationScrollControls(t *testing.T) {
 					`src="/static/chat-scroll.js?v=`, `id="messages"`, `tabindex="0"`,
 					`id="scroll-status"`, `id="scroll-to-latest"`, `aria-controls="messages"`,
 					`aria-live="polite"`, s.t("chat.scroll_finished"), s.t("chat.scroll_reconnecting"),
+					`src="/static/sidebar-resize.js?v=`, `id="sidebar-resize"`, `role="separator"`,
+					`aria-orientation="vertical"`, `aria-controls="sidebar"`, s.t("nav.resize"),
 				} {
 					if !strings.Contains(body, expected) {
 						t.Errorf("scroll controls omit %q", expected)

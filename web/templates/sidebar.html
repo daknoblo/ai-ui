@@ -1,6 +1,10 @@
 {{define "sidebar"}}
 <div class="nav-backdrop" onclick="closeNav()"></div>
 <aside class="sidebar" id="sidebar">
+	<div id="sidebar-resize" class="sidebar-resize" role="separator" tabindex="0"
+		aria-orientation="vertical" aria-controls="sidebar"
+		aria-label="{{t "nav.resize"}}" title="{{t "nav.resize_hint"}}"></div>
+	<p id="sidebar-resize-status" class="sidebar-resize-status" role="status" hidden>{{t "nav.resize_unsaved"}}</p>
 	<div class="sidebar-create">
 	<form hx-post="/chats" hx-target="body" hx-push-url="true" class="new-chat-form">
 		<button type="submit" class="btn btn-new" onclick="closeNav()"

@@ -20,6 +20,7 @@ import { verifyResponseCopy } from './copy-checks.mjs';
 import { verifyChatGroups, createGroup } from './group-checks.mjs';
 import { verifyResponseRetry } from './retry-checks.mjs';
 import { verifyImageRefinements } from './image-checks.mjs';
+import { verifySidebarResize } from './sidebar-checks.mjs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
@@ -51,6 +52,30 @@ const MOBILE = {
 
 /** The sections that are captured, in gallery order. */
 const SHOTS = [
+  {
+    id: 'sidebar-resize',
+    langs: ['en', 'de'],
+    meta: {
+      en: {
+        title: 'Adjust the sidebar width',
+        caption: 'Drag the right edge to give chat titles more room. The width is saved in this browser; double-click resets it. Mobile navigation stays unchanged.',
+      },
+      de: {
+        title: 'Breite der Seitenleiste anpassen',
+        caption: 'Ziehe den rechten Rand, um Chattiteln mehr Platz zu geben. Die Breite wird in diesem Browser gespeichert; ein Doppelklick setzt sie zurück. Das mobile Menü bleibt unverändert.',
+      },
+    },
+    capture: async (page, ctx) => {
+      await open(page, `/chat/${ctx.index.chats.chat}`);
+      const handle = page.locator('#sidebar-resize');
+      const box = await handle.boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + 200);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2 + 150, box.y + 200, { steps: 8 });
+      await page.mouse.up();
+      await handle.focus();
+    },
+  },
   {
     id: 'chat',
     langs: ['en', 'de'],
@@ -468,6 +493,13 @@ async function main() {
       const browser = await chromium.launch(launchOptions);
       try {
         for (const [layout, options] of [['desktop', DESKTOP], ['mobile', MOBILE]]) {
+          const sidebarContext = await browser.newContext({ ...options, reducedMotion: 'reduce' });
+          try {
+            await verifySidebarResize(await sidebarContext.newPage(), base, index, layout === 'mobile');
+            process.stdout.write(`sidebar resize checks passed (${lang}/${layout})\n`);
+          } finally {
+            await sidebarContext.close();
+          }
           const context = await browser.newContext({ ...options, reducedMotion: 'reduce' });
           try {
             await verifyChatScroll(await context.newPage(), base, index, layout === 'mobile');

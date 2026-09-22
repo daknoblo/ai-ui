@@ -643,6 +643,12 @@ not replaced with a guessed current model.
 
 ### Organizing chats
 
+On desktop, drag the right edge of the sidebar to adjust its width. The width
+is saved in the current browser and bounded so the conversation remains usable.
+Double-click the edge to restore the default. The focused resize handle also
+supports Left/Right arrows, Home/End and Enter to reset; Escape cancels a drag.
+The mobile navigation drawer keeps its existing width.
+
 The sidebar has **New chat** and **New group** actions side by side. Give a
 group a name and optionally choose a color; its conversations appear indented
 under an expandable heading. Groups have one level, not nested subgroups.

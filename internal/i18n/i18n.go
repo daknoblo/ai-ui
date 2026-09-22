@@ -110,6 +110,9 @@ var catalog = map[string]map[string]string{
 		// ---- sidebar ----
 		"nav.new_chat":         "New chat",
 		"nav.menu":             "Menu",
+		"nav.resize":           "Sidebar width",
+		"nav.resize_hint":      "Drag to resize. Arrow keys adjust the width; double-click or Enter resets it.",
+		"nav.resize_unsaved":   "Sidebar width could not be saved in this browser.",
 		"nav.settings":         "Settings",
 		"nav.stats":            "Statistics",
 		"nav.logs":             "Logs",
@@ -492,6 +495,9 @@ var catalog = map[string]map[string]string{
 		// ---- sidebar ----
 		"nav.new_chat":         "Neuer Chat",
 		"nav.menu":             "Menü",
+		"nav.resize":           "Breite der Seitenleiste",
+		"nav.resize_hint":      "Zum Ändern ziehen. Pfeiltasten ändern die Breite; Doppelklick oder Enter setzt sie zurück.",
+		"nav.resize_unsaved":   "Die Breite der Seitenleiste konnte in diesem Browser nicht gespeichert werden.",
 		"nav.settings":         "Einstellungen",
 		"nav.stats":            "Statistik",
 		"nav.logs":             "Logs",

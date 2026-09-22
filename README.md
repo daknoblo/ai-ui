@@ -11,11 +11,12 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.2.1.** Read streamed answers without being pulled to the
-bottom, with progress, reconnect and completion indicators. The 1.2 series also
-includes identity-based Foundry setup, separate image resources, reconnect-safe
-generation, safer embedding indexes and corrected document extraction.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.2.1)
+**Current release: 1.2.2.** Organize chats in colored groups, resize the sidebar,
+and copy or resend messages throughout the conversation. Borderless actions share
+a footer with token usage and the actual responding model. The 1.2 series also
+includes stable stream reading, identity-based Foundry setup, separate image
+resources, reconnect-safe generation and safer embedding indexes.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.2.2)
 and [upgrade checklist](#upgrading-to-120).
 
 **Website with the full screenshot gallery:**
@@ -34,14 +35,16 @@ All screenshots are generated automatically from the demo instance
 
 ## Features
 
-- Chat interface with a sidebar, multiple conversations and history
+- Chat interface with a drag-resizable sidebar, multiple conversations and
+  history; the desktop width is saved per browser
 - Single-level named chat groups with optional colors, persistent collapse
   state, drag-and-drop movement and a keyboard/touch-accessible Move action
 - Answer streaming (token by token) via server-sent events
-- A copy icon below each completed answer copies the full response text with
+- A copy icon below every input and completed answer copies the full message with
   rich formatting (headings, emphasis, lists, tables and code) where supported
-- A retry icon beside Copy reprocesses the original question after confirmation,
-  retaining the previous answer and appending the new result
+- A retry icon beside Copy sends the original question as a new user message
+  after confirmation, using current history and settings without replacing
+  earlier messages
 - Streaming follows the latest output only while you stay at the bottom.
   Scrolling up preserves your reading position; a jump-to-latest control shows
   whether the response is still running, reconnecting, or has finished
@@ -730,24 +733,31 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.2.1` and `1.2` and also
+`stable`; version releases publish tags such as `1.2.2` and `1.2` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
 ### Upgrading to 1.2.0
 
 This checklist covers the migration introduced in 1.2.0 and applies when moving
-older installations to the 1.2 series. The current patch is **1.2.1**.
-When updating an existing 1.2.0 installation to 1.2.1, update the image and fully
-reload the browser; no additional environment variables or embedding rebuild
-are required for the scrolling fix.
+older installations to the 1.2 series. The current patch is **1.2.2**.
+When updating an existing 1.2.0 or 1.2.1 installation, back up the data volume,
+update the image and fully reload the browser. Group and generation-link
+migrations run automatically; no new environment variables or embedding rebuild
+are required for these UI changes.
+
+Retry now sends the associated question as a new user message at the end of the
+current chat, including its current history, composer settings and attachments.
+It does not replace an old answer or replay the original saved request options.
+Existing assistant-only retries from rolling builds retain their original
+question association. See [Sending a previous question again](#sending-a-previous-question-again).
 
 1. **Back up the complete data volume before upgrading.** Stop ai-ui while
    copying `/appdata`, or use a consistent SQLite backup procedure. Retain the
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.2.1`, keeping the same persistent volume, ports and
+   `ghcr.io/daknoblo/ai-ui:1.2.2`, keeping the same persistent volume, ports and
    environment settings. The `1.2` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.
@@ -802,7 +812,7 @@ Important compatibility and behavior changes:
 
 For rollback, stop the new container and restore the pre-upgrade data backup
 together with the previous pinned image. Merely pointing an older binary at a
-database already migrated by 1.2.0 is not a supported rollback procedure.
+database already migrated by a newer version is not a supported rollback procedure.
 
 ## Development
 

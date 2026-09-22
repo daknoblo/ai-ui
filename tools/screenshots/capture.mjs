@@ -19,6 +19,7 @@ import { verifyChatScroll } from './scroll-checks.mjs';
 import { verifyResponseCopy } from './copy-checks.mjs';
 import { verifyChatGroups, createGroup } from './group-checks.mjs';
 import { verifyResponseRetry } from './retry-checks.mjs';
+import { verifyImageRefinements } from './image-checks.mjs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
@@ -494,6 +495,13 @@ async function main() {
             process.stdout.write(`group checks passed (${lang}/${layout})\n`);
           } finally {
             await groupContext.close();
+          }
+          const imageContext = await browser.newContext({ ...options, reducedMotion: 'reduce' });
+          try {
+            await verifyImageRefinements(await imageContext.newPage(), base, index);
+            process.stdout.write(`image refinement checks passed (${lang}/${layout})\n`);
+          } finally {
+            await imageContext.close();
           }
         }
         await mkdir(join(outDir, lang), { recursive: true });

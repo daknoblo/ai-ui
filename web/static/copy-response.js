@@ -118,6 +118,9 @@
 	async function copyResponse(button) {
 		var message = button.closest(".msg");
 		if (!message || (message.hasAttribute("data-stream-state") && message.dataset.streamState !== "finished")) return;
+		var status = button.parentElement.querySelector(".response-copy-status");
+		status.textContent = "";
+		delete status.dataset.state;
 		var bubble = message.querySelector(".bubble");
 		if (!bubble) {
 			console.warn("Response copy failed: response body is missing");
@@ -139,7 +142,6 @@
 						"text/html": new Blob([html], { type: "text/html" }),
 						"text/plain": new Blob([text], { type: "text/plain" })
 					})]);
-					report(button, "copySuccess", "success");
 					return;
 				} catch (error) {
 					console.warn("Formatted clipboard API unavailable; trying the copy-event fallback", error.name);
@@ -147,7 +149,6 @@
 			}
 			try {
 				if (copyWithEvent(html, text)) {
-					report(button, "copySuccess", "success");
 					return;
 				}
 			} catch (error) {

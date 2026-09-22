@@ -33,7 +33,7 @@ func TestResponseCopyControls(t *testing.T) {
 			}
 			for _, expected := range []string{
 				`src="/static/copy-response.js?v=`, s.t("copy.response"),
-				s.t("copy.success"), s.t("copy.failed"), `aria-live="polite"`,
+				s.t("copy.failed"), `aria-live="polite"`,
 			} {
 				if !strings.Contains(body, expected) {
 					t.Errorf("copy controls omit %q", expected)

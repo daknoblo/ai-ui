@@ -16,25 +16,55 @@ type Identity struct {
 
 type Snapshot struct {
 	ResourceID          string       `json:"resource_id"`
+	Location            string       `json:"location,omitempty"`
 	Endpoint            string       `json:"endpoint"`
+	Accounts            []Snapshot   `json:"accounts,omitempty"`
+	DiscoveryErrors     []string     `json:"discovery_errors,omitempty"`
 	Deployments         []Deployment `json:"deployments"`
 	RefreshedAt         time.Time    `json:"refreshed_at"`
 	ImageCatalogChecked bool         `json:"image_catalog_checked,omitempty"`
 	ImageCatalogError   string       `json:"image_catalog_error,omitempty"`
 }
 
+// Key is independent of deployment-name collisions across accounts.
+func (s Snapshot) Key(d Deployment) string {
+	return strings.ToLower(strings.TrimRight(s.ResourceID, "/")) + "/deployments/" + d.Name
+}
+
+// EmbeddingSpace returns only known, versioned OpenAI vector spaces. The
+// default dimension is used because this client never requests reduced vectors.
+func (d Deployment) EmbeddingSpace() (model string, dimensions int) {
+	if !d.Supports(Embeddings) || strings.TrimSpace(d.ModelVersion) == "" {
+		return "", 0
+	}
+	model = canonicalModel(d.ModelName)
+	switch model {
+	case "text-embedding-ada-002", "text-embedding-3-small":
+		dimensions = 1536
+	case "text-embedding-3-large":
+		dimensions = 3072
+	default:
+		return "", 0
+	}
+	if d.EmbeddingDimensions > 0 {
+		dimensions = d.EmbeddingDimensions
+	}
+	return model, dimensions
+}
+
 const ModelsAPISource = "models-api"
 
 type Deployment struct {
-	ID                string            `json:"id"`
-	Name              string            `json:"name"`
-	ModelName         string            `json:"model_name"`
-	ModelVersion      string            `json:"model_version"`
-	ModelFormat       string            `json:"model_format"`
-	ProvisioningState string            `json:"provisioning_state"`
-	SKU               string            `json:"sku"`
-	Capabilities      map[string]string `json:"capabilities"`
-	Source            string            `json:"source,omitempty"`
+	EmbeddingDimensions int               `json:"embedding_dimensions,omitempty"`
+	ID                  string            `json:"id"`
+	Name                string            `json:"name"`
+	ModelName           string            `json:"model_name"`
+	ModelVersion        string            `json:"model_version"`
+	ModelFormat         string            `json:"model_format"`
+	ProvisioningState   string            `json:"provisioning_state"`
+	SKU                 string            `json:"sku"`
+	Capabilities        map[string]string `json:"capabilities"`
+	Source              string            `json:"source,omitempty"`
 }
 
 type Operation string
@@ -69,6 +99,20 @@ func (s Snapshot) Names(op Operation) []string {
 
 func (d Deployment) Supports(op Operation) bool {
 	return d.UnsupportedReason(op) == ""
+}
+
+func (d Deployment) SupportsTools() bool {
+	if !d.Supports(Chat) {
+		return false
+	}
+	if present, enabled, valid := d.capability("functioncalling", "toolcalling", "tools"); present {
+		return enabled && valid
+	}
+	return true
+}
+
+func (d Deployment) EmbeddingModelMatches(model, version string) bool {
+	return d.Supports(Embeddings) && canonicalModel(d.ModelName) == canonicalModel(model) && d.ModelVersion == version
 }
 
 func (d Deployment) UnsupportedReason(op Operation) string {

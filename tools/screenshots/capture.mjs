@@ -21,6 +21,7 @@ import { verifyChatGroups, createGroup } from './group-checks.mjs';
 import { verifyResponseRetry } from './retry-checks.mjs';
 import { verifyImageRefinements } from './image-checks.mjs';
 import { verifySidebarResize } from './sidebar-checks.mjs';
+import { verifyDeploymentPools } from './pool-checks.mjs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
@@ -279,11 +280,11 @@ const SHOTS = [
     meta: {
       en: {
         title: 'Foundry deployment inventory',
-        caption: 'Refresh reads metadata for the configured resources. Canonical models and capabilities explain which deployment aliases are usable; the local demo needs no credentials.',
+        caption: 'Refresh reads metadata for accounts in the configured resource groups. Canonical models and capabilities explain which deployment aliases are usable; the local demo needs no credentials.',
       },
       de: {
         title: 'Foundry-Deployment-Inventar',
-        caption: 'Aktualisieren liest Metadaten der eingestellten Ressourcen. Kanonische Modelle und Fähigkeiten zeigen, welche Deployment-Aliase nutzbar sind; die lokale Demo braucht keine Zugangsdaten.',
+        caption: 'Aktualisieren liest Konten in den eingestellten Ressourcengruppen. Kanonische Modelle und Fähigkeiten zeigen, welche Deployment-Aliase nutzbar sind; die lokale Demo braucht keine Zugangsdaten.',
       },
     },
     capture: async (page, ctx) => {
@@ -298,11 +299,11 @@ const SHOTS = [
     meta: {
       en: {
         title: 'A separate resource for image models',
-        caption: 'AZURE_IMAGE_RESOURCE_ID selects a separate ARM deployment inventory and endpoint using the same identity. Chat and embeddings remain on the primary resource.',
+        caption: 'AZURE_IMAGE_RESOURCE_ID anchors existing image selections using the same identity. Additional accounts in its group are discovered without changing existing chat or embedding selections.',
       },
       de: {
         title: 'Eine getrennte Ressource für Bildmodelle',
-        caption: 'AZURE_IMAGE_RESOURCE_ID wählt ein eigenes ARM-Deployment-Inventar samt Endpoint mit derselben Identität. Chat und Embeddings bleiben auf der Hauptressource.',
+        caption: 'AZURE_IMAGE_RESOURCE_ID verankert bestehende Bildauswahlen mit derselben Identität. Weitere Konten der Gruppe werden gefunden, ohne bestehende Chat- oder Embedding-Auswahlen zu ändern.',
       },
     },
     capture: async (page, ctx) => {
@@ -316,18 +317,18 @@ const SHOTS = [
     langs: ['en', 'de'],
     meta: {
       en: {
-        title: 'Defaults for each operation',
-        caption: 'Chat, embedding, image and vision defaults use supported inventory entries. The active embedding profile and completed local rebuild are shown below.',
+        title: 'Enabled providers for each operation',
+        caption: 'Chat, embeddings, images, image edits and vision each have a checkbox pool. Saved providers rotate cyclically; newly discovered endpoints remain disabled.',
       },
       de: {
-        title: 'Standard-Deployments je Aufgabe',
-        caption: 'Chat, Embeddings, Bilder und Vision verwenden unterstützte Inventar-Einträge. Darunter stehen das aktive Embedding-Profil und der abgeschlossene lokale Neuaufbau.',
+        title: 'Aktive Anbieter je Aufgabe',
+        caption: 'Chat, Embeddings, Bilder, Bildbearbeitung und Vision haben eigene Checkbox-Listen. Gespeicherte Anbieter wechseln reihum; neu gefundene Endpoints bleiben deaktiviert.',
       },
     },
     capture: async (page, ctx) => {
       await openSettings(page, ctx);
       await page.locator('#embedding-index .config-saved').waitFor();
-      await scrollSettingsTo(page, 'select[name="chat_deployment"]');
+      await scrollSettingsTo(page, 'input[name="enabled_chat"]');
     },
   },
   {
@@ -345,17 +346,30 @@ const SHOTS = [
     },
     capture: async (page, ctx) => {
       await openSettings(page, ctx);
-      const embedding = page.locator('.config-form select[name="embedding_deployment"]');
-      const current = await embedding.inputValue();
-      const alternative = await embedding.locator('option').evaluateAll(
-        (options, selected) => options.map((option) => option.value).find((value) => value && value !== selected),
-        current,
-      );
-      if (!alternative) throw new Error('Foundry demo has no alternative embedding deployment');
-      await embedding.selectOption(alternative);
+      const embedding = page.locator('.config-form input[name="enabled_embeddings"]');
+      for (const input of await embedding.all()) await input.uncheck();
+      await page.locator('input[name="enabled_embeddings"][value$="/accounts/local-demo/deployments/docs-next"]').check();
       await submitSettings(page, '.config-form button[type="submit"]', '/config');
       await page.locator('#embedding-index input[name="confirm_reindex"]').waitFor();
-      await scrollSettingsTo(page, 'select[name="chat_deployment"]');
+      await scrollSettingsTo(page, 'input[name="enabled_embeddings"]');
+    },
+  },
+  {
+    id: 'deployment-pools',
+    langs: ['en', 'de'],
+    meta: {
+      en: {
+        title: 'Cycle between enabled resources',
+        caption: 'Enable multiple deployments per operation with checkboxes. Region, resource and model identify each endpoint; compatible embedding replicas share one vector space.',
+      },
+      de: {
+        title: 'Aktive Ressourcen reihum nutzen',
+        caption: 'Checkboxen aktivieren mehrere Deployments je Vorgang. Region, Ressource und Modell kennzeichnen den Endpoint; kompatible Embedding-Replikate teilen einen Vektorraum.',
+      },
+    },
+    capture: async (page, ctx) => {
+      await openSettings(page, ctx);
+      await scrollSettingsTo(page, 'input[name="enabled_chat"]');
     },
   },
   {
@@ -420,10 +434,10 @@ async function openSettings(page, ctx) {
   if (!(await endpoint.inputValue()).startsWith('http://127.0.0.1:')) {
     throw new Error('Settings demo must keep its real loopback endpoint');
   }
-  for (const name of ['chat_deployment', 'embedding_deployment', 'image_deployment', 'vision_deployment']) {
-    const field = page.locator(`.config-form select[name="${name}"]`);
-    await field.waitFor();
-    if (!(await field.inputValue())) throw new Error(`Foundry demo default is missing: ${name}`);
+  for (const name of ['enabled_chat', 'enabled_embeddings', 'enabled_images', 'enabled_vision']) {
+    const field = page.locator(`.config-form input[name="${name}"]:checked`);
+    await field.first().waitFor();
+    if (!(await field.count())) throw new Error(`Foundry demo default is missing: ${name}`);
   }
   // Foundry renders connection metadata read-only, not as per-role URL inputs.
   if (await page.locator('.config-form input[name="endpoint"], .config-form input[name="embedding_endpoint"], .config-form input[name="image_endpoint"]').count()) {
@@ -460,6 +474,7 @@ function startDemo(dataDir, lang) {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   proc.stderr.on('data', (chunk) => process.stderr.write(`[demo] ${chunk}`));
+  proc.stdout.resume();
   return proc;
 }
 
@@ -493,6 +508,13 @@ async function main() {
       const browser = await chromium.launch(launchOptions);
       try {
         for (const [layout, options] of [['desktop', DESKTOP], ['mobile', MOBILE]]) {
+          const poolContext = await browser.newContext({ ...options, reducedMotion: 'reduce' });
+          try {
+            await verifyDeploymentPools(await poolContext.newPage(), base, index);
+            process.stdout.write(`deployment pool checks passed (${lang}/${layout})\n`);
+          } finally {
+            await poolContext.close();
+          }
           const sidebarContext = await browser.newContext({ ...options, reducedMotion: 'reduce' });
           try {
             await verifySidebarResize(await sidebarContext.newPage(), base, index, layout === 'mobile');

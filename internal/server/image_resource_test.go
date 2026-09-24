@@ -114,7 +114,7 @@ func TestSeparateImageResourceRoutesAndPreservesIndex(t *testing.T) {
 		t.Fatalf("image setup changed the embedding profile: %+v, %v", after, err)
 	}
 	view := s.foundryData(t.Context())
-	if len(view.ImageChoices) != 1 || view.ImageChoices[0].Name != "gpt-image-2" ||
+	if len(view.ImageChoices) != 1 || view.ImageChoices[0].Name != strings.ToLower(serverImageResourceID)+"/deployments/gpt-image-2" ||
 		!view.SeparateImageResource || view.ImageResource.ResourceID != serverImageResourceID {
 		t.Fatalf("incorrect image inventory: %+v", view)
 	}

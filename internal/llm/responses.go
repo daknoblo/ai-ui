@@ -140,7 +140,7 @@ func responseInputs(messages []Message) ([]json.RawMessage, error) {
 }
 
 func (c *Client) responsesTurn(ctx context.Context, opts ChatOptions, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
-	var result TurnResult
+	result := TurnResult{Model: opts.Model}
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || !c.store.HasChatCredentials() {
 		return result, fmt.Errorf("chat endpoint, deployment and credentials are required")
@@ -223,7 +223,9 @@ func (c *Client) responsesTurn(ctx context.Context, opts ChatOptions, messages [
 			}
 		case "response.completed", "response.incomplete", "response.failed":
 			result.Content = text.String()
-			result.Model = event.Response.Model
+			if event.Response.Model != "" {
+				result.Model = event.Response.Model
+			}
 			result.Usage = Usage{
 				PromptTokens: event.Response.Usage.InputTokens, CompletionTokens: event.Response.Usage.OutputTokens,
 				TotalTokens: event.Response.Usage.TotalTokens,

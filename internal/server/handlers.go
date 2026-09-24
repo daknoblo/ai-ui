@@ -113,6 +113,23 @@ func imageModelOf(cfg config.Config, chat *storage.Chat) string {
 	return cfg.ImageDeployment
 }
 
+func (s *Server) imageEditsEnabled(cfg config.Config, chat *storage.Chat) bool {
+	if !cfg.Foundry {
+		return true
+	}
+	if cfg.EnabledDeployments != nil {
+		if !s.cfg.ImageEditsConfigured() {
+			return false
+		}
+		if chat == nil || chat.ImageModel == "" {
+			return true
+		}
+		_, err := s.cfg.ResolveDeployment(foundry.ImageEdits, chat.ImageModel)
+		return err == nil
+	}
+	return slices.Contains(cfg.ImageEditModels, imageModelOf(cfg, chat))
+}
+
 // buildPageData loads chats, documents and – if given – the current chat with
 // its messages.
 func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (pageData, error) {
@@ -132,8 +149,8 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		UploadsReady:      s.ready.uploadsAllowed(),
 		UploadAccept:      docparse.UploadAccept(),
 		SearchEnabled:     s.search.Enabled(),
-		ImageEnabled:      s.cfg.ImagesConfigured(),
-		ImageEditsEnabled: !cfg.Foundry || slices.Contains(cfg.ImageEditModels, imageModelOf(cfg, current)),
+		ImageEnabled:      s.cfg.ImagesConfigured() || s.cfg.ImageEditsConfigured(),
+		ImageEditsEnabled: s.imageEditsEnabled(cfg, current),
 		ImageSize:         cfg.ImageSize,
 		ImageQuality:      cfg.ImageQuality,
 		ImageFormat:       cfg.ImageFormat,
@@ -227,6 +244,9 @@ func (s *Server) defaultChatModel() string {
 // newChat creates a chat with the defaults for model and reasoning effort.
 func (s *Server) newChat(ctx context.Context) (int64, error) {
 	model := s.defaultChatModel()
+	if cfg := s.cfg.Get(); cfg.Foundry && cfg.EnabledDeployments != nil {
+		model = ""
+	}
 	return s.store.CreateChat(ctx, untitled, model,
 		llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(model), s.cfg.Get().ReasoningEffort))
 }
@@ -451,11 +471,15 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request, chat storag
 	edit := image && r.FormValue("edit") == "1"
 
 	cfg := s.cfg.Get()
+	imageDeployment := imageModelOf(cfg, &chat)
+	if cfg.Foundry && cfg.EnabledDeployments != nil {
+		imageDeployment = chat.ImageModel
+	}
 	turn, err := s.submitGeneration(ctx, chat, message, generationOptions{
 		Web: web, Image: image, Edit: edit,
 		Chat: llm.ChatOptions{Model: chat.Model,
 			ReasoningEffort: llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(chat.Model), chat.ReasoningEffort)},
-		ImageOptions: llm.ImageOptions{Deployment: imageModelOf(cfg, &chat),
+		ImageOptions: llm.ImageOptions{Deployment: imageDeployment,
 			Size: cfg.ImageSize, Quality: cfg.ImageQuality, Format: cfg.ImageFormat},
 	})
 	if errors.Is(err, storage.ErrGenerationBusy) {
@@ -499,7 +523,7 @@ func (s *Server) generateTurn(ctx context.Context, sse *generationStream, turn s
 		}
 	}
 
-	if !s.cfg.IsConfigured() {
+	if !options.Image && !s.cfg.IsConfigured() {
 		fail(s.t("stream.not_configured"))
 		return
 	}
@@ -513,7 +537,7 @@ func (s *Server) generateTurn(ctx context.Context, sse *generationStream, turn s
 
 	// Image mode: no streamed answer, the endpoint returns a finished image.
 	if options.Image {
-		if !s.cfg.ImagesConfigured() {
+		if (!options.Edit && !s.cfg.ImagesConfigured()) || (options.Edit && !s.cfg.ImageEditsConfigured()) {
 			fail(s.t("stream.image_not_configured"))
 			return
 		}
@@ -525,7 +549,7 @@ func (s *Server) generateTurn(ctx context.Context, sse *generationStream, turn s
 	cfg := s.cfg.Get()
 	forceWeb := options.Web && s.search.Enabled()
 	autoWeb := cfg.SearchAuto && s.search.Enabled() && !forceWeb
-	autoImages := s.cfg.ImagesConfigured()
+	autoImages := s.cfg.ImagesConfigured() || s.cfg.ImageEditsConfigured()
 
 	// The chat keeps its own model and reasoning effort; empty values leave both
 	// to the router and the model.
@@ -559,13 +583,21 @@ func (s *Server) generateTurn(ctx context.Context, sse *generationStream, turn s
 	// request, the answer is routed to a model that can - for this turn only, so
 	// the picker the user set stays where it is. The model tag of the answer
 	// names whatever actually replied.
-	if messagesCarryImages(messages) {
+	if messagesCarryImages(messages) && !cfg.Foundry {
 		picked, ok := s.llm.VisionDeployment(opts.Model)
 		switch {
 		case !ok:
 			if cfg.Foundry {
 				fail(s.t("stream.vision_missing"))
 				return
+			}
+			opts, err = s.llm.PrepareChat(opts, messagesCarryImages(messages))
+			if err != nil {
+				fail(s.t("stream.request_failed", err.Error()))
+				return
+			}
+			if !opts.SupportsTools() {
+				autoWeb, autoImages = false, false
 			}
 			// Nothing configured can read images. Sending them anyway would be
 			// rejected with a 400 - and because the attachments are re-read on
@@ -649,14 +681,14 @@ func (s *Server) generateTurn(ctx context.Context, sse *generationStream, turn s
 	if final != "" && streamErr == nil {
 		titleCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
-		s.maybeGenerateTitle(titleCtx, sse, id)
+		s.maybeGenerateTitle(titleCtx, sse, id, opts)
 	}
 	_ = sse.send("done", "")
 }
 
 // maybeGenerateTitle creates a short, meaningful chat title from the content
 // after the first exchange and updates header and sidebar via SSE.
-func (s *Server) maybeGenerateTitle(ctx context.Context, sse *generationStream, chatID int64) {
+func (s *Server) maybeGenerateTitle(ctx context.Context, sse *generationStream, chatID int64, opts llm.ChatOptions) {
 	msgs, err := s.store.ListMessages(ctx, chatID)
 	if err != nil || len(msgs) != 2 { // only on the first exchange (1 question + 1 answer)
 		return
@@ -685,7 +717,7 @@ func (s *Server) maybeGenerateTitle(ctx context.Context, sse *generationStream, 
 	}
 
 	var sb strings.Builder
-	if _, err := s.llm.ChatStream(ctx, llm.ChatOptions{}, titleMessages, func(delta string) error {
+	if _, err := s.llm.ChatStream(ctx, opts, titleMessages, func(delta string) error {
 		if len(delta) > 4096-sb.Len() {
 			return errors.New("generated title exceeds size limit")
 		}
@@ -1103,13 +1135,31 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	}
 	if cfg.Foundry {
 		cfg.VisionDeployment = strings.TrimSpace(r.FormValue("vision_deployment"))
+		if r.FormValue("deployment_pools") == "1" {
+			cfg.EnabledDeployments = s.cfg.EnabledPools()
+			for _, op := range config.Operations {
+				locked := (op == foundry.Chat && locks.ChatDeployment) ||
+					(op == foundry.Embeddings && locks.EmbeddingDeployment) ||
+					((op == foundry.Images || op == foundry.ImageEdits) && locks.ImageDeployment)
+				if !locked {
+					cfg.EnabledDeployments[op] = append([]string{}, r.Form["enabled_"+string(op)]...)
+				}
+			}
+		}
 		if err := s.cfg.ValidateRoleSelections(cfg); err != nil {
+			if errors.Is(err, config.ErrEmbeddingPool) {
+				s.renderConfigNotice(w, s.t("foundry.embedding_pool_invalid"), true)
+				return
+			}
 			s.renderConfigNotice(w, s.t("foundry.invalid_selection", err.Error()), true)
 			return
 		}
-		cfg.ChatModel = cfg.ChatDeployment
+		if cfg.EnabledDeployments == nil {
+			cfg.ChatModel = cfg.ChatDeployment
+		}
 	}
 	if cfg.EmbeddingHost() != previous.EmbeddingHost() ||
+		!slices.Equal(cfg.EnabledDeployments[foundry.Embeddings], previous.EnabledDeployments[foundry.Embeddings]) ||
 		cfg.EmbeddingVersion() != previous.EmbeddingVersion() ||
 		cfg.EmbeddingDeployment != previous.EmbeddingDeployment {
 		job, exists, err := s.store.LatestReindex(r.Context())

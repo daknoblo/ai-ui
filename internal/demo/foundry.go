@@ -206,11 +206,15 @@ func (s *demoFoundrySource) Refresh(ctx context.Context, override string) (found
 		resourceID = demoImageResourceID
 	}
 	deployment := func(name, model, version string) foundry.Deployment {
-		return foundry.Deployment{
+		d := foundry.Deployment{
 			ID: resourceID + "/deployments/" + name, Name: name,
 			ModelName: model, ModelVersion: version, ModelFormat: "OpenAI",
 			ProvisioningState: "Succeeded", SKU: "GlobalStandard",
 		}
+		if d.Supports(foundry.Embeddings) {
+			d.EmbeddingDimensions = embeddingDim
+		}
+		return d
 	}
 	deployments := []foundry.Deployment{
 		deployment("chat-primary", "gpt-4o", "2024-11-20"),
@@ -230,9 +234,27 @@ func (s *demoFoundrySource) Refresh(ctx context.Context, override string) (found
 		}
 	}
 	return foundry.Snapshot{
-		ResourceID: resourceID, Endpoint: s.endpoint,
+		ResourceID: resourceID, Endpoint: s.endpoint, Location: "swedencentral",
 		Deployments: deployments, RefreshedAt: time.Now().UTC(),
 	}, nil
+}
+
+// RefreshGroup models same-group discovery without credentials or Azure calls.
+// Duplicate deployment names deliberately exercise resource-qualified pickers.
+func (s *demoFoundrySource) RefreshGroup(ctx context.Context, override string, _ foundry.Snapshot) (foundry.Snapshot, error) {
+	root, err := s.Refresh(ctx, override)
+	if err != nil {
+		return root, err
+	}
+	replica := root
+	replica.ResourceID += "-poland"
+	replica.Location = "polandcentral"
+	replica.Deployments = append([]foundry.Deployment(nil), root.Deployments...)
+	for i := range replica.Deployments {
+		replica.Deployments[i].ID = replica.ResourceID + "/deployments/" + replica.Deployments[i].Name
+	}
+	root.Accounts = []foundry.Snapshot{replica}
+	return root, nil
 }
 
 func (s *demoFoundrySource) Authorize(req *http.Request) error {

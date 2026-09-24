@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,8 +21,9 @@ import (
 var errRefreshRunning = errors.New("deployment refresh is already running")
 
 type deploymentChoice struct {
-	Name  string
-	Label string
+	Name    string
+	Label   string
+	Checked bool
 }
 
 type deploymentRow struct {
@@ -90,11 +92,14 @@ func (s *Server) refreshPrimaryFoundry(ctx context.Context) error {
 	changed := false
 	if err == nil {
 		previous, cfg := s.cfg.FoundryStatus().Catalog, s.cfg.Get()
-		changed = previous.Endpoint != snapshot.Endpoint
+		changed = previous.Endpoint != snapshot.Endpoint ||
+			!reflect.DeepEqual(previous.Deployments, snapshot.Deployments) ||
+			!sameAccounts(previous.Accounts, snapshot.Accounts)
 		names := []string{cfg.ChatDeployment, cfg.ChatModel, cfg.EmbeddingDeployment, cfg.VisionDeployment}
 		if !s.cfg.HasSeparateImageResource() {
 			names = append(names, cfg.ImageDeployment)
 		}
+
 		active, known, profileErr := s.store.ActiveEmbeddingProfile(ctx)
 		if profileErr != nil {
 			err = profileErr
@@ -133,6 +138,19 @@ func (s *Server) refreshPrimaryFoundry(ctx context.Context) error {
 	return nil
 }
 
+func sameAccounts(a, b []foundry.Snapshot) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].ResourceID != b[i].ResourceID || a[i].Endpoint != b[i].Endpoint ||
+			!reflect.DeepEqual(a[i].Deployments, b[i].Deployments) {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Server) refreshImageFoundry(ctx context.Context) error {
 	snapshot, err := s.cfg.DiscoverImages(ctx)
 	s.configMu.Lock()
@@ -154,7 +172,8 @@ func (s *Server) refreshImageFoundry(ctx context.Context) error {
 		return fmt.Errorf("image deployment discovery: %w", err)
 	}
 	if status.Catalog.Endpoint != snapshot.Endpoint ||
-		!reflect.DeepEqual(status.Catalog.Deployments, snapshot.Deployments) {
+		!reflect.DeepEqual(status.Catalog.Deployments, snapshot.Deployments) ||
+		!sameAccounts(status.Catalog.Accounts, snapshot.Accounts) {
 		s.ready.invalidateImageChecks(s.t("check.image_changed"))
 	}
 	slog.Info("image deployment catalog refreshed", "deployments", len(snapshot.Deployments))
@@ -174,6 +193,11 @@ func (s *Server) handleDeploymentRefresh(w http.ResponseWriter, r *http.Request)
 		s.renderConfigNotice(w, s.t("foundry.partial_refresh", message), true)
 		return
 	}
+	warnings := append(s.cfg.FoundryStatus().Catalog.DiscoveryErrors, s.cfg.ImageFoundryStatus().Catalog.DiscoveryErrors...)
+	if len(warnings) > 0 {
+		s.renderConfigNotice(w, s.t("foundry.partial_refresh", strings.Join(warnings, "; ")), true)
+		return
+	}
 	s.renderConfigNotice(w, s.t("foundry.refreshed"), false)
 }
 
@@ -187,22 +211,25 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 	}
 	view.UpdatedAt = formatCheckTime(status.Catalog.RefreshedAt)
 	view.ImageUpdatedAt = formatCheckTime(images.Catalog.RefreshedAt)
+	pools := s.cfg.EnabledPools()
 	choices := func(op foundry.Operation) []deploymentChoice {
 		var choices []deploymentChoice
-		catalog := status.Catalog
-		if op == foundry.Images || op == foundry.ImageEdits {
-			catalog = images.Catalog
+		for _, target := range s.cfg.Targets(op) {
+			resource := target.Account.ResourceID[strings.LastIndex(target.Account.ResourceID, "/")+1:]
+			label := target.Deployment.Name + " — " + resource
+			if target.Account.Location != "" {
+				label += " · " + target.Account.Location
+			}
+			label += " · " + target.Deployment.ModelName
+			if target.Deployment.ModelVersion != "" {
+				label += " (" + target.Deployment.ModelVersion + ")"
+			}
+			choices = append(choices, deploymentChoice{Name: target.Key, Label: label, Checked: slices.Contains(pools[op], target.Key)})
 		}
-		for _, name := range catalog.Names(op) {
-			deployment, err := s.cfg.ResolveDeployment(op, name)
-			if err != nil {
-				continue // An explicit environment list may exclude this deployment.
+		for _, id := range pools[op] {
+			if !slices.ContainsFunc(choices, func(choice deploymentChoice) bool { return choice.Name == id }) {
+				choices = append(choices, deploymentChoice{Name: id, Label: s.t("foundry.unavailable_selection", id), Checked: true})
 			}
-			label := name
-			if deployment.ModelName != "" && deployment.ModelName != name {
-				label += " (" + deployment.ModelName + ")"
-			}
-			choices = append(choices, deploymentChoice{Name: name, Label: label})
 		}
 		return choices
 	}
@@ -210,14 +237,14 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 	view.EmbeddingChoices = choices(foundry.Embeddings)
 	view.ImageChoices = choices(foundry.Images)
 	view.VisionChoices = choices(foundry.Vision)
-	view.ChatFilterActive = len(view.ChatChoices) < len(status.Catalog.Names(foundry.Chat))
-	view.ImageFilterActive = len(view.ImageChoices) < len(images.Catalog.Names(foundry.Images))
+	view.ChatFilterActive, view.ImageFilterActive = s.cfg.ModelFilters()
 	cfg, locks := s.cfg.Get(), s.cfg.Locks()
 	view.Fields = []deploymentField{
-		{Name: "chat_deployment", LabelKey: "foundry.chat", Current: cfg.ChatDeployment, Env: "AZURE_DEPLOYMENT", EmptyKey: "foundry.not_configured", Choices: view.ChatChoices, Locked: locks.ChatDeployment},
-		{Name: "embedding_deployment", LabelKey: "foundry.embeddings", Current: cfg.EmbeddingDeployment, Env: "AZURE_EMBEDDING_DEPLOYMENT", EmptyKey: "foundry.not_configured", Choices: view.EmbeddingChoices, Locked: locks.EmbeddingDeployment},
-		{Name: "image_deployment", LabelKey: "foundry.images", Current: cfg.ImageDeployment, Env: "AZURE_IMAGE_DEPLOYMENT", EmptyKey: "foundry.not_configured", Choices: view.ImageChoices, Locked: locks.ImageDeployment},
-		{Name: "vision_deployment", LabelKey: "foundry.vision", Current: cfg.VisionDeployment, EmptyKey: "foundry.use_chat", Choices: view.VisionChoices},
+		{Name: "enabled_chat", LabelKey: "foundry.chat", Current: cfg.ChatDeployment, Env: "AZURE_DEPLOYMENT", Choices: view.ChatChoices, Locked: locks.ChatDeployment},
+		{Name: "enabled_embeddings", LabelKey: "foundry.embeddings", Current: cfg.EmbeddingDeployment, Env: "AZURE_EMBEDDING_DEPLOYMENT", Choices: view.EmbeddingChoices, Locked: locks.EmbeddingDeployment},
+		{Name: "enabled_images", LabelKey: "foundry.images", Current: cfg.ImageDeployment, Env: "AZURE_IMAGE_DEPLOYMENT", Choices: view.ImageChoices, Locked: locks.ImageDeployment},
+		{Name: "enabled_image_edits", LabelKey: "foundry.image_edits", Env: "AZURE_IMAGE_DEPLOYMENT", Choices: choices(foundry.ImageEdits), Locked: locks.ImageDeployment},
+		{Name: "enabled_vision", LabelKey: "foundry.vision", Current: cfg.VisionDeployment, Choices: view.VisionChoices},
 	}
 	for i := range view.Fields {
 		for _, choice := range view.Fields[i].Choices {

@@ -11,12 +11,13 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.2.2.** Organize chats in colored groups, resize the sidebar,
-and copy or resend messages throughout the conversation. Borderless actions share
-a footer with token usage and the actual responding model. The 1.2 series also
-includes stable stream reading, identity-based Foundry setup, separate image
-resources, reconnect-safe generation and safer embedding indexes.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.2.2)
+**Current release: 1.2.3.** Discover Foundry deployments across resources in the
+same resource group, enable them with per-operation checkboxes, and distribute
+requests round-robin across the selected targets. Resource-qualified identities
+distinguish duplicate deployment names, and compatible embedding replicas
+preserve the document index. Existing chat groups, resizable sidebar,
+conversation-wide copy/retry actions and reconnect-safe generation remain.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.2.3)
 and [upgrade checklist](#upgrading-to-120).
 
 **Website with the full screenshot gallery:**
@@ -120,8 +121,8 @@ All screenshots are generated automatically from the demo instance
 
 | Variable        | Default  | Description                                   |
 | --------------- | -------- | --------------------------------------------- |
-| `AZURE_RESOURCE_ID` | – | Optional. Opts into Foundry inventory for the primary chat/vision/embedding account; see [Foundry inventory & identity](#foundry-inventory--identity-optional). |
-| `AZURE_IMAGE_RESOURCE_ID` | primary resource | Optional in Foundry mode. Separate account for image generation/editing, using the same service principal. Requires `AZURE_RESOURCE_ID` and access to both accounts; see [Separate image resource](#separate-image-resource). |
+| `AZURE_RESOURCE_ID` | – | Optional. Anchors legacy chat/vision/embedding selections and discovers accessible accounts in its resource group. Group-level Reader is required for sibling discovery; see [Foundry inventory & identity](#foundry-inventory--identity-optional). |
+| `AZURE_IMAGE_RESOURCE_ID` | primary resource | Optional in Foundry mode. Anchors legacy image selections and additionally discovers its resource group with the same service principal. Requires `AZURE_RESOURCE_ID`, group Reader and inference permissions on enabled accounts; see [Separate image resource](#separate-image-resource). |
 | `AZURE_TENANT_ID` | – | Tenant ID of the service principal; required in Foundry mode. |
 | `AZURE_CLIENT_ID` | – | Application/client ID of the service principal; required in Foundry mode. |
 | `AZURE_CLIENT_SECRET` | – | **Secret.** Service-principal secret; required in Foundry mode, environment only. |
@@ -178,11 +179,27 @@ operations, may need additional operation-specific permissions; this role is
 not a promise that every Foundry model or protocol is usable. Inventory visibility
 alone does not prove inference permission. The app never grants roles.
 
-Discovery reads ARM metadata for the configured account and its deployments.
+**Refresh deployments** reads ARM metadata for the configured accounts and
+automatically discovers other OpenAI/AI Services accounts **in the same resource
+groups** as `AZURE_RESOURCE_ID` and, when set, `AZURE_IMAGE_RESOURCE_ID`.
+This uses the [ARM accounts-by-resource-group API](https://learn.microsoft.com/en-us/rest/api/aiservices/accountmanagement/accounts/list-by-resource-group?view=rest-aiservices-accountmanagement-2024-10-01),
+not a subscription-wide scan. Assign the service principal **Reader at each
+resource-group scope**, in addition to the model-specific inference permissions
+on each account you intend to use. A resource-scoped OpenAI role alone does not
+grant group listing. Reader exposes metadata; it does not grant inference or
+permission to read account keys. These permissions must be granted by an
+administrator; the application never modifies Azure resources or role assignments.
+
+If group listing is denied, the configured accounts and last successful
+inventories remain available, with an explicit Reader/access warning. A failing
+account is reported separately rather than erasing healthy accounts. Discovery
+uses bounded pagination, timeouts and same-scope validation; bearer credentials
+are never forwarded to arbitrary pagination hosts.
+
 With no separate image resource, it also reads
 `/openai/v1/models?api-version=preview` on the same inference endpoint for
 known GPT-Image model IDs. With a separate image resource, only actual ARM
-deployments from that account populate the image picker; neither account's
+deployments from the discovered accounts populate the image picker; neither account's
 Models API is queried. Discovery does not scan subscriptions, read account keys,
 create deployments or provision resources. A data-plane model list alone is
 insufficient to establish chat/embedding deployment capabilities.
@@ -200,9 +217,42 @@ available by name without appearing as ARM deployments. Provider aliases are
 preferred over duplicate dated image variants, and an ARM deployment always
 wins a name collision. Listing a model proves neither that it is deployed in
 that resource nor that generation is permitted. An image deployment in another
-resource requires `AZURE_IMAGE_RESOURCE_ID`, not a matching catalog model ID.
+resource must be discovered through one of the configured resource groups,
+not inferred from a matching catalog model ID. `AZURE_IMAGE_RESOURCE_ID` also
+allows an explicit image account in a different group or subscription.
 If the image catalog cannot be read, the ARM inventory still updates and any
 previous image entries for the same resource/endpoint are retained with a warning.
+
+### Enabled deployments and cyclic routing
+
+Settings provides separate checkbox pools for **chat**, **vision/OCR**,
+**image generation**, **image edits**, and **embeddings**. Each choice identifies
+the deployment, resource, Azure region, canonical model and version. A deployment
+name such as `gpt-image-2` in Sweden and the same name in Poland are distinct
+selections, keyed internally by resource ID plus deployment name.
+
+- Check the providers you want to use and **Save**. Each operation cycles through
+  its enabled providers in a deterministic order, atomically across concurrent
+  requests. Newly discovered providers are always disabled until explicitly selected.
+- Existing single-resource defaults migrate to their original account's
+  selection. Refresh never changes saved selections or per-chat pins. New chats
+  created after saving checkbox pools use the pool; older conversations with a
+  saved model remain pinned to that original resource. Explicit pins do not
+  participate in round robin.
+- An empty pool disables that operation; an empty chat pool disables chat.
+  Refresh and restart never silently repopulate an explicitly empty pool.
+  Removing generation and edit selections disables each operation independently.
+- Environment-pinned deployments remain locked to their configured account.
+  Endpoint overrides constrain eligible destinations; `AZURE_MODELS` and
+  `AZURE_IMAGE_MODELS` remain allow-lists, not automatic enablement.
+- A chat turn holds one immutable endpoint/deployment/model/identity snapshot,
+  including all tool and Responses API continuations. Images choose once per
+  operation before constructing JSON or multipart data. Editing always uses the
+  latest successful image captured for that durable turn, even across resources.
+- Round robin is **not failover or retry**: a failed image request is never blindly
+  replayed on another provider. The next user operation advances the cycle.
+  Responses display and persist the answering model reported by the provider,
+  or the selected deployment when that API does not report a model.
 
 The supported-model mapping includes GPT chat models, model router,
 OpenAI text embeddings and GPT-Image generation/editing. DALL-E image options
@@ -213,8 +263,9 @@ Known model profiles cover deployments that omit those hints, including
 GPT-5.6, GPT-6 Astra, GPT-chat-latest and Grok 4.3. Unsupported protocols,
 Responses-only models and batch deployments remain excluded.
 
-Automatic image requests use a function tool bound to the configured image
-deployment, not a model chosen by the chat response. GPT-6 Astra and GPT-5.5/5.6
+Automatic image requests use a function tool routed through the enabled image
+generation/edit pool (or the legacy configured deployment), not a model chosen
+by the chat response. GPT-6 Astra and GPT-5.5/5.6
 use the Responses API for tool-enabled turns; requests are stateless
 (`store=false`), and encrypted reasoning items are retained only within the
 current tool loop. Other supported chat models use Chat Completions tools.
@@ -222,15 +273,18 @@ The selected text model and conversation mode are not changed by image delegatio
 The chat deployment must support function tools on its selected API. The manual
 image button bypasses chat-model orchestration and remains available.
 
-In **Settings**, use **Refresh**, select the chat, embedding, image and optional
-vision defaults, **Save**, then run **Check again**. Refresh fetches metadata
-only: it neither invokes models nor changes role defaults. A failed refresh
+In **Settings**, use **Refresh**, check the deployments for each operation,
+**Save**, then run **Check again**. Refresh fetches metadata
+only: it neither invokes models nor changes enabled selections. A failed refresh
 keeps the last successful inventory and displays the failure. Connection
 verification is separate and can consume chat/embedding tokens.
 
-Chat, vision and embeddings use the primary account. Image generation and
-editing use `AZURE_IMAGE_RESOURCE_ID` when set, otherwise the primary account.
-Endpoint overrides must match the discovered account for their operation.
+Legacy chat, vision and embedding selections stay on the primary account;
+legacy image selections stay on `AZURE_IMAGE_RESOURCE_ID` when set, otherwise
+the primary account. Checkbox pools can use compatible deployments from any
+discovered account. Endpoint overrides constrain their operation to the matching
+discovered endpoint, and environment deployment overrides pin its original
+account. Remove those overrides to enable multi-resource routing for that operation.
 Separate-resource API-key configurations remain available in manual mode.
 `AZURE_MODELS` and
 `AZURE_IMAGE_MODELS`, when supplied in Foundry mode, restrict the discovered
@@ -302,7 +356,8 @@ set `AZURE_IMAGE_RESOURCE_ID` to that account's ARM resource ID. Keep
 `AZURE_RESOURCE_ID` and the existing tenant/client/secret settings unchanged.
 The accounts may be in different resource groups or subscriptions, but must be
 accessible to the same service principal in the same Entra tenant. The app
-does not search projects or subscriptions automatically.
+does not search projects or entire subscriptions automatically; discovery is
+limited to the resource groups of these explicit account IDs.
 
 In Cloud Shell **Bash**, signed into that tenant, grant the existing service
 principal access to the image account. Replace the placeholders; the caller
@@ -327,7 +382,8 @@ az role assignment create \
 printf 'AZURE_IMAGE_RESOURCE_ID=%s\n' "$IMAGE_RESOURCE_ID"
 ```
 
-This adds resource-scoped permissions only. It neither creates a service
+This adds resource-scoped permissions only. Also assign **Reader** on its
+resource group for automatic sibling-account discovery. It neither creates a service
 principal nor creates/rotates a secret. A Cloud Shell login-cache error needs
 to be resolved in that shell; it does not by itself mean the app's service
 principal credentials are invalid.
@@ -335,12 +391,12 @@ principal credentials are invalid.
 Add the printed variable to the container environment and recreate it.
 Leave `AZURE_IMAGE_ENDPOINT` unset to derive the endpoint from the image
 account; remove an old override that points to the primary resource.
-In Settings, choose **Refresh deployments**, select the actual image
-**deployment name**, save, then **Check again**. Allow time for role assignments
+In Settings, choose **Refresh deployments**, check the actual image
+deployments for generation and editing, save, then **Check again**. Allow time for role assignments
 to propagate. `AZURE_IMAGE_DEPLOYMENT` can optionally pin that deployment, and
 `AZURE_IMAGE_MODELS` remains an optional allow-list for that image resource.
 
-The image account has its own cached ARM inventory, read-only resource/endpoint
+The configured image account has its own cached ARM inventory, read-only resource/endpoint
 fields and connection-check row. Refresh attempts both accounts even if one
 fails, retains each last successful cache separately, and never falls back to
 the primary endpoint when the image account is unavailable. Metadata updates
@@ -359,6 +415,24 @@ does **not** relabel or mix existing vectors. A legacy corpus with no known
 embedding profile also needs an explicit rebuild before it can be used safely.
 An older classic-endpoint profile without a recorded API version likewise
 requires rebuilding with an explicitly configured version.
+
+**Compatible Foundry replicas can share an index without reindexing.** All
+checked embedding deployments must identify exactly the same known canonical
+model, model version and dimensions. The app does not infer compatibility from
+equal dimensions alone, deployment aliases or arbitrary manual endpoint names.
+Incompatible checkbox combinations are rejected with a localized error before
+settings or the active index change. Legacy endpoint-bound profiles retain their
+source provenance; known matching model/version/dimensions permit routing to a
+live, explicitly enabled replica. Query, ingestion and reindex batches all use
+the index's vector-space profile and validate response dimensions. Persisted
+profiles never authorize destinations or credentials on their own.
+
+Manual/API-key endpoints with unknown metadata remain endpoint/deployment/API-
+version bound; no cross-endpoint vector compatibility is assumed. Disabling the
+embedding pool disables embedding requests, including use of an existing index.
+Changing to a different vector space still requires the staged rebuild below;
+the old index continues using its known source until the atomic switch, when
+that source is still present and authorized.
 
 Save the new embedding selection, review the document/chunk counts and cost
 warning, then explicitly consent to **Rebuild embedding index** in Settings.
@@ -733,18 +807,25 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.2.2` and `1.2` and also
+`stable`; version releases publish tags such as `1.2.3` and `1.2` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
 ### Upgrading to 1.2.0
 
 This checklist covers the migration introduced in 1.2.0 and applies when moving
-older installations to the 1.2 series. The current patch is **1.2.2**.
-When updating an existing 1.2.0 or 1.2.1 installation, back up the data volume,
+older installations to the 1.2 series. The current patch is **1.2.3**.
+When updating an existing 1.2.0, 1.2.1 or 1.2.2 installation, back up the data volume,
 update the image and fully reload the browser. Group and generation-link
-migrations run automatically; no new environment variables or embedding rebuild
-are required for these UI changes.
+migrations run automatically. No new environment variables are required.
+For multi-resource discovery, grant the app identity Reader on the configured
+resource groups while keeping inference permissions scoped to the intended
+accounts. Refresh deployments, explicitly enable the desired targets and save
+the checkbox pools. Newly discovered targets are not enabled automatically.
+Compatible embedding replicas do not require a rebuild; changing the embedding
+model or vector space still requires the explicit staged reindex workflow.
+Existing chats with explicit model pins keep those pins; use a new chat to test
+round-robin chat selection.
 
 Retry now sends the associated question as a new user message at the end of the
 current chat, including its current history, composer settings and attachments.
@@ -757,7 +838,7 @@ question association. See [Sending a previous question again](#sending-a-previou
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.2.2`, keeping the same persistent volume, ports and
+   `ghcr.io/daknoblo/ai-ui:1.2.3`, keeping the same persistent volume, ports and
    environment settings. The `1.2` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.

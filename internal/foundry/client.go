@@ -145,6 +145,7 @@ func (c *Client) Refresh(ctx context.Context, endpointOverride string) (Snapshot
 	budget := int64(maxCatalogBytes)
 	var account struct {
 		ID         string            `json:"id"`
+		Location   string            `json:"location"`
 		Properties accountProperties `json:"properties"`
 	}
 	if err := c.getJSON(ctx, accountURL, "account discovery", &account, &budget); err != nil {
@@ -213,7 +214,7 @@ func (c *Client) Refresh(ctx context.Context, endpointOverride string) (Snapshot
 	}
 	sort.Slice(deployments, func(i, j int) bool { return deployments[i].Name < deployments[j].Name })
 	return Snapshot{
-		ResourceID: c.resourceID, Endpoint: endpoint, Deployments: deployments,
+		ResourceID: c.resourceID, Location: account.Location, Endpoint: endpoint, Deployments: deployments,
 		RefreshedAt: time.Now().UTC(),
 	}, nil
 }
@@ -246,6 +247,10 @@ func (c *Client) resourceURL(path string) (string, error) {
 }
 
 func (c *Client) paginationURL(current, raw string) (string, error) {
+	return c.paginationPathURL(current, raw, c.resourceID+"/deployments")
+}
+
+func (c *Client) paginationPathURL(current, raw, path string) (string, error) {
 	invalid := errors.New("azure ARM pagination link must use HTTPS and remain on the same ARM host and account deployment path")
 	if len(raw) > 16384 {
 		return "", invalid
@@ -259,9 +264,9 @@ func (c *Client) paginationURL(current, raw string) (string, error) {
 		return "", invalid
 	}
 	next = base.ResolveReference(next)
-	expectedPath := (&url.URL{Path: c.resourceID + "/deployments"}).EscapedPath()
+	expectedPath := (&url.URL{Path: path}).EscapedPath()
 	if next.Scheme != "https" || !strings.EqualFold(next.Host, base.Host) ||
-		!strings.EqualFold(next.Path, c.resourceID+"/deployments") || !strings.EqualFold(next.EscapedPath(), expectedPath) {
+		!strings.EqualFold(next.Path, path) || !strings.EqualFold(next.EscapedPath(), expectedPath) {
 		return "", invalid
 	}
 	query, err := url.ParseQuery(next.RawQuery)

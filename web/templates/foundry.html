@@ -14,6 +14,7 @@
 	</div>
 	{{if .IdentityError}}<div class="config-notice-err">{{t "foundry.identity_error" .IdentityError}}</div>{{end}}
 	{{if .RefreshError}}<div class="config-notice-err">{{t "foundry.stale" .RefreshError}}</div>{{end}}
+	{{range .Catalog.DiscoveryErrors}}<div class="config-notice-err">{{t "foundry.stale" .}}</div>{{end}}
 	{{if not .SeparateImageResource}}{{if .Catalog.ImageCatalogError}}<div class="config-notice-err">{{t "foundry.image_catalog_error" .Catalog.ImageCatalogError}}</div>{{end}}{{end}}
 	<p class="hint">{{if .UpdatedAt}}{{t "foundry.updated_at" .UpdatedAt}}{{else}}{{t "foundry.not_discovered"}}{{end}}</p>
 	<button type="button" class="btn btn-ghost" hx-post="/config/deployments/refresh"
@@ -38,6 +39,7 @@
 	</div>
 	{{if .ImageResource.IdentityError}}<div class="config-notice-err">{{t "foundry.identity_error" .ImageResource.IdentityError}}</div>{{end}}
 	{{if .ImageResource.RefreshError}}<div class="config-notice-err">{{t "foundry.stale" .ImageResource.RefreshError}}</div>{{end}}
+	{{range .ImageResource.Catalog.DiscoveryErrors}}<div class="config-notice-err">{{t "foundry.stale" .}}</div>{{end}}
 	<p class="hint">{{if .ImageUpdatedAt}}{{t "foundry.updated_at" .ImageUpdatedAt}}{{else}}{{t "foundry.not_discovered"}}{{end}}</p>
 </div>
 {{end}}
@@ -61,6 +63,7 @@
 <p class="hint config-full">{{t "foundry.roles_hint"}}</p>
 {{if .ChatFilterActive}}<p class="warn-text config-full">{{t "foundry.chat_filter_hint"}}</p>{{end}}
 {{if .ImageFilterActive}}<p class="warn-text config-full">{{t "foundry.image_filter_hint"}}</p>{{end}}
+<input type="hidden" name="deployment_pools" value="1">
 {{range .Fields}}{{template "deployment-field" .}}{{end}}
 <div class="config-full">{{template "embedding-index" .Index}}</div>
 {{end}}
@@ -89,17 +92,16 @@
 {{end}}
 
 {{define "deployment-field"}}
-<label>
-	{{t .LabelKey}}
+<fieldset class="config-full deployment-pool">
+	<legend>{{t .LabelKey}}</legend>
 	{{if .Locked}}<span class="hint">{{t "config.set_via" .Env}}</span>{{end}}
-	<select name="{{.Name}}"{{if .Locked}} disabled{{end}}>
-		<option value=""{{if eq .Current ""}} selected{{end}}>{{t .EmptyKey}}</option>
-		{{if and .Current (not .CurrentAvailable)}}
-		<option value="{{.Current}}" selected>{{t "foundry.unavailable_selection" .Current}}</option>
-		{{end}}
-		{{range .Choices}}<option value="{{.Name}}"{{if eq .Name $.Current}} selected{{end}}>{{.Label}}</option>{{end}}
-	</select>
-</label>
+	{{range .Choices}}
+	<label class="config-check deployment-choice">
+		<input type="checkbox" name="{{$.Name}}" value="{{.Name}}"{{if .Checked}} checked{{end}}{{if $.Locked}} disabled{{end}}>
+		<span>{{.Label}}</span>
+	</label>
+	{{else}}<p class="hint">{{t "foundry.not_configured"}}</p>{{end}}
+</fieldset>
 {{end}}
 
 {{define "embedding-index"}}

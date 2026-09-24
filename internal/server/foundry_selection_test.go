@@ -51,7 +51,7 @@ func TestFoundryCurrentModelsAreSelectableAndSaved(t *testing.T) {
 				t.Fatal("refresh must not automatically select defaults")
 			}
 			for _, name := range wantChats {
-				if !strings.Contains(response.Body.String(), `<option value="`+name+`"`) {
+				if !strings.Contains(response.Body.String(), `/deployments/`+name+`"`) {
 					t.Errorf("rendered selector omits %s", name)
 				}
 				saved := postFoundryForm(handler, "/config", url.Values{
@@ -97,7 +97,7 @@ func TestFoundryEnvironmentFiltersAreVisible(t *testing.T) {
 func choiceNames(choices []deploymentChoice) []string {
 	names := make([]string, len(choices))
 	for i, choice := range choices {
-		names[i] = choice.Name
+		names[i] = choice.Name[strings.LastIndex(choice.Name, "/")+1:]
 	}
 	return names
 }

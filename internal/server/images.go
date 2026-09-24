@@ -188,6 +188,9 @@ func (s *Server) generateImage(ctx context.Context, sse *generationStream, chatI
 	// Blob, response message and terminal outcome are committed together by
 	// the worker, even after the original browser has disconnected.
 	sse.image = &storage.Image{Prompt: prompt, MIME: res.MIME, Data: res.Data}
+	if res.Model != "" {
+		deployment = res.Model
+	}
 	if deployment != "" {
 		_ = sse.send("model", s.renderString("model-tag", deployment))
 	}

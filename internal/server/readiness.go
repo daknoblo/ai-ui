@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -249,7 +250,7 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 
 	if cfg.Foundry {
 		vision := checkResult{Name: s.t("check.vision_endpoint"), Target: cfg.VisionDeployment, Info: true}
-		if vision.Target == "" {
+		if vision.Target == "" && cfg.EnabledDeployments == nil {
 			if _, err := s.cfg.ResolveDeployment(foundry.Vision, cfg.ChatDeployment); err == nil {
 				vision.Target = cfg.ChatDeployment
 			}
@@ -295,6 +296,9 @@ func (s *Server) runChecks(ctx context.Context, deep bool) []checkResult {
 		models := cfg.ImageModels
 		if cfg.Foundry {
 			models = []string{cfg.ImageDeployment}
+			if cfg.EnabledDeployments != nil {
+				models = s.cfg.EnabledPools()[foundry.Images]
+			}
 		}
 		for _, model := range models {
 			detail := s.t("check.image_probe_only")
@@ -328,6 +332,8 @@ func (s *Server) inventoryChecks() []checkResult {
 			result.Detail = state.IdentityError
 		case state.RefreshError != "":
 			result.Detail = state.RefreshError
+		case len(state.Catalog.DiscoveryErrors) > 0:
+			result.Detail = strings.Join(state.Catalog.DiscoveryErrors, "; ")
 		case state.Catalog.RefreshedAt.IsZero():
 			result.Skipped, result.Detail = true, s.t("check.refresh_first")
 		default:

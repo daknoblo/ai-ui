@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -113,5 +116,109 @@ func TestGroupDeadlinePreservesHealthyRootButCallerCancellationAborts(t *testing
 				t.Fatalf("listing timeout discarded healthy configured account: %+v, %v", snapshot, err)
 			}
 		})
+	}
+}
+
+func TestGroupSlowSiblingDoesNotStarveHealthyAccounts(t *testing.T) {
+	slow, healthy := testResourceID+"-a-slow", testResourceID+"-z-healthy"
+	path := testResourceID[:strings.LastIndex(testResourceID, "/")]
+	client, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case path:
+			writeJSON(t, w, map[string]any{"value": []any{
+				map[string]string{"id": testResourceID, "kind": "AIServices"},
+				map[string]string{"id": slow, "kind": "OpenAI"},
+				map[string]string{"id": healthy, "kind": "OpenAI"},
+			}})
+		case slow:
+			<-r.Context().Done()
+		case testResourceID, healthy:
+			writeJSON(t, w, map[string]any{"id": r.URL.Path,
+				"properties": map[string]any{"endpoint": "https://canonical.openai.azure.com/"}})
+		case testResourceID + "/deployments", healthy + "/deployments":
+			d := deploymentJSON("chat", "gpt-4o")
+			d["id"] = strings.TrimSuffix(r.URL.Path, "/deployments") + "/deployments/chat"
+			writeJSON(t, w, map[string]any{"value": []any{d}})
+		default:
+			t.Errorf("unexpected ARM path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	client.timeout = time.Second
+	cached := Snapshot{ResourceID: slow, Endpoint: "https://cached.openai.azure.com/openai/v1",
+		Deployments: []Deployment{{Name: "cached-image"}}, RefreshedAt: time.Now().Add(-time.Hour)}
+	previous := Snapshot{ResourceID: testResourceID, Accounts: []Snapshot{cached}}
+	snapshot, err := client.RefreshGroup(t.Context(), "", previous)
+	if err != nil || len(snapshot.Accounts) != 2 || len(snapshot.DiscoveryErrors) == 0 {
+		t.Fatalf("slow account starved discovery or its error was hidden: %+v, %v", snapshot, err)
+	}
+	if snapshot.Accounts[0].ResourceID != slow || snapshot.Accounts[0].RefreshedAt != cached.RefreshedAt ||
+		snapshot.Accounts[0].Deployments[0].Name != "cached-image" ||
+		snapshot.Accounts[1].ResourceID != healthy || len(snapshot.Accounts[1].Deployments) != 1 {
+		t.Fatalf("cached account or newly discovered healthy sibling was lost: %+v", snapshot)
+	}
+}
+
+func TestGroupDiscoveryConcurrencyIsBounded(t *testing.T) {
+	path := testResourceID[:strings.LastIndex(testResourceID, "/")]
+	started := make(chan struct{}, 8)
+	release := make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
+	var active, peak atomic.Int32
+	client, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == path:
+			accounts := make([]map[string]string, 0, 8)
+			for i := range 8 {
+				accounts = append(accounts, map[string]string{"id": testResourceID + "-" + strconv.Itoa(i), "kind": "OpenAI"})
+			}
+			writeJSON(t, w, map[string]any{"value": accounts})
+		case strings.HasSuffix(r.URL.Path, "/deployments"):
+			writeJSON(t, w, map[string]any{"value": []any{}})
+		default:
+			if r.URL.Path != testResourceID {
+				count := active.Add(1)
+				defer active.Add(-1)
+				for previous := peak.Load(); count > previous; previous = peak.Load() {
+					if peak.CompareAndSwap(previous, count) {
+						break
+					}
+				}
+				started <- struct{}{}
+				select {
+				case <-release:
+				case <-r.Context().Done():
+					return
+				}
+			}
+			writeJSON(t, w, map[string]any{"id": r.URL.Path,
+				"properties": map[string]any{"endpoint": "https://canonical.openai.azure.com/"}})
+		}
+	})
+	type result struct {
+		snapshot Snapshot
+		err      error
+	}
+	done := make(chan result, 1)
+	go func() {
+		snapshot, err := client.RefreshGroup(t.Context(), "", Snapshot{})
+		done <- result{snapshot, err}
+	}()
+	for range maxConcurrentAccountRefreshes {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("discovery did not start the bounded set of concurrent workers")
+		}
+	}
+	unblock()
+	select {
+	case got := <-done:
+		if got.err != nil || len(got.snapshot.Accounts) != 8 || peak.Load() != maxConcurrentAccountRefreshes {
+			t.Fatalf("unexpected worker bound or incomplete inventory: peak=%d snapshot=%+v err=%v", peak.Load(), got.snapshot, got.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("discovery did not join its workers")
 	}
 }

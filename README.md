@@ -11,13 +11,12 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.2.3.** Discover Foundry deployments across resources in the
-same resource group, enable them with per-operation checkboxes, and distribute
-requests round-robin across the selected targets. Resource-qualified identities
-distinguish duplicate deployment names, and compatible embedding replicas
-preserve the document index. Existing chat groups, resizable sidebar,
-conversation-wide copy/retry actions and reconnect-safe generation remain.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.2.3)
+**Current release: 1.2.4.** Foundry inventory refresh now retries transient
+request timeouts and discovers sibling accounts with bounded concurrency, so
+a slow resource does not block all healthy siblings. Existing multi-resource
+deployment pools, saved selections and cached inventories remain protected.
+This patch also clarifies partial-refresh warnings in English and German.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.2.4)
 and [upgrade checklist](#upgrading-to-120).
 
 **Website with the full screenshot gallery:**
@@ -194,7 +193,11 @@ If group listing is denied, the configured accounts and last successful
 inventories remain available, with an explicit Reader/access warning. A failing
 account is reported separately rather than erasing healthy accounts. Discovery
 uses bounded pagination, timeouts and same-scope validation; bearer credentials
-are never forwarded to arbitrary pagination hosts.
+are never forwarded to arbitrary pagination hosts. Sibling accounts are read
+with at most four concurrent discovery workers per group, so one slow account
+does not block all healthy siblings. Metadata GETs retry transient request
+timeouts and retryable HTTP responses up to three attempts within the existing
+45-second group deadline. These retries do not replay image generation or edits.
 
 With no separate image resource, it also reads
 `/openai/v1/models?api-version=preview` on the same inference endpoint for
@@ -807,15 +810,15 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.2.3` and `1.2` and also
+`stable`; version releases publish tags such as `1.2.4` and `1.2` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
 ### Upgrading to 1.2.0
 
 This checklist covers the migration introduced in 1.2.0 and applies when moving
-older installations to the 1.2 series. The current patch is **1.2.3**.
-When updating an existing 1.2.0, 1.2.1 or 1.2.2 installation, back up the data volume,
+older installations to the 1.2 series. The current patch is **1.2.4**.
+When updating an existing 1.2.x installation, back up the data volume,
 update the image and fully reload the browser. Group and generation-link
 migrations run automatically. No new environment variables are required.
 For multi-resource discovery, grant the app identity Reader on the configured
@@ -838,7 +841,7 @@ question association. See [Sending a previous question again](#sending-a-previou
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.2.3`, keeping the same persistent volume, ports and
+   `ghcr.io/daknoblo/ai-ui:1.2.4`, keeping the same persistent volume, ports and
    environment settings. The `1.2` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.

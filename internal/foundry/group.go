@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 )
+
+const maxConcurrentAccountRefreshes = 4
 
 // SameGroup accepts only Cognitive Services accounts inside the configured
 // subscription and resource group, never arbitrary IDs from ARM or disk.
@@ -42,12 +45,13 @@ func (c *Client) RefreshGroup(ctx context.Context, override string, previous Sna
 	ids, listErr := c.groupAccounts(ctx)
 	if listErr != nil {
 		root.DiscoveryErrors = append(root.DiscoveryErrors,
-			fmt.Sprintf("resource-group discovery requires Reader on the resource group; configured accounts remain available: %v", listErr))
+			fmt.Sprintf("resource-group discovery failed; configured and cached accounts remain available (listing requires Reader on the resource group): %v", listErr))
 		for _, account := range known {
 			root.Accounts = append(root.Accounts, account)
 		}
 	} else {
-		for index, id := range ids {
+		var clients []*Client
+		for _, id := range ids {
 			if strings.EqualFold(id, c.resourceID) {
 				continue
 			}
@@ -55,23 +59,40 @@ func (c *Client) RefreshGroup(ctx context.Context, override string, previous Sna
 			if cloneErr != nil {
 				return Snapshot{}, cloneErr
 			}
-			account, refreshErr := client.Refresh(ctx, "")
-			if refreshErr != nil {
-				root.DiscoveryErrors = append(root.DiscoveryErrors, fmt.Sprintf("%s: %v", id, refreshErr))
+			clients = append(clients, client)
+		}
+		results := make([]struct {
+			account Snapshot
+			err     error
+		}, len(clients))
+		jobs := make(chan int, len(clients))
+		for index := range clients {
+			jobs <- index
+		}
+		close(jobs)
+		var workers sync.WaitGroup
+		for range min(maxConcurrentAccountRefreshes, len(clients)) {
+			workers.Go(func() {
+				for index := range jobs {
+					if err := ctx.Err(); err != nil {
+						results[index].err = err
+						continue
+					}
+					results[index].account, results[index].err = clients[index].Refresh(ctx, "")
+				}
+			})
+		}
+		workers.Wait()
+		for index, result := range results {
+			if result.err != nil {
+				id := clients[index].resourceID
+				root.DiscoveryErrors = append(root.DiscoveryErrors, fmt.Sprintf("%s: %v", id, result.err))
 				if cached, ok := known[strings.ToLower(id)]; ok {
 					root.Accounts = append(root.Accounts, cached)
 				}
-				if ctx.Err() != nil {
-					for _, pending := range ids[index+1:] {
-						if cached, ok := known[strings.ToLower(pending)]; ok {
-							root.Accounts = append(root.Accounts, cached)
-						}
-					}
-					break
-				}
 				continue
 			}
-			root.Accounts = append(root.Accounts, account)
+			root.Accounts = append(root.Accounts, result.account)
 		}
 	}
 	if err := caller.Err(); err != nil {

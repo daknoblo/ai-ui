@@ -74,7 +74,7 @@ func newClient(resourceID string, credential azcore.TokenCredential) *Client {
 		resourceID: resourceID, credential: credential,
 		armEndpoint: "https://management.azure.com", timeout: discoveryTimeout,
 		httpClient: &http.Client{
-			Timeout: 20 * time.Second,
+			Timeout: 30 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
@@ -85,7 +85,7 @@ func newClient(resourceID string, credential azcore.TokenCredential) *Client {
 				MaxIdleConns:          10,
 				IdleConnTimeout:       90 * time.Second,
 				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 10 * time.Second,
+				ResponseHeaderTimeout: 20 * time.Second,
 				ExpectContinueTimeout: time.Second,
 			},
 		},
@@ -305,41 +305,51 @@ func (c *Client) getJSONWithScope(ctx context.Context, endpoint, action, scope s
 		// Never forward a bearer token through a redirect, even with an injected client.
 		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 		response, err := client.Do(req)
-		if err != nil {
-			return safeError(ctx, err, "azure "+action+" request")
-		}
-		if response.StatusCode != http.StatusOK {
-			err := responseError("azure "+action, response.StatusCode, response.Header)
+		var retryErr error
+		var retryHeaders http.Header
+		switch {
+		case err != nil:
+			retryErr = safeError(ctx, err, "azure "+action+" request")
+			var timeout net.Error
+			if ctx.Err() != nil || !errors.As(err, &timeout) || !timeout.Timeout() {
+				return retryErr
+			}
+		case response.StatusCode != http.StatusOK:
+			retryErr = responseError("azure "+action, response.StatusCode, response.Header)
+			retryHeaders = response.Header
 			// Error bodies may contain sensitive details; do not read or propagate them.
 			_ = response.Body.Close()
-			if !retryable(response.StatusCode) || attempt+1 >= maxAttempts {
+			if !retryable(response.StatusCode) {
+				return retryErr
+			}
+		default:
+			body, err := readResponse(ctx, response, *budget)
+			if err != nil {
 				return err
 			}
-			delay, allowed := retryDelay(response.Header, attempt, time.Now())
-			if deadline, ok := ctx.Deadline(); ok && delay >= time.Until(deadline) {
-				allowed = false
+			*budget -= int64(len(body))
+			if err := json.Unmarshal(body, target); err != nil {
+				return errors.New("azure " + action + " response is not valid JSON with the expected field types")
 			}
-			if !allowed {
-				return err
-			}
-			timer := time.NewTimer(delay)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return fmt.Errorf("azure %s retry interrupted: %w", action, ctx.Err())
-			case <-timer.C:
-			}
-			continue
+			return nil
 		}
-		body, err := readResponse(ctx, response, *budget)
-		if err != nil {
-			return err
+		if attempt+1 >= maxAttempts {
+			return retryErr
 		}
-		*budget -= int64(len(body))
-		if err := json.Unmarshal(body, target); err != nil {
-			return errors.New("azure " + action + " response is not valid JSON with the expected field types")
+		delay, allowed := retryDelay(retryHeaders, attempt, time.Now())
+		if deadline, ok := ctx.Deadline(); ok && delay >= time.Until(deadline) {
+			allowed = false
 		}
-		return nil
+		if !allowed {
+			return retryErr
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf("azure %s retry interrupted: %w", action, ctx.Err())
+		case <-timer.C:
+		}
 	}
 	return errors.New("azure " + action + " retry limit exceeded")
 }

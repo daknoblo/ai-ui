@@ -59,3 +59,42 @@ jobs:
 
       - name: Build (static, CGO-free)
         run: CGO_ENABLED=0 go build ./...
+
+  browser:
+    name: Browser regressions (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [en, de]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tools/screenshots/package-lock.json
+
+      - name: Install browser test tooling
+        working-directory: tools/screenshots
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Build the isolated demo
+        run: CGO_ENABLED=0 go build -o bin/ai-ui-demo ./cmd/demo
+
+      - name: Test desktop and mobile workflows
+        working-directory: tools/screenshots
+        run: node capture.mjs --bin=../../bin/ai-ui-demo --checks-only --langs=${{ matrix.language }}

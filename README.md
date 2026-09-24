@@ -918,6 +918,38 @@ CGO_ENABLED=0 go build ./...
 User interface strings live in [internal/i18n](internal/i18n/i18n.go). Every key
 must exist in all supported languages; a test enforces that.
 
+### Automated regression coverage
+
+CI runs the full Go race suite and the browser regression suite on **every**
+pull request and push to `main`, including dependency-only changes. The release
+workflow reuses that CI gate, so browser failures also block image publication.
+The browser matrix covers English and German on desktop and mobile using
+isolated, credential-free demo data.
+
+| Area | Automated coverage |
+| --- | --- |
+| Foundry discovery | Transient timeout retries, cancellation, bounded account concurrency, slow-account isolation and cached inventory retention |
+| Deployment pools | Resource-qualified identities, concurrent round-robin, frozen per-turn routes, checkbox persistence and explicit disablement |
+| Embeddings | Compatible replicas, vector-space validation, index provenance and atomic staged reindexing |
+| Images | Latest successful image across repeated edits, resource rotation, failures and retry; no automatic inference replay |
+| Conversation actions | Copy/retry throughout history, formatted clipboard and fallback/error paths, unchanged prior answers/drafts, model/token footer alignment |
+| Navigation | Chat groups, move/collapse actions, resizable sidebar persistence, keyboard controls, mobile layout and streaming scroll behavior |
+
+Run the browser checks without regenerating or deleting screenshots:
+
+```sh
+CGO_ENABLED=0 go build -o bin/ai-ui-demo ./cmd/demo
+cd tools/screenshots
+npm ci
+npx playwright install chromium
+node capture.mjs --bin=../../bin/ai-ui-demo --checks-only
+```
+
+Use `--langs=en` or `--langs=de` for a focused run. The default runs all 28
+check groups across both languages and layouts. Failures exit nonzero; demo
+processes and temporary databases are cleaned up. Actual Azure permissions,
+regional availability and paid inference are not exercised by these fixtures.
+
 ## Demo & documentation
 
 The repository contains a demo instance that needs neither an API key nor any

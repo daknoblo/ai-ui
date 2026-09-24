@@ -472,6 +472,58 @@ func TestRefreshTransportFailureIsSanitizedAndNotRetried(t *testing.T) {
 	}
 }
 
+type metadataTimeout struct{}
+
+func (metadataTimeout) Error() string   { return "credential-sentinel: response headers timed out" }
+func (metadataTimeout) Timeout() bool   { return true }
+func (metadataTimeout) Temporary() bool { return true }
+
+func TestRefreshRetriesRequestTimeoutsWithinDeadline(t *testing.T) {
+	for _, recover := range []bool{true, false} {
+		t.Run(strconv.FormatBool(recover), func(t *testing.T) {
+			var attempts atomic.Int32
+			client, _ := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == testResourceID {
+					writeAccount(t, w)
+					return
+				}
+				writeJSON(t, w, map[string]any{"value": []any{deploymentJSON("chat", "gpt-4o")}})
+			})
+			transport := client.httpClient.Transport
+			client.httpClient.Transport = fakeTransport(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path == testResourceID && (attempts.Add(1) == 1 || !recover) {
+					return nil, metadataTimeout{}
+				}
+				return transport.RoundTrip(req)
+			})
+			snapshot, err := client.Refresh(t.Context(), "")
+			if recover {
+				if err != nil || attempts.Load() != 2 || len(snapshot.Deployments) != 1 {
+					t.Fatalf("transient timeout was not recovered: attempts=%d snapshot=%+v err=%v", attempts.Load(), snapshot, err)
+				}
+			} else if err == nil || attempts.Load() != maxAttempts ||
+				!strings.Contains(err.Error(), "timed out") || strings.Contains(err.Error(), "credential-sentinel") {
+				t.Fatalf("persistent timeout was not bounded and sanitized: attempts=%d err=%v", attempts.Load(), err)
+			}
+		})
+	}
+}
+
+func TestRefreshRequestTimeoutRetryHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var attempts atomic.Int32
+	client := newClient(testResourceID, &fakeCredential{})
+	client.httpClient.Transport = fakeTransport(func(*http.Request) (*http.Response, error) {
+		attempts.Add(1)
+		cancel()
+		return nil, metadataTimeout{}
+	})
+	if _, err := client.Refresh(ctx, ""); !errors.Is(err, context.Canceled) || attempts.Load() != 1 {
+		t.Fatalf("canceled discovery retried a timeout: attempts=%d err=%v", attempts.Load(), err)
+	}
+}
+
 type credentialFunc func(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error)
 
 func (f credentialFunc) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {

@@ -5,6 +5,7 @@
 // generator (cmd/site) turns into the gallery.
 //
 //   node capture.mjs --bin=../../bin/ai-ui-demo --out=../../docs/screenshots
+//   node capture.mjs --bin=../../bin/ai-ui-demo --checks-only
 //
 // The Foundry demo needs no credentials: inventory, identity and inference all
 // use the local fixture in internal/demo.
@@ -35,6 +36,13 @@ const binary = resolve(args.bin ?? 'bin/ai-ui-demo');
 const port = Number(args.port ?? 8123);
 const base = `http://127.0.0.1:${port}`;
 const languages = String(args.langs ?? 'en,de').split(',');
+const checksOnly = args['checks-only'] === true;
+if (args['checks-only'] !== undefined && !checksOnly) {
+  throw new Error('Use --checks-only without a value');
+}
+if (languages.some(lang => !['en', 'de'].includes(lang))) {
+  throw new Error('Supported --langs values are en, de or en,de');
+}
 
 // By default the Chromium that `playwright install` downloaded is used. On
 // machines where that download is unavailable, --channel=chrome or
@@ -496,7 +504,7 @@ async function waitForDemo(proc) {
 }
 
 async function main() {
-  await rm(outDir, { recursive: true, force: true });
+  if (!checksOnly) await rm(outDir, { recursive: true, force: true });
   const manifest = [];
 
   for (const lang of languages) {
@@ -558,6 +566,7 @@ async function main() {
             await imageContext.close();
           }
         }
+        if (checksOnly) continue;
         await mkdir(join(outDir, lang), { recursive: true });
         for (const shot of SHOTS.filter((s) => s.langs.includes(lang))) {
           const context = await browser.newContext({
@@ -603,8 +612,12 @@ async function main() {
     }
   }
 
-  await writeFile(join(outDir, 'manifest.json'), `${JSON.stringify({ shots: manifest }, null, 2)}\n`);
-  process.stdout.write(`wrote ${manifest.length} screenshots to ${outDir}\n`);
+  if (checksOnly) {
+    process.stdout.write(`browser regression checks passed for ${languages.join(', ')} (desktop/mobile); screenshots unchanged\n`);
+  } else {
+    await writeFile(join(outDir, 'manifest.json'), `${JSON.stringify({ shots: manifest }, null, 2)}\n`);
+    process.stdout.write(`wrote ${manifest.length} screenshots to ${outDir}\n`);
+  }
 }
 
 await main();

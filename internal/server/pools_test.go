@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -14,6 +15,78 @@ import (
 
 	"github.com/daknoblo/ai-ui/internal/foundry"
 )
+
+func TestPartialPoolRefreshPersistsWarningsWithoutChangingSelections(t *testing.T) {
+	for _, language := range []string{"en", "de"} {
+		for _, imageWarning := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/images=%t", language, imageWarning), func(t *testing.T) {
+				s, handler, primary, images, primaryCalls, imageCalls := separateImageTestServer(t)
+				root := &primary.snapshot
+				op, name := foundry.Chat, "chat-prod"
+				if imageWarning {
+					root = &images.snapshot
+					op, name = foundry.Images, "gpt-image-2"
+				}
+				replica := *root
+				replica.ResourceID += "-poland"
+				replica.Location = "polandcentral"
+				root.Accounts = []foundry.Snapshot{replica}
+				if err := s.refreshFoundry(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				deployment, ok := root.Find(name)
+				if !ok {
+					t.Fatal("missing fixture deployment")
+				}
+				cfg := s.cfg.Get()
+				cfg.Language = language
+				cfg.EnabledDeployments = map[foundry.Operation][]string{
+					op: {root.Key(deployment), replica.Key(deployment)},
+				}
+				if err := s.cfg.Save(cfg); err != nil {
+					t.Fatal(err)
+				}
+				before := s.cfg.Get().EnabledDeployments
+				warning := replica.ResourceID + ": azure ARM account discovery request timed out"
+				root.DiscoveryErrors = []string{warning}
+				fresh := replica
+				fresh.ResourceID += "-new"
+				root.Accounts = append(root.Accounts, fresh)
+				response := postFoundryForm(handler, "/config/deployments/refresh", nil)
+				if response.Code != http.StatusOK ||
+					!strings.Contains(response.Body.String(), s.t("foundry.partial_refresh", warning)) {
+					t.Fatalf("partial warning missing from refresh response: %d %s", response.Code, response.Body.String())
+				}
+				cached, known, err := s.store.LoadCatalog(t.Context(), root.ResourceID)
+				if err != nil || !known || len(cached.Accounts) != 2 ||
+					!slices.Equal(cached.DiscoveryErrors, []string{warning}) ||
+					!cached.Accounts[0].RefreshedAt.Equal(replica.RefreshedAt) {
+					t.Fatalf("partial inventory was not persisted with its cached account and warning: %+v, %v", cached, err)
+				}
+				if _, err := s.cfg.Load(); err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(before, s.cfg.Get().EnabledDeployments) {
+					t.Fatal("partial refresh changed saved selections or enabled a newly discovered target")
+				}
+				root.DiscoveryErrors = nil
+				response = postFoundryForm(handler, "/config/deployments/refresh", nil)
+				if !strings.Contains(response.Body.String(), s.t("foundry.refreshed")) ||
+					strings.Contains(response.Body.String(), warning) {
+					t.Fatal("successful refresh did not clear the partial-discovery warning")
+				}
+				cached, known, err = s.store.LoadCatalog(t.Context(), root.ResourceID)
+				if err != nil || !known || len(cached.DiscoveryErrors) != 0 ||
+					!reflect.DeepEqual(before, s.cfg.Get().EnabledDeployments) {
+					t.Fatal("recovery did not persist a clean inventory with unchanged selections")
+				}
+				if primaryCalls.Load() != 0 || imageCalls.Load() != 0 {
+					t.Fatal("inventory refresh unexpectedly invoked inference")
+				}
+			})
+		}
+	}
+}
 
 func TestPooledDurableImageTurnsAlwaysEditLatestSuccessfulImage(t *testing.T) {
 	var sequence atomic.Int64

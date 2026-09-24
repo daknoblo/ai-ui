@@ -57,14 +57,25 @@ export async function verifyDeploymentPools(page, base, index) {
   if (await page.locator('input[name="enabled_embeddings"][value$="/docs-next"]:checked').count()) {
     throw new Error('Incompatible vector-space selection was saved');
   }
-  for (const input of await page.locator('input[name="enabled_images"]').all()) await input.uncheck();
-  await submit('/config', '.config-form button[type="submit"]');
-  await submit('/config/deployments/refresh', '[hx-post="/config/deployments/refresh"]');
-  if (await page.locator('input[name="enabled_images"]:checked').count()) {
-    throw new Error('Refresh silently repopulated an explicitly empty image pool');
+  for (const op of names) {
+    for (const input of await page.locator(`input[name="enabled_${op}"]`).all()) await input.uncheck();
+    await submit('/config', '.config-form button[type="submit"]');
+    if (await page.locator('.config-notice-err').count()) throw new Error(`Disabling ${op} was rejected`);
+    await submit('/config/deployments/refresh', '[hx-post="/config/deployments/refresh"]');
+    await open();
+    if (await page.locator(`input[name="enabled_${op}"]:checked`).count()) {
+      throw new Error(`Refresh or reload silently repopulated an explicitly empty ${op} pool`);
+    }
+    for (const other of names.filter(name => name !== op)) {
+      const checked = await page.locator(`input[name="enabled_${other}"]:checked`).evaluateAll(items => items.map(item => item.value));
+      if (checked.length !== selected[other].length || selected[other].some(id => !checked.includes(id))) {
+        throw new Error(`Disabling ${op} changed the independent ${other} pool`);
+      }
+    }
+    for (const id of selected[op]) await page.locator(`input[name="enabled_${op}"][value="${id}"]`).check();
+    await submit('/config', '.config-form button[type="submit"]');
+    if (await page.locator('.config-notice-err').count()) throw new Error(`Restoring ${op} was rejected`);
   }
-  for (const id of selected.images) await page.locator(`input[name="enabled_images"][value="${id}"]`).check();
-  await submit('/config', '.config-form button[type="submit"]');
   const overflow = await page.locator('.modal').evaluate(element => element.scrollWidth > element.clientWidth + 2);
   if (overflow) throw new Error('Deployment pool controls overflow on this viewport');
 }

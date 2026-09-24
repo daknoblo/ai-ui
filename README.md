@@ -11,13 +11,14 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.2.4.** Foundry inventory refresh now retries transient
-request timeouts and discovers sibling accounts with bounded concurrency, so
-a slow resource does not block all healthy siblings. Existing multi-resource
-deployment pools, saved selections and cached inventories remain protected.
-This patch also clarifies partial-refresh warnings in English and German.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.2.4)
-and [upgrade checklist](#upgrading-to-120).
+**Current release: 1.3.0.** This release consolidates multi-resource Foundry
+deployment pools, resilient inventory refresh, compatible embedding replicas
+and the conversation UI improvements from the 1.2 series. Documentation,
+demo screenshots, the Pages website and multi-architecture container images
+are regenerated and validated for this release. No additional application
+behavior or data migration is introduced compared with 1.2.4.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.3.0)
+and [upgrade checklist](#upgrading-to-130).
 
 **Website with the full screenshot gallery:**
 <https://daknoblo.github.io/ai-ui/>
@@ -810,17 +811,23 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.2.4` and `1.2` and also
+`stable`; version releases publish tags such as `1.3.0` and `1.3` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
-### Upgrading to 1.2.0
+### Upgrading to 1.3.0
 
-This checklist covers the migration introduced in 1.2.0 and applies when moving
-older installations to the 1.2 series. The current patch is **1.2.4**.
+Version **1.3.0** is a consolidated release with regenerated documentation and
+build artifacts. Upgrading from **1.2.4** requires no new environment variables,
+permissions, data migration or embedding reindex. Existing chats, documents,
+configuration and deployment selections are retained.
+
 When updating an existing 1.2.x installation, back up the data volume,
-update the image and fully reload the browser. Group and generation-link
-migrations run automatically. No new environment variables are required.
+update the image and fully reload the browser. For older installations, the
+group and generation-link migrations introduced in the 1.2 series run
+automatically. The compatibility notes below also apply to those upgrades.
+The `1.2` image tag stays on the 1.2 release series; switch explicitly to
+`1.3.0` or `1.3` to follow the new series.
 For multi-resource discovery, grant the app identity Reader on the configured
 resource groups while keeping inference permissions scoped to the intended
 accounts. Refresh deployments, explicitly enable the desired targets and save
@@ -841,8 +848,8 @@ question association. See [Sending a previous question again](#sending-a-previou
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.2.4`, keeping the same persistent volume, ports and
-   environment settings. The `1.2` tag follows releases in this minor series;
+   `ghcr.io/daknoblo/ai-ui:1.3.0`, keeping the same persistent volume, ports and
+   environment settings. The `1.3` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.
    With the service name from the example:

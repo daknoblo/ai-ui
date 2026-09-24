@@ -75,6 +75,7 @@ func imageDeployment(cfg config.Config, override string) string {
 
 // ImageResult is a generated image including its token usage.
 type ImageResult struct {
+	Model string
 	Data  []byte
 	MIME  string
 	Usage Usage
@@ -107,6 +108,13 @@ type imageResponse struct {
 
 // GenerateImage renders a prompt into a single image.
 func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOptions) (ImageResult, error) {
+	if c.store.ImageFoundryStatus().Enabled {
+		bound, deployment, err := c.route(foundry.Images, opts.Deployment)
+		if err != nil {
+			return ImageResult{}, err
+		}
+		c, opts.Deployment = bound, deployment.Name
+	}
 	cfg := c.store.Get()
 	endpoint := cfg.ImageHost()
 	deployment := imageDeployment(cfg, opts.Deployment)
@@ -161,6 +169,13 @@ type ImageSource struct {
 
 // EditImage changes an existing image according to the prompt.
 func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, opts ImageOptions) (ImageResult, error) {
+	if c.store.ImageFoundryStatus().Enabled {
+		bound, deployment, err := c.route(foundry.ImageEdits, opts.Deployment)
+		if err != nil {
+			return ImageResult{}, err
+		}
+		c, opts.Deployment = bound, deployment.Name
+	}
 	cfg := c.store.Get()
 	endpoint := cfg.ImageHost()
 	deployment := imageDeployment(cfg, opts.Deployment)
@@ -232,6 +247,13 @@ func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, 
 // VerifyImage checks for the expected missing-prompt validation response without
 // generating an image. This does not prove generation permission or model access.
 func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
+	if c.store.ImageFoundryStatus().Enabled {
+		bound, selected, err := c.route(foundry.Images, deployment)
+		if err != nil {
+			return err
+		}
+		c, deployment = bound, selected.Name
+	}
 	cfg := c.store.Get()
 	endpoint := cfg.ImageHost()
 	deployment = imageDeployment(cfg, deployment)
@@ -355,7 +377,7 @@ func (c *Client) sendImageRequest(req *http.Request, url, deployment, format str
 		c.recorder.RecordUsage("image", deployment, usage)
 	}
 
-	return ImageResult{Data: raw, MIME: imageMIME(format), Usage: usage}, nil
+	return ImageResult{Data: raw, MIME: imageMIME(format), Usage: usage, Model: deployment}, nil
 }
 
 // optionValue drops empty and "auto" values so the service default applies.

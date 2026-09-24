@@ -106,7 +106,7 @@
       "width": 1440,
       "height": 900,
       "title": "Foundry deployment inventory",
-      "caption": "Refresh reads metadata for the configured resources. Canonical models and capabilities explain which deployment aliases are usable; the local demo needs no credentials."
+      "caption": "Refresh reads metadata for accounts in the configured resource groups. Canonical models and capabilities explain which deployment aliases are usable; the local demo needs no credentials."
     },
     {
       "id": "image-resource",
@@ -115,7 +115,7 @@
       "width": 1440,
       "height": 900,
       "title": "A separate resource for image models",
-      "caption": "AZURE_IMAGE_RESOURCE_ID selects a separate ARM deployment inventory and endpoint using the same identity. Chat and embeddings remain on the primary resource."
+      "caption": "AZURE_IMAGE_RESOURCE_ID anchors existing image selections using the same identity. Additional accounts in its group are discovered without changing existing chat or embedding selections."
     },
     {
       "id": "model-defaults",
@@ -123,8 +123,8 @@
       "file": "en/model-defaults.png",
       "width": 1440,
       "height": 900,
-      "title": "Defaults for each operation",
-      "caption": "Chat, embedding, image and vision defaults use supported inventory entries. The active embedding profile and completed local rebuild are shown below."
+      "title": "Enabled providers for each operation",
+      "caption": "Chat, embeddings, images, image edits and vision each have a checkbox pool. Saved providers rotate cyclically; newly discovered endpoints remain disabled."
     },
     {
       "id": "embedding-reindex",
@@ -134,6 +134,15 @@
       "height": 900,
       "title": "Embedding changes require consent",
       "caption": "Saving a new embedding default does not relabel the old vectors. The staged rebuild requires explicit consent after showing corpus counts and an API cost warning."
+    },
+    {
+      "id": "deployment-pools",
+      "lang": "en",
+      "file": "en/deployment-pools.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Cycle between enabled resources",
+      "caption": "Enable multiple deployments per operation with checkboxes. Region, resource and model identify each endpoint; compatible embedding replicas share one vector space."
     },
     {
       "id": "stats",
@@ -241,7 +250,7 @@
       "width": 1440,
       "height": 900,
       "title": "Foundry-Deployment-Inventar",
-      "caption": "Aktualisieren liest Metadaten der eingestellten Ressourcen. Kanonische Modelle und Fähigkeiten zeigen, welche Deployment-Aliase nutzbar sind; die lokale Demo braucht keine Zugangsdaten."
+      "caption": "Aktualisieren liest Konten in den eingestellten Ressourcengruppen. Kanonische Modelle und Fähigkeiten zeigen, welche Deployment-Aliase nutzbar sind; die lokale Demo braucht keine Zugangsdaten."
     },
     {
       "id": "image-resource",
@@ -250,7 +259,7 @@
       "width": 1440,
       "height": 900,
       "title": "Eine getrennte Ressource für Bildmodelle",
-      "caption": "AZURE_IMAGE_RESOURCE_ID wählt ein eigenes ARM-Deployment-Inventar samt Endpoint mit derselben Identität. Chat und Embeddings bleiben auf der Hauptressource."
+      "caption": "AZURE_IMAGE_RESOURCE_ID verankert bestehende Bildauswahlen mit derselben Identität. Weitere Konten der Gruppe werden gefunden, ohne bestehende Chat- oder Embedding-Auswahlen zu ändern."
     },
     {
       "id": "model-defaults",
@@ -258,8 +267,8 @@
       "file": "de/model-defaults.png",
       "width": 1440,
       "height": 900,
-      "title": "Standard-Deployments je Aufgabe",
-      "caption": "Chat, Embeddings, Bilder und Vision verwenden unterstützte Inventar-Einträge. Darunter stehen das aktive Embedding-Profil und der abgeschlossene lokale Neuaufbau."
+      "title": "Aktive Anbieter je Aufgabe",
+      "caption": "Chat, Embeddings, Bilder, Bildbearbeitung und Vision haben eigene Checkbox-Listen. Gespeicherte Anbieter wechseln reihum; neu gefundene Endpoints bleiben deaktiviert."
     },
     {
       "id": "embedding-reindex",
@@ -269,6 +278,15 @@
       "height": 900,
       "title": "Embedding-Wechsel mit Bestätigung",
       "caption": "Ein neuer Embedding-Standard ändert bestehende Vektoren nicht. Der getrennte Neuaufbau erfordert eine Bestätigung mit Dokumentanzahl und Hinweis auf API-Kosten."
+    },
+    {
+      "id": "deployment-pools",
+      "lang": "de",
+      "file": "de/deployment-pools.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Aktive Ressourcen reihum nutzen",
+      "caption": "Checkboxen aktivieren mehrere Deployments je Vorgang. Region, Ressource und Modell kennzeichnen den Endpoint; kompatible Embedding-Replikate teilen einen Vektorraum."
     },
     {
       "id": "stats",

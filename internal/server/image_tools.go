@@ -42,7 +42,7 @@ func (s *Server) executeImageTool(ctx context.Context, sse *generationStream, ch
 	if args.Prompt == "" || len(args.Prompt) > 32<<10 {
 		return fmt.Errorf("image tool prompt is empty or exceeds the size limit")
 	}
-	if !s.cfg.ImagesConfigured() {
+	if (!args.Edit && !s.cfg.ImagesConfigured()) || (args.Edit && !s.cfg.ImageEditsConfigured()) {
 		return fmt.Errorf("no image model configured")
 	}
 	// The image API, not this chat model, handles the user's generation/edit request.

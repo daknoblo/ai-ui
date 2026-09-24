@@ -15,6 +15,14 @@ func (c *Client) VisionDeployment(chosen string) (string, bool) {
 	if !cfg.Foundry {
 		return VisionModel(chosen, cfg.ChatModels)
 	}
+	if cfg.EnabledDeployments != nil && chosen == "" {
+		for _, id := range c.store.EnabledPools()[foundry.Vision] {
+			if _, err := c.store.ResolveDeployment(foundry.Vision, id); err == nil {
+				return id, true
+			}
+		}
+		return "", false
+	}
 	if chosen == "" {
 		chosen = cfg.ChatDeployment
 	}
@@ -31,6 +39,19 @@ func (c *Client) VisionDeployment(chosen string) (string, bool) {
 
 func (c *Client) ConfiguredEmbeddingProfile() (storage.EmbeddingProfile, error) {
 	cfg := c.store.Get()
+	pooled := cfg.Foundry && cfg.EnabledDeployments != nil
+	if cfg.Foundry {
+		// Inspect the first enabled target without consuming a round-robin turn.
+		pin := cfg.EmbeddingDeployment
+		if pin == "" {
+			return storage.EmbeddingProfile{}, fmt.Errorf("no embedding deployment configured")
+		}
+		bound, _, err := c.route(foundry.Embeddings, pin)
+		if err != nil {
+			return storage.EmbeddingProfile{}, err
+		}
+		c, cfg = bound, bound.store.Get()
+	}
 	if cfg.EmbeddingDeployment == "" || cfg.EmbeddingHost() == "" {
 		return storage.EmbeddingProfile{}, fmt.Errorf("no embedding deployment configured")
 	}
@@ -52,6 +73,13 @@ func (c *Client) ConfiguredEmbeddingProfile() (storage.EmbeddingProfile, error) 
 		profile.ResourceID = strings.ToLower(c.store.FoundryStatus().ResourceID)
 		profile.ModelName = deployment.ModelName
 		profile.ModelVersion = deployment.ModelVersion
+		if pooled {
+			model, dimensions := deployment.EmbeddingSpace()
+			if model != "" {
+				profile.ModelName, profile.Dimensions = model, dimensions
+				profile.VectorSpace = profile.ReplicaSpace()
+			}
+		}
 	}
 	return profile, nil
 }
@@ -70,17 +98,31 @@ func (c *Client) EmbedProfile(ctx context.Context, profile storage.EmbeddingProf
 		return nil, fmt.Errorf("embedding authentication mode changed; rebuild the document index")
 	}
 	if profile.ResourceID != "" {
-		if !strings.EqualFold(profile.ResourceID, c.store.FoundryStatus().ResourceID) {
-			return nil, fmt.Errorf("embedding index belongs to a different Azure resource")
-		} else {
-			deployment, err := c.store.ResolveDeployment(foundry.Embeddings, profile.Deployment)
-			if err != nil {
-				return nil, err
-			}
-			if deployment.ModelName != profile.ModelName || deployment.ModelVersion != profile.ModelVersion {
-				return nil, fmt.Errorf("embedding deployment changed; rebuild the document index")
-			}
+		boundStore, selected, routeErr := c.store.SelectEmbeddingRoute(profile.ResourceID,
+			profile.Deployment, profile.ModelName, profile.ModelVersion, profile.Dimensions)
+		if routeErr != nil {
+			return nil, routeErr
 		}
+		selectedProfile := profile
+		selectedProfile.ResourceID = boundStore.FoundryStatus().ResourceID
+		selectedProfile.Endpoint = boundStore.Get().EmbeddingHost()
+		selectedProfile.Deployment = selected.Name
+		selectedProfile.ModelName = selected.ModelName
+		selectedProfile.ModelVersion = selected.ModelVersion
+		if !selected.EmbeddingModelMatches(profile.ModelName, profile.ModelVersion) {
+			return nil, fmt.Errorf("embedding deployment changed; rebuild the document index")
+		}
+		// Same-source legacy profiles must keep their original endpoint too.
+		if strings.EqualFold(selectedProfile.ResourceID, profile.ResourceID) &&
+			selectedProfile.Deployment == profile.Deployment && selectedProfile.Endpoint != endpoint {
+			return nil, fmt.Errorf("embedding endpoint changed; rebuild the document index")
+		}
+		bound := *c
+		bound.store = boundStore
+		c = &bound
+		cfg = boundStore.Get()
+		profile = selectedProfile
+		endpoint = selectedProfile.Endpoint
 	}
 	cfg.EmbeddingEndpoint = endpoint
 	cfg.EmbeddingDeployment = profile.Deployment

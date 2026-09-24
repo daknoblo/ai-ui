@@ -18,6 +18,7 @@ var (
 // EmbeddingProfile identifies the model that produced an index's vectors.
 // Dimensions is zero until an embedding response establishes the vector size.
 type EmbeddingProfile struct {
+	VectorSpace  string `json:"vector_space,omitempty"`
 	ResourceID   string `json:"resource_id"`
 	Endpoint     string `json:"endpoint"`
 	Deployment   string `json:"deployment"`
@@ -27,15 +28,29 @@ type EmbeddingProfile struct {
 	Dimensions   int    `json:"dimensions"`
 }
 
-// SameIdentity deliberately does not compare dimensions: different models can
-// produce equally sized vectors that cannot be compared to one another.
+// SameIdentity preserves legacy endpoint-bound identity. Opted-in replicas
+// additionally require an identical known model, version and vector size.
 func (p EmbeddingProfile) SameIdentity(other EmbeddingProfile) bool {
+	if p.VectorSpace != "" || other.VectorSpace != "" {
+		if p.ReplicaSpace() != "" && p.ReplicaSpace() == other.ReplicaSpace() {
+			return true
+		}
+	}
 	return strings.EqualFold(strings.TrimRight(p.ResourceID, "/"), strings.TrimRight(other.ResourceID, "/")) &&
 		strings.TrimRight(p.Endpoint, "/") == strings.TrimRight(other.Endpoint, "/") &&
 		p.Deployment == other.Deployment &&
 		p.ModelName == other.ModelName &&
 		p.ModelVersion == other.ModelVersion &&
 		p.APIVersion == other.APIVersion
+}
+
+// ReplicaSpace never grants authorization. The inference layer separately
+// validates the destination against the live environment-backed inventory.
+func (p EmbeddingProfile) ReplicaSpace() string {
+	if p.ResourceID == "" || p.ModelName == "" || p.ModelVersion == "" || p.Dimensions <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s@%s:%d", strings.ToLower(strings.TrimSpace(p.ModelName)), p.ModelVersion, p.Dimensions)
 }
 
 // ActiveEmbeddingProfile reads the persisted profile without inferring the

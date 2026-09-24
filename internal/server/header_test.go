@@ -56,7 +56,7 @@ func TestChatHeaderHasNoModelSelector(t *testing.T) {
 			}
 			settings := httptest.NewRecorder()
 			handler.ServeHTTP(settings, httptest.NewRequest(http.MethodGet, "/config", nil))
-			for _, field := range []string{`name="chat_deployment"`, `name="image_deployment"`} {
+			for _, field := range []string{`name="enabled_chat"`, `name="enabled_images"`} {
 				if !strings.Contains(settings.Body.String(), field) {
 					t.Errorf("settings model selection was removed: %s", field)
 				}

@@ -56,6 +56,9 @@ func (c *Client) Transcribe(ctx context.Context, prompt string, pageLabel func(p
 	}
 
 	opts := ChatOptions{Model: model}
+	if cfg.Foundry && cfg.EnabledDeployments != nil {
+		opts.Model = ""
+	}
 	var (
 		sb          strings.Builder
 		lastErr     error

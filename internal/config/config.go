@@ -18,34 +18,35 @@ import (
 // deliberately NOT stored here; they are read at runtime from environment
 // variables only.
 type Config struct {
-	Language              string   `json:"language"`        // UI language: "en" or "de"
-	Endpoint              string   `json:"endpoint"`        // chat, e.g. https://my-router.openai.azure.com
-	ChatDeployment        string   `json:"chat_deployment"` // deployment name of the chat model (or router)
-	ChatModel             string   `json:"chat_model"`      // optional; pins a model instead of letting the router choose
-	ChatModels            []string `json:"-"`               // deployment inventory from AZURE_MODELS in manual mode
-	Foundry               bool     `json:"-"`
-	VisionDeployment      string   `json:"vision_deployment,omitempty"`
-	APIVersion            string   `json:"api_version"`           // e.g. 2024-08-01-preview
-	EmbeddingEndpoint     string   `json:"embedding_endpoint"`    // optional; falls back to Endpoint
-	EmbeddingDeployment   string   `json:"embedding_deployment"`  // deployment name of the embedding model
-	EmbeddingAPIVersion   string   `json:"embedding_api_version"` // optional; falls back to APIVersion
-	ImageEndpoint         string   `json:"image_endpoint"`        // optional; falls back to Endpoint unless images use another resource
-	ImageDeployment       string   `json:"image_deployment"`      // deployment name of the image model
-	ImageModels           []string `json:"-"`                     // selectable image deployments; comes from AZURE_IMAGE_MODELS
-	ImageEditModels       []string `json:"-"`
-	SeparateImageResource bool     `json:"-"`
-	ImageAPIVersion       string   `json:"image_api_version"`  // optional; falls back to APIVersion
-	ImageSize             string   `json:"image_size"`         // e.g. 1024x1024 or "auto"
-	ImageQuality          string   `json:"image_quality"`      // low | medium | high | auto
-	ImageFormat           string   `json:"image_format"`       // png | jpeg | webp
-	SearchProvider        string   `json:"search_provider"`    // "", "tavily", "brave", "searxng"
-	SearchEndpoint        string   `json:"search_endpoint"`    // base URL of the SearXNG instance
-	SearchMaxResults      int      `json:"search_max_results"` // number of results (default 5)
-	SearchAuto            bool     `json:"search_auto"`        // allow the model to trigger a web search via tool calling
-	SystemPrompt          string   `json:"system_prompt"`      // empty means "use the localized default"
-	LogLevel              string   `json:"log_level"`          // debug | info | warn | error
-	Temperature           float64  `json:"temperature"`
-	ReasoningEffort       string   `json:"reasoning_effort"` // "auto" leaves the decision to the model
+	EnabledDeployments    map[foundry.Operation][]string `json:"enabled_deployments"`
+	Language              string                         `json:"language"`        // UI language: "en" or "de"
+	Endpoint              string                         `json:"endpoint"`        // chat, e.g. https://my-router.openai.azure.com
+	ChatDeployment        string                         `json:"chat_deployment"` // deployment name of the chat model (or router)
+	ChatModel             string                         `json:"chat_model"`      // optional; pins a model instead of letting the router choose
+	ChatModels            []string                       `json:"-"`               // deployment inventory from AZURE_MODELS in manual mode
+	Foundry               bool                           `json:"-"`
+	VisionDeployment      string                         `json:"vision_deployment,omitempty"`
+	APIVersion            string                         `json:"api_version"`           // e.g. 2024-08-01-preview
+	EmbeddingEndpoint     string                         `json:"embedding_endpoint"`    // optional; falls back to Endpoint
+	EmbeddingDeployment   string                         `json:"embedding_deployment"`  // deployment name of the embedding model
+	EmbeddingAPIVersion   string                         `json:"embedding_api_version"` // optional; falls back to APIVersion
+	ImageEndpoint         string                         `json:"image_endpoint"`        // optional; falls back to Endpoint unless images use another resource
+	ImageDeployment       string                         `json:"image_deployment"`      // deployment name of the image model
+	ImageModels           []string                       `json:"-"`                     // selectable image deployments; comes from AZURE_IMAGE_MODELS
+	ImageEditModels       []string                       `json:"-"`
+	SeparateImageResource bool                           `json:"-"`
+	ImageAPIVersion       string                         `json:"image_api_version"`  // optional; falls back to APIVersion
+	ImageSize             string                         `json:"image_size"`         // e.g. 1024x1024 or "auto"
+	ImageQuality          string                         `json:"image_quality"`      // low | medium | high | auto
+	ImageFormat           string                         `json:"image_format"`       // png | jpeg | webp
+	SearchProvider        string                         `json:"search_provider"`    // "", "tavily", "brave", "searxng"
+	SearchEndpoint        string                         `json:"search_endpoint"`    // base URL of the SearXNG instance
+	SearchMaxResults      int                            `json:"search_max_results"` // number of results (default 5)
+	SearchAuto            bool                           `json:"search_auto"`        // allow the model to trigger a web search via tool calling
+	SystemPrompt          string                         `json:"system_prompt"`      // empty means "use the localized default"
+	LogLevel              string                         `json:"log_level"`          // debug | info | warn | error
+	Temperature           float64                        `json:"temperature"`
+	ReasoningEffort       string                         `json:"reasoning_effort"` // "auto" leaves the decision to the model
 }
 
 // EmbeddingVersion returns the API version to use for embeddings. When no
@@ -247,6 +248,7 @@ type Store struct {
 	imageDiscoveryError string
 	imageCatalog        foundry.Snapshot
 	embeddingEndpoints  map[string]struct{}
+	cycles              map[foundry.Operation]uint64
 }
 
 // Keys bundles the secrets read from the environment. Empty dedicated keys fall
@@ -333,6 +335,30 @@ func (s *Store) Save(cfg Config) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	cfg = cloneConfig(cfg)
+	if err := s.validatePoolsLocked(cfg); err != nil {
+		return err
+	}
+	for op, ids := range cfg.EnabledDeployments {
+		if s.poolLockedByEnv(op) {
+			cfg.EnabledDeployments[op] = slices.Clone(s.cur.EnabledDeployments[op])
+			continue
+		}
+		unique := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if s.resourceID != "" {
+				target, err := s.targetLocked(op, id)
+				if err != nil {
+					return err
+				}
+				id = target.Key
+			}
+			if !slices.Contains(unique, id) {
+				unique = append(unique, id)
+			}
+		}
+		cfg.EnabledDeployments[op] = unique
+	}
 	cfg.Language = i18n.Normalize(cfg.Language)
 	s.keepLockedLocked(&cfg)
 	if err := s.writeLocked(cfg); err != nil {
@@ -394,7 +420,12 @@ func (s *Store) SetChatModel(model string) error {
 
 	if model != "" {
 		if !slices.Contains(s.effectiveLocked().ChatModels, model) {
-			return fmt.Errorf("unknown model: %s", model)
+			if s.resourceID == "" {
+				return fmt.Errorf("unknown model: %s", model)
+			}
+			if _, err := s.targetLocked(foundry.Chat, model); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -468,7 +499,27 @@ func (s *Store) ImagesConfigured() bool {
 	return true
 }
 
-// SearchAPIKey returns the web search API key loaded from the environment.
+// ImageEditsConfigured permits an edit-only pool without enabling generation.
+func (s *Store) ImageEditsConfigured() bool {
+	s.mu.RLock()
+	cfg := s.effectiveLocked()
+	if cfg.Foundry && cfg.EnabledDeployments != nil {
+		enabled := len(s.availablePoolLocked(foundry.ImageEdits)) > 0
+		s.mu.RUnlock()
+		return enabled
+	}
+	s.mu.RUnlock()
+	if !s.ImagesConfigured() {
+		return false
+	}
+	if cfg.Foundry {
+		_, err := s.ResolveDeployment(foundry.ImageEdits, cfg.ImageDeployment)
+		return err == nil
+	}
+	return true
+}
+
+// SearchAPIKey returns the secret loaded from the environment.
 func (s *Store) SearchAPIKey() string {
 	return s.searchAPIKey
 }

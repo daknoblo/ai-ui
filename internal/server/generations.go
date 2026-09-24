@@ -125,7 +125,7 @@ func (s *Server) submitGeneration(ctx context.Context, chat storage.Chat, messag
 	if err := s.store.InterruptExpiredGenerations(ctx, time.Now()); err != nil {
 		return storage.Generation{}, err
 	}
-	if opts.ImageOptions.Deployment != "" {
+	if opts.ImageOptions.Deployment != "" || s.cfg.ImagesConfigured() || s.cfg.ImageEditsConfigured() {
 		image, err := s.store.LatestImage(ctx, chat.ID)
 		if err != nil && !errors.Is(err, storage.ErrNotFound) {
 			return storage.Generation{}, err

@@ -1114,3 +1114,23 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
 	.sidebar { transition: none; }
 }
+.deployment-pool {
+	min-width: 0;
+	margin: 0;
+	padding: 12px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+}
+.config-form .deployment-choice {
+	flex-direction: row;
+	gap: 8px;
+	margin-block: 8px;
+	align-items: flex-start;
+}
+.deployment-choice span {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.deployment-choice input {
+	flex-shrink: 0;
+}

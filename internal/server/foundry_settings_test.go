@@ -21,7 +21,7 @@ func TestFoundryAPICatalogRestoresImageSelection(t *testing.T) {
 	if response.Code != http.StatusOK || !exists || model.Source != foundry.ModelsAPISource || calls.Load() != 0 {
 		t.Fatal("API-listed image model was not added by metadata-only discovery")
 	}
-	if !strings.Contains(response.Body.String(), `<option value="gpt-image-2"`) ||
+	if !strings.Contains(response.Body.String(), `/deployments/gpt-image-2"`) ||
 		!strings.Contains(response.Body.String(), "Models API") {
 		t.Fatal("API image choice or its origin was not shown")
 	}

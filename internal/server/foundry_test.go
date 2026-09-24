@@ -127,7 +127,7 @@ func TestFoundryRefreshIsMetadataOnly(t *testing.T) {
 			if rec.Code != http.StatusOK || source.refreshes != 1 || calls.Load() != 0 {
 				t.Fatalf("refresh status=%d metadata=%d inference=%d", rec.Code, source.refreshes, calls.Load())
 			}
-			for _, expected := range []string{"chat-prod", "gpt-4o", "vectors-prod", "pictures-prod", "unknown-prod", "vision_deployment"} {
+			for _, expected := range []string{"chat-prod", "gpt-4o", "vectors-prod", "pictures-prod", "unknown-prod", "enabled_vision"} {
 				if !strings.Contains(rec.Body.String(), expected) {
 					t.Errorf("inventory settings omit %q", expected)
 				}

@@ -322,6 +322,7 @@ func chatDeployment(cfg config.Config, override string) string {
 // ChatOptions are the settings of a single chat turn. They belong to the chat,
 // not to the client, so every request can use its own model and effort.
 type ChatOptions struct {
+	route           *Client
 	Model           string // deployment name; empty leaves the choice to the router
 	ReasoningEffort string // "" or "auto" leaves it to the model
 }
@@ -345,10 +346,26 @@ func (c *Client) ChatStreamWithTools(ctx context.Context, opts ChatOptions, mess
 // streamTurn runs one streaming pass, streams text through onDelta and collects
 // optional tool calls (whose arguments arrive across several chunks).
 func (c *Client) streamTurn(ctx context.Context, opts ChatOptions, messages []Message, tools []Tool, onDelta func(string) error) (TurnResult, error) {
+	vision := false
+	for _, message := range messages {
+		vision = vision || len(message.Images) > 0
+	}
+	var err error
+	opts, err = c.PrepareChat(opts, vision)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	if opts.route != nil {
+		c = opts.route
+	}
+	if len(tools) > 0 && !opts.SupportsTools() {
+		return TurnResult{}, fmt.Errorf("selected deployment does not support function tools")
+	}
 	if c.useResponses(opts, messages, len(tools) > 0) {
 		return c.responsesTurn(ctx, opts, messages, tools, onDelta)
 	}
 	var result TurnResult
+	result.Model = opts.Model
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || (!IsV1Endpoint(cfg.Endpoint) && cfg.APIVersion == "") {
 		return result, fmt.Errorf("incomplete configuration: endpoint, chat deployment and api version are required")
@@ -494,6 +511,16 @@ func (c *Client) VerifyChat(ctx context.Context) error {
 // VerifyDeployment checks a single chat deployment the same way. An empty name
 // uses the configured default, which is what VerifyChat does.
 func (c *Client) VerifyDeployment(ctx context.Context, deployment string) error {
+	if c.store.Get().Foundry {
+		if deployment == "" {
+			deployment = c.store.Get().ChatDeployment
+		}
+		bound, selected, err := c.route(foundry.Chat, deployment)
+		if err != nil {
+			return err
+		}
+		c, deployment = bound, selected.Name
+	}
 	cfg := c.store.Get()
 	if cfg.Endpoint == "" || cfg.ChatDeployment == "" || (!IsV1Endpoint(cfg.Endpoint) && cfg.APIVersion == "") {
 		return fmt.Errorf("endpoint, chat deployment and api version are required")
@@ -588,6 +615,13 @@ type embeddingResponse struct {
 
 // Embed creates embeddings for the given texts.
 func (c *Client) Embed(ctx context.Context, inputs []string) ([][]float32, error) {
+	if c.store.Get().Foundry {
+		profile, err := c.ConfiguredEmbeddingProfile()
+		if err != nil {
+			return nil, err
+		}
+		return c.EmbedProfile(ctx, profile, inputs)
+	}
 	return c.embed(ctx, c.store.Get(), inputs)
 }
 

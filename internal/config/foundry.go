@@ -117,6 +117,11 @@ func (s *Store) ImageFoundryStatus() FoundryStatus {
 }
 
 func cloneCatalog(snapshot foundry.Snapshot) foundry.Snapshot {
+	snapshot.Accounts = slices.Clone(snapshot.Accounts)
+	snapshot.DiscoveryErrors = slices.Clone(snapshot.DiscoveryErrors)
+	for i := range snapshot.Accounts {
+		snapshot.Accounts[i] = cloneCatalog(snapshot.Accounts[i])
+	}
 	snapshot.Deployments = slices.Clone(snapshot.Deployments)
 	for i := range snapshot.Deployments {
 		snapshot.Deployments[i].Capabilities = maps.Clone(snapshot.Deployments[i].Capabilities)
@@ -132,6 +137,9 @@ func (s *Store) SetCatalog(snapshot foundry.Snapshot) error {
 	}
 	if snapshot.Endpoint == "" || !foundry.IsV1Endpoint(snapshot.Endpoint) {
 		return fmt.Errorf("deployment catalog has no supported inference endpoint")
+	}
+	if err := validateAccounts(snapshot); err != nil {
+		return err
 	}
 	s.catalog = cloneCatalog(snapshot)
 	s.discoveryError = ""
@@ -156,6 +164,9 @@ func (s *Store) SetImageCatalog(snapshot foundry.Snapshot) error {
 		return fmt.Errorf("image deployment catalog has no supported inference endpoint")
 	}
 	if err := validateImageCatalog(snapshot); err != nil {
+		return err
+	}
+	if err := validateAccounts(snapshot); err != nil {
 		return err
 	}
 	if err := validateImageEndpointOverride(snapshot.Endpoint, s.overrides.ImageEndpoint); err != nil {
@@ -197,7 +208,7 @@ func (s *Store) Discover(ctx context.Context) (foundry.Snapshot, error) {
 	if source == nil {
 		return foundry.Snapshot{}, fmt.Errorf("no Foundry identity configured")
 	}
-	snapshot, err := source.Refresh(ctx, override)
+	snapshot, err := refreshSource(ctx, source, override, s.FoundryStatus().Catalog)
 	if err != nil {
 		return foundry.Snapshot{}, err
 	}
@@ -252,7 +263,7 @@ func (s *Store) DiscoverImages(ctx context.Context) (foundry.Snapshot, error) {
 	if source == nil {
 		return foundry.Snapshot{}, fmt.Errorf("no image Foundry identity configured")
 	}
-	snapshot, err := source.Refresh(ctx, override)
+	snapshot, err := refreshSource(ctx, source, override, s.ImageFoundryStatus().Catalog)
 	if err != nil {
 		return foundry.Snapshot{}, err
 	}
@@ -292,7 +303,7 @@ func (s *Store) SetImageDiscoveryError(err error) {
 }
 
 func (s *Store) effectiveLocked() Config {
-	cfg := s.overrides.apply(s.cur)
+	cfg := s.overrides.apply(cloneConfig(s.cur))
 	cfg.Foundry = s.resourceID != ""
 	cfg.SeparateImageResource = s.separateImageResourceLocked()
 	if s.resourceID == "" {
@@ -316,6 +327,25 @@ func (s *Store) effectiveLocked() Config {
 	}
 	cfg.ImageModels = allowedModels(imageCatalog.Names(foundry.Images), s.overrides.ImageModels)
 	cfg.ImageEditModels = allowedModels(imageCatalog.Names(foundry.ImageEdits), s.overrides.ImageModels)
+	if cfg.EnabledDeployments != nil {
+		cfg.ChatDeployment = first(s.availablePoolLocked(foundry.Chat))
+		cfg.EmbeddingDeployment = first(s.availablePoolLocked(foundry.Embeddings))
+		cfg.ImageDeployment = first(s.availablePoolLocked(foundry.Images))
+		cfg.VisionDeployment = first(s.availablePoolLocked(foundry.Vision))
+		cfg.ChatModels = s.targetKeysLocked(foundry.Chat)
+		cfg.ImageModels = s.targetKeysLocked(foundry.Images)
+		cfg.ImageEditModels = s.poolLocked(foundry.ImageEdits)
+		cfg.ChatModel = ""
+		if target, err := s.targetLocked(foundry.Chat, cfg.ChatDeployment); err == nil {
+			cfg.Endpoint = target.Account.Endpoint
+		}
+		if target, err := s.targetLocked(foundry.Embeddings, cfg.EmbeddingDeployment); err == nil {
+			cfg.EmbeddingEndpoint = target.Account.Endpoint
+		}
+		if target, err := s.targetLocked(foundry.Images, cfg.ImageDeployment); err == nil {
+			cfg.ImageEndpoint = target.Account.Endpoint
+		}
+	}
 	return cfg
 }
 
@@ -335,6 +365,10 @@ func allowedModels(discovered, pinned []string) []string {
 func (s *Store) ResolveDeployment(op foundry.Operation, name string) (foundry.Deployment, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if strings.HasPrefix(name, "/") {
+		target, err := s.targetLocked(op, name)
+		return target.Deployment, err
+	}
 	imageOperation := op == foundry.Images || op == foundry.ImageEdits
 	separateImages := imageOperation && s.separateImageResourceLocked()
 	if s.resourceID == "" && !separateImages {
@@ -365,6 +399,11 @@ func (s *Store) ResolveDeployment(op foundry.Operation, name string) (foundry.De
 }
 
 func (s *Store) ModelIdentity(name string) string {
+	if strings.HasPrefix(name, "/") {
+		if deployment, err := s.ResolveDeployment(foundry.Chat, name); err == nil {
+			return deployment.ModelName
+		}
+	}
 	status := s.FoundryStatus()
 	if status.Enabled {
 		if deployment, ok := status.Catalog.Find(name); ok {
@@ -375,6 +414,9 @@ func (s *Store) ModelIdentity(name string) string {
 }
 
 func (s *Store) HasChatCredentials() bool {
+	if pooled, ready := s.poolReady(foundry.Chat); pooled {
+		return ready
+	}
 	status := s.FoundryStatus()
 	if status.Enabled {
 		return status.IdentityReady
@@ -383,6 +425,9 @@ func (s *Store) HasChatCredentials() bool {
 }
 
 func (s *Store) HasEmbeddingCredentials() bool {
+	if pooled, ready := s.poolReady(foundry.Embeddings); pooled {
+		return ready
+	}
 	status := s.FoundryStatus()
 	if status.Enabled {
 		return status.IdentityReady
@@ -391,6 +436,10 @@ func (s *Store) HasEmbeddingCredentials() bool {
 }
 
 func (s *Store) HasImageCredentials() bool {
+	if pooled, ready := s.poolReady(foundry.Images); pooled {
+		_, edits := s.poolReady(foundry.ImageEdits)
+		return ready || edits
+	}
 	status := s.ImageFoundryStatus()
 	if status.Enabled {
 		return status.IdentityReady
@@ -435,6 +484,11 @@ func (s *Store) Authorize(req *http.Request, op foundry.Operation, deployment st
 }
 
 func (s *Store) ValidateRoleSelections(cfg Config) error {
+	if cfg.EnabledDeployments != nil && s.FoundryStatus().Enabled {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.validatePoolsLocked(cfg)
+	}
 	primary, images := s.FoundryStatus(), s.ImageFoundryStatus()
 	if !primary.Enabled && !s.HasSeparateImageResource() {
 		return nil

@@ -10,15 +10,6 @@
       "caption": "Choose Automatic or one image model above the input. FLUX.2 Flex offers resolution, format, steps and guidance; only activated regional replicas are used."
     },
     {
-      "id": "flux-models",
-      "lang": "de",
-      "file": "de/flux-models.png",
-      "width": 1440,
-      "height": 900,
-      "title": "FLUX.2-Modell und Bildeinstellungen",
-      "caption": "Über der Eingabe Automatisch oder ein Bildmodell wählen. FLUX.2 Flex bietet Auflösung, Format, Schritte und Prompt-Treue; nur aktivierte regionale Replikate werden verwendet."
-    },
-    {
       "id": "sidebar-resize",
       "lang": "en",
       "file": "en/sidebar-resize.png",
@@ -188,6 +179,15 @@
       "height": 844,
       "title": "Phone layout",
       "caption": "On a narrow viewport the sidebar turns into an off-canvas drawer behind the ☰ button, so the conversation keeps the full width."
+    },
+    {
+      "id": "flux-models",
+      "lang": "de",
+      "file": "de/flux-models.png",
+      "width": 1440,
+      "height": 900,
+      "title": "FLUX.2-Modell und Bildeinstellungen",
+      "caption": "Über der Eingabe Automatisch oder ein Bildmodell wählen. FLUX.2 Flex bietet Auflösung, Format, Schritte und Prompt-Treue; nur aktivierte regionale Replikate werden verwendet."
     },
     {
       "id": "sidebar-resize",

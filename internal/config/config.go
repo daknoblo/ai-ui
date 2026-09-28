@@ -35,10 +35,13 @@ type Config struct {
 	ImageModels           []string                       `json:"-"`                     // selectable image deployments; comes from AZURE_IMAGE_MODELS
 	ImageEditModels       []string                       `json:"-"`
 	SeparateImageResource bool                           `json:"-"`
-	ImageAPIVersion       string                         `json:"image_api_version"`  // optional; falls back to APIVersion
-	ImageSize             string                         `json:"image_size"`         // e.g. 1024x1024 or "auto"
-	ImageQuality          string                         `json:"image_quality"`      // low | medium | high | auto
-	ImageFormat           string                         `json:"image_format"`       // png | jpeg | webp
+	ImageAPIVersion       string                         `json:"image_api_version"` // optional; falls back to APIVersion
+	ImageSize             string                         `json:"image_size"`        // e.g. 1024x1024 or "auto"
+	ImageQuality          string                         `json:"image_quality"`     // low | medium | high | auto
+	ImageFormat           string                         `json:"image_format"`      // png | jpeg | webp
+	FluxSize              string                         `json:"flux_size"`
+	FluxSteps             int                            `json:"flux_steps"`
+	FluxGuidance          float64                        `json:"flux_guidance"`
 	SearchProvider        string                         `json:"search_provider"`    // "", "tavily", "brave", "searxng"
 	SearchEndpoint        string                         `json:"search_endpoint"`    // base URL of the SearXNG instance
 	SearchMaxResults      int                            `json:"search_max_results"` // number of results (default 5)

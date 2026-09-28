@@ -3,11 +3,14 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -133,9 +136,10 @@ func (s *Server) handleSetImageParams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := s.cfg.Get()
-	cfg.ImageSize = imageParam(r.FormValue("image_size"), imageSizes)
-	cfg.ImageQuality = imageParam(r.FormValue("image_quality"), imageQualities)
-	cfg.ImageFormat = imageParam(r.FormValue("image_format"), imageFormats)
+	if err := readImageParams(r.Form, &cfg); err != nil {
+		http.Error(w, s.t("error.image_parameters"), http.StatusBadRequest)
+		return
+	}
 	if err := s.cfg.Save(cfg); err != nil {
 		s.httpError(w, err)
 		return
@@ -143,11 +147,54 @@ func (s *Server) handleSetImageParams(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func readImageParams(form url.Values, cfg *config.Config) error {
+	for _, field := range []struct {
+		key     string
+		target  *string
+		allowed []string
+	}{
+		{"image_size", &cfg.ImageSize, imageSizes},
+		{"image_quality", &cfg.ImageQuality, imageQualities},
+		{"image_format", &cfg.ImageFormat, imageFormats},
+		{"flux_size", &cfg.FluxSize, llm.FluxSizes},
+	} {
+		if form.Has(field.key) {
+			value := form.Get(field.key)
+			if !slices.Contains(field.allowed, value) {
+				return fmt.Errorf("unsupported %s", field.key)
+			}
+			*field.target = value
+		}
+	}
+	if value := form.Get("flux_steps"); form.Has("flux_steps") {
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > 50 {
+			return fmt.Errorf("invalid FLUX steps")
+		}
+		cfg.FluxSteps = n
+	}
+	if value := form.Get("flux_guidance"); form.Has("flux_guidance") {
+		n, err := strconv.ParseFloat(value, 64)
+		if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || n < 1.5 || n > 10 {
+			return fmt.Errorf("invalid FLUX guidance")
+		}
+		cfg.FluxGuidance = n
+	}
+	return nil
+}
+
 // generateImage renders the prompt into an image, stores it and pushes it into
 // the open SSE stream. With edit the latest image of the chat is modified
 // instead of creating a new one, which allows refining step by step.
 func (s *Server) generateImage(ctx context.Context, sse *generationStream, chatID int64, prompt string, edit bool, routingUsage llm.Usage, fail func(string)) {
 	opts := sse.options.ImageOptions
+	if edit && !sse.options.Image {
+		if sse.options.ImageEditOptions == nil {
+			fail(s.t("error.invalid_model"))
+			return
+		}
+		opts = *sse.options.ImageEditOptions
+	}
 	deployment := opts.Deployment
 
 	// Editing continues from the latest image, so refinements build on each other.

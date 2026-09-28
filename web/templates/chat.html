@@ -43,6 +43,21 @@
 		<div id="upload-status" class="upload-status" hidden></div>
 		{{template "doclist" .}}
 
+		{{if or .ImageEnabled .ImageModel}}
+		<form id="image-model-form" class="image-model-picker" hx-post="/chat/{{.ChatID}}/image-model"
+			hx-trigger="change" hx-swap="none"
+			hx-on::response-error="var notice=document.getElementById('send-status');notice.textContent=event.detail.xhr.responseText;notice.hidden=false;">
+			<label for="image-model-select">{{t "chat.image_model"}}</label>
+			<select id="image-model-select" name="image_model" onchange="applyImageModelState()"
+				aria-describedby="image-model-help" data-edit-models="{{range .ImageEditModels}}{{.}},{{end}}">
+				<option value="" {{if not .ImageModel}}selected{{end}}>{{t "chat.image_automatic"}}</option>
+				{{if .ImageModelMissing}}<option value="{{.ImageModel}}" selected>{{.ImageModel}} — {{t "chat.image_unavailable"}}</option>{{end}}
+				{{range .ImageModels}}<option value="{{.}}" {{if eq . $.ImageModel}}selected{{end}}>{{if eq . "flux.2-pro"}}FLUX.2-pro{{else if eq . "flux.2-flex"}}FLUX.2-flex{{else}}{{.}}{{end}}</option>{{end}}
+			</select>
+			<small id="image-model-help">{{t "chat.image_model_help"}}</small>
+		</form>
+		{{end}}
+
 		<div class="composer-tools">
 			<label class="tool-opt attach-opt" title="{{t "chat.attach_title"}}" aria-label="{{t "chat.attach_option"}}">
 				<input type="file" id="attach-input" accept="{{.UploadAccept}}" multiple
@@ -62,16 +77,28 @@
 				<input type="checkbox" id="edit-check" onchange="setEdit(this.checked)" aria-label="{{t "chat.image_edit"}}">
 				<span class="btn-icon" aria-hidden="true">🖌️</span><span class="btn-label">{{t "chat.image_edit"}}</span>
 			</label>
-			<form class="image-params" id="image-params" hx-post="/image/params" hx-trigger="change" hx-swap="none" hidden>
-				<label>{{t "config.image_size"}}
+			<form class="image-params" id="image-params" hx-post="/image/params" hx-trigger="change" hx-swap="none" hidden
+				hx-on::response-error="var notice=document.getElementById('send-status');notice.textContent=event.detail.xhr.responseText;notice.hidden=false;">
+				<label data-image-setting="gpt">{{t "config.image_size"}}
 					<select name="image_size">
 						{{range $.ImageSizes}}<option value="{{.}}" {{if eq . $.ImageSize}}selected{{end}}>{{.}}</option>{{end}}
 					</select>
 				</label>
-				<label>{{t "config.image_quality"}}
+				<label data-image-setting="gpt">{{t "config.image_quality"}}
 					<select name="image_quality">
 						{{range $.ImageQualities}}<option value="{{.}}" {{if eq . $.ImageQuality}}selected{{end}}>{{.}}</option>{{end}}
 					</select>
+				</label>
+				<label data-image-setting="flux">{{t "config.flux_size"}}
+					<select name="flux_size">
+						{{range $.FluxSizes}}<option value="{{.}}" {{if eq . $.FluxSize}}selected{{end}}>{{if eq . "auto"}}{{t "chat.image_automatic"}}{{else}}{{.}}{{if or (eq . "1024x1024") (eq . "2048x2048")}} (1:1){{else if eq . "1024x1536"}} (2:3){{else if eq . "1536x1024"}} (3:2){{else if eq . "1536x2560"}} (3:5){{else}} (5:3){{end}}{{end}}</option>{{end}}
+					</select>
+				</label>
+				<label data-image-setting="flex">{{t "config.flux_steps"}}
+					<input type="number" name="flux_steps" min="1" max="50" step="1" value="{{if .FluxSteps}}{{.FluxSteps}}{{else}}50{{end}}">
+				</label>
+				<label data-image-setting="flex">{{t "config.flux_guidance"}}
+					<input type="number" name="flux_guidance" min="1.5" max="10" step="0.1" value="{{if .FluxGuidance}}{{.FluxGuidance}}{{else}}4.5{{end}}">
 				</label>
 				<label>{{t "config.image_format"}}
 					<select name="image_format">
@@ -99,6 +126,7 @@
 				hx-post="/chat/{{if .CurrentChat}}{{.CurrentChat.ID}}{{else}}new{{end}}/send"
 				hx-target="#messages"
 				hx-swap="beforeend"
+				hx-include="#image-model-select, #image-params"
 				hx-on::response-error="var notice=document.getElementById('send-status');notice.textContent=event.detail.xhr.responseText;notice.hidden=false;"
 				hx-on::after-request="if(event.detail.successful){document.getElementById('send-status').hidden=true;this.reset();this.querySelector('textarea').style.height='auto';applyComposerState();}">
 				<input type="hidden" name="web" id="web-flag" value="0">
@@ -173,7 +201,8 @@
 		aria-label="{{t "retry.title"}}" data-retry-unavailable="{{if .QuestionID}}0{{else}}1{{end}}"
 		data-retry-error="{{t "retry.failed"}}"
 		{{if .QuestionID}}hx-post="/chat/{{.ChatID}}/retry/{{.QuestionID}}" hx-target="#messages" hx-swap="beforeend"
-		hx-include="#web-flag, #mode-flag, #edit-flag" hx-params="web,mode,edit"
+		hx-include="#web-flag, #mode-flag, #edit-flag, #image-model-select, #image-params"
+		hx-params="web,mode,edit,image_model,image_size,image_quality,image_format,flux_size,flux_steps,flux_guidance"
 		hx-disabled-elt="this" hx-confirm="{{t "retry.confirm"}}"{{else}}disabled{{end}}>
 		<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 12l-4-5"/></svg>
 		<span class="response-retry-label">{{t "retry.label"}}</span>

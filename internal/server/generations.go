@@ -26,6 +26,7 @@ type generationOptions struct {
 	Web, Image, Edit bool
 	Chat             llm.ChatOptions
 	ImageOptions     llm.ImageOptions
+	ImageEditOptions *llm.ImageOptions
 	SourceImageID    int64
 }
 
@@ -126,6 +127,28 @@ func (s *Server) submitGeneration(ctx context.Context, chat storage.Chat, messag
 		return storage.Generation{}, err
 	}
 	if opts.ImageOptions.Deployment != "" || s.cfg.ImagesConfigured() || s.cfg.ImageEditsConfigured() {
+		original := opts.ImageOptions
+		if opts.Image {
+			prepared, err := s.llm.PrepareImage(original, opts.Edit)
+			if err != nil {
+				return storage.Generation{}, err
+			}
+			opts.ImageOptions = prepared
+		} else {
+			if s.cfg.ImagesConfigured() {
+				prepared, err := s.llm.PrepareImage(original, false)
+				if err != nil {
+					return storage.Generation{}, err
+				}
+				opts.ImageOptions = prepared
+			}
+			if s.cfg.ImageEditsConfigured() {
+				prepared, err := s.llm.PrepareImage(original, true)
+				if err == nil {
+					opts.ImageEditOptions = &prepared
+				}
+			}
+		}
 		image, err := s.store.LatestImage(ctx, chat.ID)
 		if err != nil && !errors.Is(err, storage.ErrNotFound) {
 			return storage.Generation{}, err

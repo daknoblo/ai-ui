@@ -227,10 +227,18 @@ func (s *demoFoundrySource) Refresh(ctx context.Context, override string) (found
 	}
 	deployments[5].ModelFormat = "Anthropic"
 	deployments[6].SKU = "GlobalBatch"
+	flux := func(name, model string) foundry.Deployment {
+		d := deployment(name, model, "1")
+		d.ModelFormat = "BlackForestLabs"
+		return d
+	}
+	deployments = append(deployments, flux("flux-pro", "FLUX.2-pro"), flux("flux-flex", "FLUX.2-flex"))
 	if s.imageResource {
 		deployments = []foundry.Deployment{
 			deployment("canvas", "gpt-image-2", "2026-04-21"),
 			deployment("canvas-legacy", "gpt-image-1.5", "2025-12-16"),
+			flux("flux-pro", "FLUX.2-pro"),
+			flux("flux-flex", "FLUX.2-flex"),
 		}
 	}
 	return foundry.Snapshot{
@@ -259,10 +267,10 @@ func (s *demoFoundrySource) RefreshGroup(ctx context.Context, override string, _
 
 func (s *demoFoundrySource) Authorize(req *http.Request) error {
 	if req == nil || req.URL == nil || req.URL.Scheme != "http" || req.URL.Host != s.host ||
-		!strings.HasPrefix(req.URL.Path, "/openai/v1/") {
+		(!strings.HasPrefix(req.URL.Path, "/openai/v1/") && !strings.HasPrefix(req.URL.Path, "/providers/blackforestlabs/v1/")) {
 		return fmt.Errorf("demo identity only authorizes its local inference stub")
 	}
-	if s.imageResource && !strings.HasPrefix(req.URL.Path, "/openai/v1/images/") {
+	if s.imageResource && !strings.HasPrefix(req.URL.Path, "/openai/v1/images/") && !strings.HasPrefix(req.URL.Path, "/providers/blackforestlabs/v1/") {
 		return fmt.Errorf("demo image identity only authorizes image operations")
 	}
 	if req.Header == nil {

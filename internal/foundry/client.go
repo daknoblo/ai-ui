@@ -215,7 +215,8 @@ func (c *Client) Refresh(ctx context.Context, endpointOverride string) (Snapshot
 	sort.Slice(deployments, func(i, j int) bool { return deployments[i].Name < deployments[j].Name })
 	return Snapshot{
 		ResourceID: c.resourceID, Location: account.Location, Endpoint: endpoint, Deployments: deployments,
-		RefreshedAt: time.Now().UTC(),
+		FluxEndpoint: selectFluxEndpoint(account.Properties, endpoint),
+		RefreshedAt:  time.Now().UTC(),
 	}, nil
 }
 

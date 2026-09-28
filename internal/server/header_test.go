@@ -41,8 +41,11 @@ func TestChatHeaderHasNoModelSelector(t *testing.T) {
 					!strings.Contains(header, `id="chat-title"`) || !strings.Contains(header, `id="nav-toggle"`) {
 					t.Fatal("chat title or mobile navigation was lost")
 				}
-				if strings.Contains(header, "<select") || strings.Contains(body, "model-picker") || strings.Contains(body, "model-select") {
+				if strings.Contains(header, "<select") || strings.Contains(body, `id="model-picker"`) || strings.Contains(body, `id="model-select"`) {
 					t.Fatal("the removed model selector remains in the page")
+				}
+				if !strings.Contains(body, `id="image-model-select"`) {
+					t.Fatal("the image-only composer selector is missing")
 				}
 				for _, expected := range []string{`id="reasoning-opt"`, `id="image-params"`, `data-image-edits="1"`} {
 					if !strings.Contains(body, expected) {

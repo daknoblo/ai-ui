@@ -490,6 +490,18 @@ func TestFoundryPerChatImageChoice(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, req)
+	if response.Code != http.StatusBadRequest {
+		t.Fatal("discovered but inactive image deployment was selectable")
+	}
+	cfg := s.cfg.Get()
+	cfg.EnabledDeployments = map[foundry.Operation][]string{foundry.Images: {snapshot.Key(snapshot.Deployments[1])}}
+	if err := s.cfg.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/chat/%d/model", id), strings.NewReader("model=art"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
 	chat, err := s.store.GetChat(t.Context(), id)
 	if response.Code != http.StatusNoContent || err != nil || chat.ImageModel != "art" || chat.Model != "text" {
 		t.Fatalf("image selection = %d, %+v, %v: %s", response.Code, chat, err, response.Body.String())

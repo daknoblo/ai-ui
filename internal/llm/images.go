@@ -60,9 +60,14 @@ func imageAPIVersion(cfg config.Config) string {
 // Empty values and "auto" are omitted so the service default applies.
 type ImageOptions struct {
 	Deployment string // image deployment of the chat; empty uses the configured one
+	Model      string // canonical model after routing
 	Size       string // e.g. 1024x1024
 	Quality    string // low | medium | high
 	Format     string // png | jpeg
+	FluxSize   string // independent FLUX resolution, preserved across model switches
+	Steps      int
+	Guidance   float64
+	route      *Client
 }
 
 // imageDeployment resolves which deployment answers an image request.
@@ -108,12 +113,16 @@ type imageResponse struct {
 
 // GenerateImage renders a prompt into a single image.
 func (c *Client) GenerateImage(ctx context.Context, prompt string, opts ImageOptions) (ImageResult, error) {
-	if c.store.ImageFoundryStatus().Enabled {
-		bound, deployment, err := c.route(foundry.Images, opts.Deployment)
-		if err != nil {
-			return ImageResult{}, err
-		}
-		c, opts.Deployment = bound, deployment.Name
+	var err error
+	opts, err = c.PrepareImage(opts, false)
+	if err != nil {
+		return ImageResult{}, err
+	}
+	if opts.route != nil {
+		c = opts.route
+	}
+	if isFlux(opts.Model) {
+		return c.fluxImage(ctx, prompt, nil, opts)
 	}
 	cfg := c.store.Get()
 	endpoint := cfg.ImageHost()
@@ -169,12 +178,16 @@ type ImageSource struct {
 
 // EditImage changes an existing image according to the prompt.
 func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, opts ImageOptions) (ImageResult, error) {
-	if c.store.ImageFoundryStatus().Enabled {
-		bound, deployment, err := c.route(foundry.ImageEdits, opts.Deployment)
-		if err != nil {
-			return ImageResult{}, err
-		}
-		c, opts.Deployment = bound, deployment.Name
+	var err error
+	opts, err = c.PrepareImage(opts, true)
+	if err != nil {
+		return ImageResult{}, err
+	}
+	if opts.route != nil {
+		c = opts.route
+	}
+	if isFlux(opts.Model) {
+		return c.fluxImage(ctx, prompt, &src, opts)
 	}
 	cfg := c.store.Get()
 	endpoint := cfg.ImageHost()
@@ -247,12 +260,14 @@ func (c *Client) EditImage(ctx context.Context, prompt string, src ImageSource, 
 // VerifyImage checks for the expected missing-prompt validation response without
 // generating an image. This does not prove generation permission or model access.
 func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
+	var fluxPath string
 	if c.store.ImageFoundryStatus().Enabled {
 		bound, selected, err := c.route(foundry.Images, deployment)
 		if err != nil {
 			return err
 		}
 		c, deployment = bound, selected.Name
+		fluxPath = selected.FluxPath()
 	}
 	cfg := c.store.Get()
 	endpoint := cfg.ImageHost()
@@ -267,8 +282,11 @@ func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	if fluxPath == "" && isFlux(strings.ToLower(deployment)) {
+		fluxPath = strings.Replace(strings.ToLower(deployment), "flux.2-", "flux-2-", 1)
+	}
 	model := ""
-	if IsV1Endpoint(endpoint) {
+	if IsV1Endpoint(endpoint) || fluxPath != "" {
 		model = deployment
 	}
 	body, err := json.Marshal(struct {
@@ -278,6 +296,12 @@ func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
 		return err
 	}
 	url := imagesURL(endpoint, deployment, imageAPIVersion(cfg))
+	if fluxPath != "" {
+		url, err = foundry.FluxURL(endpoint, fluxPath)
+		if err != nil {
+			return err
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -287,7 +311,15 @@ func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
 		return err
 	}
 
-	resp, err := c.http.Do(req)
+	client := *c.http
+	if fluxPath != "" {
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		if !c.store.ImageFoundryStatus().Enabled {
+			req.Header.Del("api-key")
+			req.Header.Set("Authorization", "Bearer "+c.store.ImageAPIKey())
+		}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

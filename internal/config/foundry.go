@@ -450,8 +450,10 @@ func (s *Store) HasImageCredentials() bool {
 func (s *Store) Authorize(req *http.Request, op foundry.Operation, deployment string) error {
 	s.mu.RLock()
 	enabled, source, setupErr, endpoint := s.resourceID != "", s.identity, s.identityError, s.catalog.Endpoint
+	fluxEndpoint := s.catalog.FluxEndpoint
 	if (op == foundry.Images || op == foundry.ImageEdits) && s.separateImageResourceLocked() {
 		enabled, source, setupErr, endpoint = true, s.imageIdentity, s.imageIdentityError, s.imageCatalog.Endpoint
+		fluxEndpoint = s.imageCatalog.FluxEndpoint
 	}
 	s.mu.RUnlock()
 	if !enabled {
@@ -472,8 +474,19 @@ func (s *Store) Authorize(req *http.Request, op foundry.Operation, deployment st
 	if source == nil || setupErr != "" {
 		return fmt.Errorf("foundry identity is not configured")
 	}
-	if _, err := s.ResolveDeployment(op, deployment); err != nil {
+	selected, err := s.ResolveDeployment(op, deployment)
+	if err != nil {
 		return err
+	}
+	if (op == foundry.Images || op == foundry.ImageEdits) && selected.FluxPath() != "" {
+		if fluxEndpoint != "" {
+			endpoint = fluxEndpoint
+		}
+		expected, err := foundry.FluxURL(endpoint, selected.FluxPath())
+		if err != nil || req.URL.String() != expected || req.Method != http.MethodPost {
+			return fmt.Errorf("FLUX endpoint does not match the discovered resource and model")
+		}
+		return source.Authorize(req)
 	}
 	base, err := url.Parse(endpoint)
 	if err != nil || base.Host == "" || !strings.EqualFold(base.Host, req.URL.Host) ||

@@ -18,6 +18,7 @@ type Snapshot struct {
 	ResourceID          string       `json:"resource_id"`
 	Location            string       `json:"location,omitempty"`
 	Endpoint            string       `json:"endpoint"`
+	FluxEndpoint        string       `json:"flux_endpoint,omitempty"`
 	Accounts            []Snapshot   `json:"accounts,omitempty"`
 	DiscoveryErrors     []string     `json:"discovery_errors,omitempty"`
 	Deployments         []Deployment `json:"deployments"`
@@ -101,6 +102,22 @@ func (d Deployment) Supports(op Operation) bool {
 	return d.UnsupportedReason(op) == ""
 }
 
+// CanonicalModel identifies replicas independently of deployment aliases.
+func (d Deployment) CanonicalModel() string { return canonicalModel(d.ModelName) }
+
+func (d Deployment) FluxPath() string {
+	if capabilityKey(d.ModelFormat) != "blackforestlabs" {
+		return ""
+	}
+	switch d.CanonicalModel() {
+	case "flux.2-pro":
+		return "flux-2-pro"
+	case "flux.2-flex":
+		return "flux-2-flex"
+	}
+	return ""
+}
+
 func (d Deployment) SupportsTools() bool {
 	if !d.Supports(Chat) {
 		return false
@@ -138,6 +155,10 @@ func (d Deployment) UnsupportedReason(op Operation) string {
 		case "inferenceprotocol", "protocol":
 			switch strings.ToLower(strings.TrimSpace(value)) {
 			case "openai", "openai-compatible", "openai_v1", "openai-v1":
+			case "blackforestlabs", "bfl":
+				if d.FluxPath() == "" {
+					return "deployment requires an unsupported BFL model"
+				}
 			default:
 				return "deployment requires an unsupported or unrecognized inference protocol"
 			}
@@ -344,6 +365,8 @@ var modelProfiles = map[string]modelProfile{
 	"gpt-image-1-mini":                       {"openai", imagesBit | imageEditsBit},
 	"gpt-image-1.5":                          {"openai", imagesBit | imageEditsBit},
 	"gpt-image-2":                            {"openai", imagesBit | imageEditsBit},
+	"flux.2-pro":                             {"blackforestlabs", imagesBit | imageEditsBit},
+	"flux.2-flex":                            {"blackforestlabs", imagesBit | imageEditsBit},
 	"deepseek-r1":                            {"deepseek", chatBit},
 	"deepseek-r1-0528":                       {"deepseek", chatBit},
 	"deepseek-v3":                            {"deepseek", chatBit},

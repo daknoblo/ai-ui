@@ -119,6 +119,7 @@ func azureResourceHost(host string) (name, domain string) {
 		{".openai.azure.com", "openai"},
 		{".services.ai.azure.com", "services"},
 		{".cognitiveservices.azure.com", "cognitive"},
+		{".api.cognitive.microsoft.com", "bfl"},
 	} {
 		if !strings.HasSuffix(host, entry.suffix) {
 			continue

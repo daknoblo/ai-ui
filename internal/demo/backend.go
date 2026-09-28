@@ -45,6 +45,8 @@ func StartBackend(lang string) (*Backend, error) {
 	mux.HandleFunc("POST /openai/v1/embeddings", b.handleEmbeddings)
 	mux.HandleFunc("POST /openai/v1/images/generations", b.handleImage)
 	mux.HandleFunc("POST /openai/v1/images/edits", b.handleImageEdit)
+	mux.HandleFunc("POST /providers/blackforestlabs/v1/flux-2-pro", b.handleImage)
+	mux.HandleFunc("POST /providers/blackforestlabs/v1/flux-2-flex", b.handleImage)
 
 	b.server = &http.Server{
 		Handler:           mux,

@@ -231,6 +231,7 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/config/embeddings/reindex", s.handleReindex)
 	r.Get("/config/embeddings/status", s.handleReindexStatus)
 	r.Post("/chat/{id}/model", s.handleSetModel)
+	r.Post("/chat/{id}/image-model", s.handleSetImageModel)
 	r.Post("/chat/{id}/mode", s.handleSetMode)
 	r.Post("/chat/{id}/reasoning", s.handleSetReasoning)
 	r.Post("/image/params", s.handleSetImageParams)

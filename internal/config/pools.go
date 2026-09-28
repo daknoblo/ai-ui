@@ -60,8 +60,14 @@ func refreshSource(ctx context.Context, source FoundrySource, override string, p
 }
 
 func validateAccounts(root foundry.Snapshot) error {
+	if err := foundry.ValidateFluxEndpoint(root.Endpoint, root.FluxEndpoint); err != nil {
+		return err
+	}
 	seen := map[string]bool{strings.ToLower(root.ResourceID): true}
 	for _, account := range root.Accounts {
+		if err := foundry.ValidateFluxEndpoint(account.Endpoint, account.FluxEndpoint); err != nil {
+			return err
+		}
 		id := strings.ToLower(account.ResourceID)
 		if !foundry.SameGroup(root.ResourceID, account.ResourceID) || seen[id] ||
 			len(account.Accounts) != 0 || !foundry.IsV1Endpoint(account.Endpoint) {
@@ -317,6 +323,9 @@ func (s *Store) selectRouteLocked(op foundry.Operation, pin string) (*Store, fou
 	bound.cur.Endpoint = target.Account.Endpoint
 	bound.cur.EmbeddingEndpoint = target.Account.Endpoint
 	bound.cur.ImageEndpoint = target.Account.Endpoint
+	if target.Deployment.FluxPath() != "" && target.Account.FluxEndpoint != "" {
+		bound.overrides.ImageEndpoint = target.Account.FluxEndpoint
+	}
 	bound.cur.ChatDeployment = target.Deployment.Name
 	bound.cur.ChatModel = target.Deployment.Name
 	bound.cur.EmbeddingDeployment = target.Deployment.Name

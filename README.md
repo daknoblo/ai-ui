@@ -11,14 +11,14 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.3.0.** This release consolidates multi-resource Foundry
-deployment pools, resilient inventory refresh, compatible embedding replicas
-and the conversation UI improvements from the 1.2 series. Documentation,
-demo screenshots, the Pages website and multi-architecture container images
-are regenerated and validated for this release. No additional application
-behavior or data migration is introduced compared with 1.2.4.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.3.0)
-and [upgrade checklist](#upgrading-to-130).
+**Current release: 1.4.0.** This feature release adds FLUX.2-pro and FLUX.2-flex
+generation and editing alongside GPT-Image. An image-model selector above the
+chat input offers Automatic across the enabled image pool or one model across
+its enabled regional replicas, with model-specific resolution and format
+controls plus Flex steps and guidance. Existing chats, documents and deployment
+selections are retained; enabling FLUX does not require an embedding reindex.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.4.0)
+and [upgrade checklist](#upgrading-to-140).
 
 **Website with the full screenshot gallery:**
 <https://daknoblo.github.io/ai-ui/>
@@ -82,7 +82,7 @@ All screenshots are generated automatically from the demo instance
 - Optional web search (🌐) per request: pulls in current online results as
   context - provider agnostic (Tavily, Brave Search, SearXNG)
 - Optional image generation (🖼): the toggle switches the next message from a
-  chat answer to a generated image (Azure image models such as `gpt-image-2`);
+  chat answer to a generated image (`gpt-image-2`, `FLUX.2-pro`, or `FLUX.2-flex`);
   images are stored in the database and shown inline. In image mode an attached
   image turns the next prompt into an edit of that image. Image deployments
   are configured in Settings
@@ -90,6 +90,11 @@ All screenshots are generated automatically from the demo instance
   call the image generator automatically. Follow-up edits use the latest image;
   ordinary answers stay with the chat model. These image calls incur usage
   charges; manual image mode remains available.
+- The **Image model** selector above the input is saved per chat and applies only
+  to image generation/editing, including the image tool in ordinary chat.
+  **Automatic** cycles the enabled image pool; an explicit model cycles only
+  its activated regional replicas. Unavailable saved choices are shown and
+  rejected, never silently replaced.
 - Documents and images are bound to their chat and are removed together with it
   (including their embeddings)
 - Settings dialog in the UI (language, deployment defaults, system prompt,
@@ -241,8 +246,10 @@ selections, keyed internally by resource ID plus deployment name.
 - Existing single-resource defaults migrate to their original account's
   selection. Refresh never changes saved selections or per-chat pins. New chats
   created after saving checkbox pools use the pool; older conversations with a
-  saved model remain pinned to that original resource. Explicit pins do not
-  participate in round robin.
+  saved **chat** model remain pinned to that original resource. Explicit chat
+  pins do not participate in round robin. Image selections instead identify a
+  canonical model: even a legacy image deployment selection cycles only activated
+  replicas of that model, not other image models.
 - An empty pool disables that operation; an empty chat pool disables chat.
   Refresh and restart never silently repopulate an explicitly empty pool.
   Removing generation and edit selections disables each operation independently.
@@ -258,8 +265,74 @@ selections, keyed internally by resource ID plus deployment name.
   Responses display and persist the answering model reported by the provider,
   or the selected deployment when that API does not report a model.
 
+### FLUX.2 image models
+
+Deploy `FLUX.2-pro` and/or `FLUX.2-flex` (BlackForestLabs format, version `1`)
+on a supported Azure AI Services / Foundry resource. Refresh the inventory,
+then explicitly activate the desired regional deployments in **Image generation**
+and **Image edits** and save. Discovery alone never enables a deployment.
+Existing GPT-Image deployments and manual API-key mode remain supported.
+
+The **image-model selector above the chat input** is saved per chat and never
+changes the text-chat model. In Foundry mode, **Automatic** cycles the entire
+enabled image pool, including GPT-Image and FLUX; selecting a model cycles only
+that canonical model's enabled regional replicas. It also applies when a chat
+uses the image tool. In manual mode, Automatic uses the configured image default.
+
+**FLUX inference permissions:** `Cognitive Services OpenAI User` alone does not
+authorize the BFL provider API. For the application service principal, use a
+custom role with the following **DataAction**, assigned only at each image
+resource that it needs to call:
+
+`Microsoft.CognitiveServices/accounts/MaaS/images/generations/action`
+
+This permission covers a prompt with an optional base image, so it supports both
+generation and editing. The role needs no key-listing or management permissions;
+broader `Foundry User` or `Cognitive Services User` roles are not required.
+Keep the separate Reader permission needed for ARM inventory discovery.
+
+Use the operation name from `Microsoft.Authorization/providerOperations` with
+`$expand=resourceTypes`. The CognitiveServices operations API may advertise
+`Microsoft.CognitiveServices/accounts/AIServices/images/generations`, but that
+alias is not a valid RBAC DataAction and role creation rejects it with
+`InvalidDataActionOrNotDataAction`. Successful deployment provisioning or a check
+under an operator identity does not establish the application's inference access.
+Authorization failures remain explicit errors; the application does not switch
+models or retry another replica to hide them.
+
+FLUX.2 uses the **BFL provider API**, not OpenAI's images API:
+`/providers/blackforestlabs/v1/flux-2-pro?api-version=preview` or
+`/providers/blackforestlabs/v1/flux-2-flex?api-version=preview`, on that resource's
+trusted AI Services/BFL host. If ARM prefers an OpenAI hostname for chat, its
+separately advertised same-resource AI Services/BFL endpoint is retained for FLUX;
+hosts are never guessed from a deployment alias. Refresh older cached inventories
+before using FLUX. The deployment alias is sent as `model`. Reference
+images are sent inline as `input_image`; editing uses the latest successful
+image (or latest upload), never the output of a failed attempt.
+
+- Choose PNG/JPEG and an automatic, portrait, landscape or square resolution,
+  up to 2048×2048 (4 MP). Resolution pairs make the aspect ratio explicit.
+- Flex additionally supports **1–50 steps** (default 50) and **1.5–10 guidance**
+  (default 4.5). These parameters are never sent to Pro or GPT-Image.
+- GPT size/quality and FLUX resolution/Flex settings are stored independently.
+  Automatic shows the applicable families' controls and applies only the chosen
+  model's parameters. No safety settings are exposed or weakened.
+- Submitted requests persist the chosen model/deployment, parameters and source.
+  Changing the selector or enabled pools does not redirect an in-flight request.
+  Retry uses the original prompt with the current selection and current settings;
+  it never silently falls back to another model after an error.
+
+The Azure adapter consumes the synchronous `data[0].b64_json` response used by
+the [official Foundry FLUX sample](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/black-forest-labs/flux).
+It caps response size, rejects redirects and non-image payloads, and does **not**
+fetch response image or polling URLs. BFL's direct public asynchronous API is a
+different service and is not supported. A URL-only or asynchronous response is an
+explicit failure rather than an outbound download or credential forwarding.
+See [Microsoft's FLUX documentation](https://learn.microsoft.com/azure/foundry/foundry-models/how-to/use-foundry-models-flux)
+for model availability and the provider request schema.
+
 The supported-model mapping includes GPT chat models, model router,
-OpenAI text embeddings and GPT-Image generation/editing. DALL-E image options
+OpenAI text embeddings, GPT-Image and Black Forest Labs FLUX.2 generation/editing. DALL-E image options
 and Cohere embedding request formats need separate adapters and are not
 selectable in Foundry mode. New chat model names can use recognized Azure
 chat/vision capability metadata when their model format is already supported.
@@ -811,23 +884,32 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.3.0` and `1.3` and also
+`stable`; version releases publish tags such as `1.4.0` and `1.4` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
-### Upgrading to 1.3.0
+### Upgrading to 1.4.0
 
-Version **1.3.0** is a consolidated release with regenerated documentation and
-build artifacts. Upgrading from **1.2.4** requires no new environment variables,
-permissions, data migration or embedding reindex. Existing chats, documents,
-configuration and deployment selections are retained.
+Version **1.4.0** adds FLUX.2 image generation/editing and the image-model
+selector and settings above the composer. Existing chats, documents,
+configuration and deployment selections are retained. Upgrading from **1.3.0**
+does not require an embedding reindex or new credentials for existing GPT-Image
+usage. Enabling FLUX requires the resource-scoped inference permission described
+in [FLUX.2 image models](#flux2-image-models).
+
+For a two-region FLUX setup, refresh the inventory after upgrading, explicitly
+enable **all four deployments** (Pro and Flex in each region) in both **Image
+generation** and **Image edits**, then **save** the pools. Refresh alone does not
+activate them. Choose Automatic or a specific image model above the chat input;
+PNG/JPEG, resolution/aspect ratio and Flex steps/guidance apply to the selected
+model family. This image-only change does **not** require reindexing documents.
 
 When updating an existing 1.2.x installation, back up the data volume,
 update the image and fully reload the browser. For older installations, the
 group and generation-link migrations introduced in the 1.2 series run
 automatically. The compatibility notes below also apply to those upgrades.
-The `1.2` image tag stays on the 1.2 release series; switch explicitly to
-`1.3.0` or `1.3` to follow the new series.
+The `1.2` and `1.3` image tags stay on their respective release series; switch
+explicitly to `1.4.0` or `1.4` to follow the new series.
 For multi-resource discovery, grant the app identity Reader on the configured
 resource groups while keeping inference permissions scoped to the intended
 accounts. Refresh deployments, explicitly enable the desired targets and save
@@ -848,8 +930,8 @@ question association. See [Sending a previous question again](#sending-a-previou
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.3.0`, keeping the same persistent volume, ports and
-   environment settings. The `1.3` tag follows releases in this minor series;
+   `ghcr.io/daknoblo/ai-ui:1.4.0`, keeping the same persistent volume, ports and
+   environment settings. The `1.4` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.
    With the service name from the example:
@@ -931,7 +1013,7 @@ isolated, credential-free demo data.
 | Foundry discovery | Transient timeout retries, cancellation, bounded account concurrency, slow-account isolation and cached inventory retention |
 | Deployment pools | Resource-qualified identities, concurrent round-robin, frozen per-turn routes, checkbox persistence and explicit disablement |
 | Embeddings | Compatible replicas, vector-space validation, index provenance and atomic staged reindexing |
-| Images | Latest successful image across repeated edits, resource rotation, failures and retry; no automatic inference replay |
+| Images | Latest successful image across repeated edits, resource rotation, failures and retry; FLUX model selection and settings; no automatic inference replay |
 | Conversation actions | Copy/retry throughout history, formatted clipboard and fallback/error paths, unchanged prior answers/drafts, model/token footer alignment |
 | Navigation | Chat groups, move/collapse actions, resizable sidebar persistence, keyboard controls, mobile layout and streaming scroll behavior |
 
@@ -945,7 +1027,7 @@ npx playwright install chromium
 node capture.mjs --bin=../../bin/ai-ui-demo --checks-only
 ```
 
-Use `--langs=en` or `--langs=de` for a focused run. The default runs all 28
+Use `--langs=en` or `--langs=de` for a focused run. The default runs all 32
 check groups across both languages and layouts. Failures exit nonzero; demo
 processes and temporary databases are cleaned up. Actual Azure permissions,
 regional availability and paid inference are not exercised by these fixtures.
@@ -986,8 +1068,9 @@ The demo is also the source of the screenshots. The capture script starts it
 with `-foundry -separate-images`, exercises both local inventories, role defaults and reindex consent
 views, and captures those sections with Playwright. The resource and endpoint
 remain truthful read-only demo values; it does not replace them with real Azure
-URLs or contact real services. Screenshots are written to `docs/screenshots`,
-together with a manifest describing every shot:
+URLs or contact real services. The gallery contains 35 screenshots, including
+the FLUX image controls in English and German. Screenshots are written to
+`docs/screenshots`, together with a manifest describing every shot:
 
 ```sh
 CGO_ENABLED=0 go build -o bin/ai-ui-demo ./cmd/demo

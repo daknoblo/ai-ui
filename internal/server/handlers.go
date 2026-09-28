@@ -91,6 +91,14 @@ type pageData struct {
 	ImageSizes        []string
 	ImageQualities    []string
 	ImageFormats      []string
+	ImageModels       []string
+	ImageEditModels   []string
+	ImageModel        string
+	ImageModelMissing bool
+	FluxSize          string
+	FluxSizes         []string
+	FluxSteps         int
+	FluxGuidance      float64
 	Reasoning         reasoningView
 	StatusBadge       statusBadge
 }
@@ -117,17 +125,13 @@ func (s *Server) imageEditsEnabled(cfg config.Config, chat *storage.Chat) bool {
 	if !cfg.Foundry {
 		return true
 	}
-	if cfg.EnabledDeployments != nil {
-		if !s.cfg.ImageEditsConfigured() {
-			return false
-		}
-		if chat == nil || chat.ImageModel == "" {
-			return true
-		}
-		_, err := s.cfg.ResolveDeployment(foundry.ImageEdits, chat.ImageModel)
-		return err == nil
+	if !s.cfg.ImageEditsConfigured() {
+		return false
 	}
-	return slices.Contains(cfg.ImageEditModels, imageModelOf(cfg, chat))
+	if chat == nil || chat.ImageModel == "" {
+		return true
+	}
+	return s.cfg.ValidateImageSelection(foundry.ImageEdits, chat.ImageModel) == nil
 }
 
 // buildPageData loads chats, documents and – if given – the current chat with
@@ -158,6 +162,25 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		ImageQualities:    imageQualities,
 		ImageFormats:      imageFormats,
 		StatusBadge:       s.statusData(),
+		FluxSize:          cfg.FluxSize,
+		FluxSizes:         llm.FluxSizes,
+		FluxSteps:         cfg.FluxSteps,
+		FluxGuidance:      cfg.FluxGuidance,
+	}
+	pd.ImageModels = s.imageModels()
+	if s.cfg.ImageFoundryStatus().Enabled {
+		pd.ImageEditModels = s.cfg.ImageModels(foundry.ImageEdits)
+	} else {
+		pd.ImageEditModels = cfg.ImageModels
+	}
+	if current != nil {
+		pd.ImageModel = current.ImageModel
+		if cfg.Foundry && pd.ImageModel != "" {
+			if d, err := s.cfg.ResolveDeployment(foundry.Images, pd.ImageModel); err == nil {
+				pd.ImageModel = d.CanonicalModel()
+			}
+		}
+		pd.ImageModelMissing = pd.ImageModel != "" && !slices.Contains(pd.ImageModels, pd.ImageModel)
 	}
 	model := s.defaultChatModel()
 	pd.Reasoning = reasoningView{
@@ -472,15 +495,28 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request, chat storag
 
 	cfg := s.cfg.Get()
 	imageDeployment := imageModelOf(cfg, &chat)
+	if err := readImageParams(r.Form, &cfg); err != nil {
+		http.Error(w, s.t("error.image_parameters"), http.StatusBadRequest)
+		return
+	}
+	if r.Form.Has("image_model") {
+		chat.ImageModel = strings.TrimSpace(r.FormValue("image_model"))
+		imageDeployment = imageModelOf(cfg, &chat)
+	}
 	if cfg.Foundry && cfg.EnabledDeployments != nil {
 		imageDeployment = chat.ImageModel
+	}
+	if err := s.validateImageChoice(chat.ImageModel, image && edit); chat.ImageModel != "" && err != nil {
+		http.Error(w, s.t("error.invalid_model"), http.StatusBadRequest)
+		return
 	}
 	turn, err := s.submitGeneration(ctx, chat, message, generationOptions{
 		Web: web, Image: image, Edit: edit,
 		Chat: llm.ChatOptions{Model: chat.Model,
 			ReasoningEffort: llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(chat.Model), chat.ReasoningEffort)},
 		ImageOptions: llm.ImageOptions{Deployment: imageDeployment,
-			Size: cfg.ImageSize, Quality: cfg.ImageQuality, Format: cfg.ImageFormat},
+			Size: cfg.ImageSize, Quality: cfg.ImageQuality, Format: cfg.ImageFormat,
+			FluxSize: cfg.FluxSize, Steps: cfg.FluxSteps, Guidance: cfg.FluxGuidance},
 	})
 	if errors.Is(err, storage.ErrGenerationBusy) {
 		http.Error(w, s.t("stream.busy"), http.StatusConflict)
@@ -537,7 +573,7 @@ func (s *Server) generateTurn(ctx context.Context, sse *generationStream, turn s
 
 	// Image mode: no streamed answer, the endpoint returns a finished image.
 	if options.Image {
-		if (!options.Edit && !s.cfg.ImagesConfigured()) || (options.Edit && !s.cfg.ImageEditsConfigured()) {
+		if options.ImageOptions.Model == "" && ((!options.Edit && !s.cfg.ImagesConfigured()) || (options.Edit && !s.cfg.ImageEditsConfigured())) {
 			fail(s.t("stream.image_not_configured"))
 			return
 		}
@@ -549,7 +585,7 @@ func (s *Server) generateTurn(ctx context.Context, sse *generationStream, turn s
 	cfg := s.cfg.Get()
 	forceWeb := options.Web && s.search.Enabled()
 	autoWeb := cfg.SearchAuto && s.search.Enabled() && !forceWeb
-	autoImages := s.cfg.ImagesConfigured() || s.cfg.ImageEditsConfigured()
+	autoImages := options.ImageOptions.Model != "" || options.ImageEditOptions != nil
 
 	// The chat keeps its own model and reasoning effort; empty values leave both
 	// to the router and the model.
@@ -1301,21 +1337,12 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	cfg := s.cfg.Get()
-
 	// Image selections are stored separately from the chat model.
 	if chat.Mode == storage.ChatModeImage {
-		if model != "" && !slices.Contains(cfg.ImageModels, model) {
+		if err := s.validateImageChoice(model, false); err != nil {
 			slog.Warn("image model selection rejected", "model", model)
 			http.Error(w, s.t("error.invalid_model"), http.StatusBadRequest)
 			return
-		}
-		if cfg.Foundry {
-			if _, err := s.cfg.ResolveDeployment(foundry.Images, model); err != nil {
-				slog.Warn("image deployment selection rejected", "err", err)
-				http.Error(w, s.t("error.invalid_model"), http.StatusBadRequest)
-				return
-			}
 		}
 		if err := s.store.UpdateChatImageModel(r.Context(), chatID, model); err != nil {
 			s.httpError(w, err)

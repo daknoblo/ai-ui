@@ -23,6 +23,7 @@ import { verifyResponseRetry } from './retry-checks.mjs';
 import { verifyImageRefinements } from './image-checks.mjs';
 import { verifySidebarResize } from './sidebar-checks.mjs';
 import { verifyDeploymentPools } from './pool-checks.mjs';
+import { enableFluxModels, selectImageModel, verifyFluxModels } from './flux-checks.mjs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
@@ -61,6 +62,19 @@ const MOBILE = {
 
 /** The sections that are captured, in gallery order. */
 const SHOTS = [
+  {
+    id: 'flux-models',
+    langs: ['en', 'de'],
+    meta: {
+      en: { title: 'FLUX.2 model and image controls', caption: 'Choose Automatic or one image model above the input. FLUX.2 Flex offers resolution, format, steps and guidance; only activated regional replicas are used.' },
+      de: { title: 'FLUX.2-Modell und Bildeinstellungen', caption: 'Über der Eingabe Automatisch oder ein Bildmodell wählen. FLUX.2 Flex bietet Auflösung, Format, Schritte und Prompt-Treue; nur aktivierte regionale Replikate werden verwendet.' },
+    },
+    capture: async (page, ctx) => {
+      await enableFluxModels(page, base, ctx.index);
+      await open(page, `/chat/${ctx.index.chats.image}`);
+      await selectImageModel(page, base, 'flux.2-flex');
+    },
+  },
   {
     id: 'sidebar-resize',
     langs: ['en', 'de'],
@@ -564,6 +578,13 @@ async function main() {
             process.stdout.write(`image refinement checks passed (${lang}/${layout})\n`);
           } finally {
             await imageContext.close();
+          }
+          const fluxContext = await browser.newContext({ ...options, reducedMotion: 'reduce' });
+          try {
+            await verifyFluxModels(await fluxContext.newPage(), base, index, lang);
+            process.stdout.write(`FLUX model checks passed (${lang}/${layout})\n`);
+          } finally {
+            await fluxContext.close();
           }
         }
         if (checksOnly) continue;

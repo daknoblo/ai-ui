@@ -598,6 +598,8 @@ html, body {
 	line-height: 1;
 	color: var(--text-dim);
 }
+.image-model-picker select,
+.image-params input[type="number"],
 .image-params select,
 .reasoning-opt select {
 	background: var(--bg);
@@ -608,6 +610,8 @@ html, body {
 	font: inherit;
 	font-size: 12px;
 }
+.image-model-picker select:focus,
+.image-params input[type="number"]:focus,
 .image-params select:focus,
 .reasoning-opt select:focus { outline: none; border-color: var(--accent); }
 .btn-send {
@@ -1097,6 +1101,8 @@ html, body {
    16px, and hover-only affordances never show up at all. */
 @media (pointer: coarse) {
 	.composer textarea,
+	.image-model-picker select,
+	.image-params input[type="number"],
 	.image-params select,
 	.reasoning-opt select,
 	.config-form input,
@@ -1134,3 +1140,14 @@ html, body {
 .deployment-choice input {
 	flex-shrink: 0;
 }
+.image-model-picker {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: .4rem .7rem;
+	margin-bottom: .6rem;
+}
+.image-model-picker select { max-width: 100%; min-width: 12rem; }
+.image-model-picker small { flex-basis: 100%; opacity: .75; }
+.image-params input[type="number"] { width: 5rem; }
+[data-image-setting][hidden] { display: none; }

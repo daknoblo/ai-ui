@@ -117,6 +117,26 @@
 				ta.placeholder = image ? ta.dataset.placeholderImage : ta.dataset.placeholderChat;
 			}
 		}
+		function applyImageModelState() {
+			var picker = document.getElementById('image-model-select');
+			var model = picker ? picker.value.toLowerCase() : '';
+			var automatic = !model;
+			var models = picker ? Array.from(picker.options).map(function(option) { return option.value.toLowerCase(); }) : [];
+			var edits = picker ? picker.dataset.editModels.toLowerCase().split(',').filter(Boolean) : [];
+			var composer = document.querySelector('.composer');
+			if (composer && picker) composer.dataset.imageEdits = (automatic ? edits.length > 0 : edits.includes(model)) ? '1' : '0';
+			document.querySelectorAll('[data-image-setting]').forEach(function(field) {
+				var kind = field.dataset.imageSetting;
+				function supports(value) {
+					return !!value && (kind === 'gpt' ? value.indexOf('flux.2-') !== 0 :
+						kind === 'flex' ? value === 'flux.2-flex' : value.indexOf('flux.2-') === 0);
+				}
+				field.hidden = automatic ? !models.some(supports) : !supports(model);
+			});
+			applyComposerState();
+		}
+		window.addEventListener('load', applyImageModelState);
+		document.body.addEventListener('htmx:afterSwap', applyImageModelState);
 		window.addEventListener('load', applyComposerState);
 		document.body.addEventListener('htmx:afterSwap', applyComposerState);
 		document.body.addEventListener('htmx:sseMessage', applyComposerState);

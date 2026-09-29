@@ -101,6 +101,9 @@ func GroupThousands(lang string, n int64) string {
 // stable; only the values differ per language.
 var catalog = map[string]map[string]string{
 	EN: {
+		"page.title":            "AI-UI – %s",
+		"chat.image_resolution": "Resolution",
+
 		// ---- generic actions ----
 		"action.close":  "Close",
 		"action.delete": "Delete",
@@ -494,6 +497,9 @@ var catalog = map[string]map[string]string{
 	},
 
 	DE: {
+		"page.title":            "AI-UI – %s",
+		"chat.image_resolution": "Auflösung",
+
 		// ---- generic actions ----
 		"action.close":  "Schließen",
 		"action.delete": "Löschen",

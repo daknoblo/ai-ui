@@ -90,7 +90,7 @@
 				</label>
 				</div>
 				<div class="image-param-group" data-image-setting="flux">
-				<label>{{t "config.flux_size"}}
+				<label>{{t "chat.image_resolution"}}
 					<select name="flux_size">
 						{{range $.FluxSizes}}<option value="{{.}}" {{if eq . $.FluxSize}}selected{{end}}>{{if eq . "auto"}}{{t "chat.image_automatic"}}{{else}}{{.}}{{if or (eq . "1024x1024") (eq . "2048x2048")}} (1:1){{else if eq . "1024x1536"}} (2:3){{else if eq . "1536x1024"}} (3:2){{else if eq . "1536x2560"}} (3:5){{else}} (5:3){{end}}{{end}}</option>{{end}}
 					</select>
@@ -243,11 +243,11 @@
 {{/* turn-note: a plain notice about something that happened during this turn */}}
 {{define "turn-note"}}<div class="tool-status">{{.}}</div>{{end}}
 
-{{/* title-update: updates the header title and the sidebar via out-of-band swap */}}
-{{define "title-update"}}<h1 id="chat-title" hx-swap-oob="true">{{chatTitle .Title}}</h1><nav id="chat-list" class="chat-list" hx-swap-oob="true">{{template "chatnav-items" .}}</nav>{{end}}
+{{/* title-update: updates the browser title, header and sidebar. */}}
+{{define "title-update"}}{{template "title-oob" .}}<nav id="chat-list" class="chat-list" hx-swap-oob="true">{{template "chatnav-items" .}}</nav>{{end}}
 
 {{/* model-tag: shows the actual model in the same typography as token usage. */}}
 {{define "model-tag"}}<span class="model-badge" title="{{t "model.badge_title"}}">{{.}}</span>{{end}}
 
-{{/* title-oob: updates the header title via out-of-band swap */}}
-{{define "title-oob"}}<h1 id="chat-title" hx-swap-oob="true">{{chatTitle .Title}}</h1>{{end}}
+{{/* HTMX extracts the page title for both HTTP and SSE swaps. */}}
+{{define "title-oob"}}{{template "page-title" (chatTitle .Title)}}<h1 id="chat-title" hx-swap-oob="true">{{chatTitle .Title}}</h1>{{end}}

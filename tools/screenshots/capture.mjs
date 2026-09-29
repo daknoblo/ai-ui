@@ -66,8 +66,8 @@ const SHOTS = [
     id: 'flux-models',
     langs: ['en', 'de'],
     meta: {
-      en: { title: 'FLUX.2 model and image controls', caption: 'Choose an image model in the input toolbar. Resolution, format, steps and guidance are grouped separately below; only activated regional replicas are used.' },
-      de: { title: 'FLUX.2-Modell und Bildeinstellungen', caption: 'Das Bildmodell in der Eingabe-Werkzeugleiste wählen. Auflösung, Format, Schritte und Prompt-Treue sind darunter separat gruppiert; nur aktivierte regionale Replikate werden verwendet.' },
+      en: { title: 'FLUX.2 model and image controls', caption: 'Choose an image model in the shared input toolbar. Resolution, format, steps and guidance are separated by dividers and wrap when needed; only activated regional replicas are used.' },
+      de: { title: 'FLUX.2-Modell und Bildeinstellungen', caption: 'Das Bildmodell in der gemeinsamen Eingabe-Werkzeugleiste wählen. Auflösung, Format, Schritte und Prompt-Treue sind durch Linien getrennt und brechen bei Bedarf um; nur aktivierte regionale Replikate werden verwendet.' },
     },
     capture: async (page, ctx) => {
       await enableFluxModels(page, base, ctx.index);
@@ -604,6 +604,9 @@ async function main() {
           }
           const page = await context.newPage();
           await shot.capture(page, { index, lang });
+          if (!(await page.title()).startsWith('AI-UI – ')) {
+            throw new Error('Application name missing from the browser tab');
+          }
           if (await page.locator('#model-picker, #model-select').count()) {
             throw new Error('The chat header must not contain a model selector');
           }

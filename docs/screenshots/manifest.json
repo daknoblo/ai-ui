@@ -7,7 +7,7 @@
       "width": 1440,
       "height": 900,
       "title": "FLUX.2 model and image controls",
-      "caption": "Choose an image model in the input toolbar. Resolution, format, steps and guidance are grouped separately below; only activated regional replicas are used."
+      "caption": "Choose an image model in the shared input toolbar. Resolution, format, steps and guidance are separated by dividers and wrap when needed; only activated regional replicas are used."
     },
     {
       "id": "sidebar-resize",
@@ -187,7 +187,7 @@
       "width": 1440,
       "height": 900,
       "title": "FLUX.2-Modell und Bildeinstellungen",
-      "caption": "Das Bildmodell in der Eingabe-Werkzeugleiste wählen. Auflösung, Format, Schritte und Prompt-Treue sind darunter separat gruppiert; nur aktivierte regionale Replikate werden verwendet."
+      "caption": "Das Bildmodell in der gemeinsamen Eingabe-Werkzeugleiste wählen. Auflösung, Format, Schritte und Prompt-Treue sind durch Linien getrennt und brechen bei Bedarf um; nur aktivierte regionale Replikate werden verwendet."
     },
     {
       "id": "sidebar-resize",

@@ -547,6 +547,10 @@ html, body {
 	min-height: 30px;
 }
 .composer-tools > * { align-self: center; }
+.composer-tools > .tool-opt + .tool-opt {
+	border-inline-start: 1px solid var(--border);
+	padding-inline-start: 16px;
+}
 .mode-switch {
 	display: inline-flex;
 	padding: 2px;
@@ -587,7 +591,27 @@ html, body {
 	border-color: var(--accent);
 	box-shadow: 0 0 0 2px rgba(16,163,127,.35);
 }
-.image-params { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.image-params {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 14px;
+	align-items: center;
+	flex-basis: 100%;
+	min-width: 0;
+	border-top: 1px solid var(--border);
+	padding-top: 8px;
+}
+.image-param-group {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 14px;
+	max-width: 100%;
+}
+.image-param-group:not([hidden]) ~ .image-param-group:not([hidden]) {
+	border-inline-start: 1px solid var(--border);
+	padding-inline-start: 14px;
+}
 /* The class sets display, so the hidden attribute needs to win explicitly. */
 .image-params[hidden] { display: none; }
 .image-params label {
@@ -614,6 +638,11 @@ html, body {
 .image-params input[type="number"]:focus,
 .image-params select:focus,
 .reasoning-opt select:focus { outline: none; border-color: var(--accent); }
+.image-model-picker { min-width: 0; max-width: 100%; }
+.image-model-picker label { flex-shrink: 0; }
+.image-model-picker select { width: 12rem; min-width: 0; max-width: 100%; }
+.image-params input[type="number"] { width: 5rem; }
+[data-image-setting][hidden] { display: none; }
 .btn-send {
 	width: 42px;
 	height: 42px;
@@ -1056,9 +1085,12 @@ html, body {
 
 	.composer-dock { padding: 6px 10px calc(10px + env(safe-area-inset-bottom)); }
 	.composer-tools { gap: 6px 12px; min-height: 0; margin-bottom: 6px; }
+	.composer-tools > .tool-opt + .tool-opt { padding-inline-start: 12px; }
 	.tool-opt { gap: 4px; }
 	.tool-opt .btn-icon { font-size: 17px; }
 	.image-params { gap: 6px 10px; }
+	.image-param-group { gap: 6px 10px; }
+	.image-param-group:not([hidden]) ~ .image-param-group:not([hidden]) { padding-inline-start: 10px; }
 	.image-params label { font-size: 11px; gap: 4px; }
 	.image-params select { padding: 3px 6px; }
 	.composer textarea { padding: 9px 12px; }
@@ -1140,14 +1172,3 @@ html, body {
 .deployment-choice input {
 	flex-shrink: 0;
 }
-.image-model-picker {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: .4rem .7rem;
-	margin-bottom: .6rem;
-}
-.image-model-picker select { max-width: 100%; min-width: 12rem; }
-.image-model-picker small { flex-basis: 100%; opacity: .75; }
-.image-params input[type="number"] { width: 5rem; }
-[data-image-setting][hidden] { display: none; }

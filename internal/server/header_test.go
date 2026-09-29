@@ -47,6 +47,14 @@ func TestChatHeaderHasNoModelSelector(t *testing.T) {
 				if !strings.Contains(body, `id="image-model-select"`) {
 					t.Fatal("the image-only composer selector is missing")
 				}
+				_, tools, hasTools := strings.Cut(body, `<div class="composer-tools">`)
+				toolbar, _, hasParams := strings.Cut(tools, `<form class="image-params"`)
+				if !hasTools || !hasParams || !strings.Contains(toolbar, `id="image-model-form" class="tool-opt image-model-picker"`) {
+					t.Fatal("the image model must share the composer toolbar")
+				}
+				if strings.Contains(body, "image-model-help") {
+					t.Fatal("the removed image-model explanation remains in the page")
+				}
 				for _, expected := range []string{`id="reasoning-opt"`, `id="image-params"`, `data-image-edits="1"`} {
 					if !strings.Contains(body, expected) {
 						t.Errorf("removing the header selector removed composer support: %s", expected)

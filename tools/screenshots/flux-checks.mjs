@@ -23,6 +23,39 @@ export async function selectImageModel(page, base, model) {
   if (!(await saved).ok()) throw new Error(`Could not save image model ${model}`);
 }
 
+async function verifyImageControlLayout(page) {
+  const layout = await page.locator('.composer-tools').evaluate(toolbar => {
+    const picker = toolbar.querySelector('#image-model-form');
+    const attach = toolbar.querySelector('.attach-opt');
+    const reasoning = toolbar.querySelector('#reasoning-opt');
+    const params = toolbar.querySelector('#image-params');
+    const visible = node => node && node.getClientRects().length > 0;
+    const center = node => {
+      const box = node.getBoundingClientRect();
+      return box.y + box.height / 2;
+    };
+    const controls = [...toolbar.querySelectorAll('select, input[type="number"]')].filter(visible);
+    const boxes = controls.map(node => node.getBoundingClientRect());
+    return {
+      hasPicker: !!picker,
+      hasHelp: !!document.querySelector('#image-model-help'),
+      aligned: window.innerWidth <= 720 || [attach, reasoning].filter(visible).every(node => Math.abs(center(node) - center(picker)) < 2),
+      matchingStyle: getComputedStyle(picker).fontSize === getComputedStyle(attach).fontSize,
+      separateParams: !visible(params) || (params.getBoundingClientRect().top >= picker.getBoundingClientRect().bottom &&
+        getComputedStyle(params).borderTopStyle === 'solid'),
+      separatedGroups: [...toolbar.querySelectorAll('.image-param-group')].filter(visible).slice(1).every(node =>
+        getComputedStyle(node).borderInlineStartStyle === 'solid'),
+      overlapping: boxes.some((box, i) => boxes.slice(i + 1).some(other =>
+        box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)),
+      overflowing: toolbar.scrollWidth > toolbar.clientWidth + 2 || boxes.some(box => box.left < 0 || box.right > window.innerWidth),
+    };
+  });
+  if (!layout.hasPicker || layout.hasHelp || !layout.aligned || !layout.matchingStyle ||
+      !layout.separateParams || !layout.separatedGroups || layout.overlapping || layout.overflowing) {
+    throw new Error(`Image control layout regression: ${JSON.stringify(layout)}`);
+  }
+}
+
 export async function verifyFluxModels(page, base, index, language) {
   const restore = await enableFluxModels(page, base, index);
   let id;
@@ -39,6 +72,7 @@ export async function verifyFluxModels(page, base, index, language) {
     const pickerBox = await picker.boundingBox();
     const inputBox = await page.locator('#chat-form textarea').boundingBox();
     if (!pickerBox || !inputBox || pickerBox.y + pickerBox.height > inputBox.y) throw new Error('Image picker is not above the input');
+    await verifyImageControlLayout(page);
     await selectImageModel(page, base, 'flux.2-flex');
     if (await page.locator('.composer').getAttribute('data-mode') !== 'chat') throw new Error('Image selection changed chat mode');
     await page.reload({ waitUntil: 'networkidle' });
@@ -48,14 +82,18 @@ export async function verifyFluxModels(page, base, index, language) {
     if (!(await mode).ok()) throw new Error('Image mode could not be saved');
     if (!(await page.locator('[data-image-setting="flex"]').first().isVisible()) ||
         await page.locator('[data-image-setting="gpt"]').first().isVisible()) throw new Error('Flex showed incorrect parameters');
+    await verifyImageControlLayout(page);
     await selectImageModel(page, base, 'flux.2-pro');
     if (await page.locator('[data-image-setting="flex"]').first().isVisible()) throw new Error('Pro exposed Flex-only settings');
+    await verifyImageControlLayout(page);
     await selectImageModel(page, base, 'gpt-image-2');
     if (!(await page.locator('[data-image-setting="gpt"]').first().isVisible()) ||
         await page.locator('[data-image-setting="flux"]').isVisible()) throw new Error('GPT parameters were not preserved');
+    await verifyImageControlLayout(page);
     await selectImageModel(page, base, '');
     if (!(await page.locator('[data-image-setting="flex"]').first().isVisible()) ||
         !(await page.locator('[data-image-setting="gpt"]').first().isVisible())) throw new Error('Automatic lost model-family options');
+    await verifyImageControlLayout(page);
     await selectImageModel(page, base, 'flux.2-flex');
     const params = page.waitForResponse(r => r.url().endsWith('/image/params') && r.request().method() === 'POST');
     await page.locator('[name="flux_size"]').selectOption('2048x2048');

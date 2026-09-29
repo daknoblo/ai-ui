@@ -11,14 +11,14 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.4.0.** This feature release adds FLUX.2-pro and FLUX.2-flex
-generation and editing alongside GPT-Image. An image-model selector above the
-chat input offers Automatic across the enabled image pool or one model across
-its enabled regional replicas, with model-specific resolution and format
-controls plus Flex steps and guidance. Existing chats, documents and deployment
-selections are retained; enabling FLUX does not require an embedding reindex.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.4.0)
-and [upgrade checklist](#upgrading-to-140).
+**Current release: 1.4.1.** This patch aligns the image-model selector with
+Attach and Reasoning, removes the explanatory text below it, and separates
+model-specific image settings into clearly divided groups. FLUX.2 Pro/Flex and
+GPT-Image routing, saved choices and image editing remain unchanged. Existing
+chats, documents and deployment selections are retained; no embedding reindex
+is required.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.4.1)
+and [upgrade checklist](#upgrading-to-141).
 
 **Website with the full screenshot gallery:**
 <https://daknoblo.github.io/ai-ui/>
@@ -90,7 +90,9 @@ All screenshots are generated automatically from the demo instance
   call the image generator automatically. Follow-up edits use the latest image;
   ordinary answers stay with the chat model. These image calls incur usage
   charges; manual image mode remains available.
-- The **Image model** selector above the input is saved per chat and applies only
+- The **Image model** selector shares the toolbar with Attach and Reasoning;
+  image parameters appear in a separate row with model-specific groups.
+  The selection is saved per chat and applies only
   to image generation/editing, including the image tool in ordinary chat.
   **Automatic** cycles the enabled image pool; an explicit model cycles only
   its activated regional replicas. Unavailable saved choices are shown and
@@ -894,11 +896,16 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.4.0` and `1.4` and also
+`stable`; version releases publish tags such as `1.4.1` and `1.4` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
-### Upgrading to 1.4.0
+### Upgrading to 1.4.1
+
+Version **1.4.1** improves the composer layout without changing model routing,
+image parameters or database schema. From **1.4.0**, update the container and
+fully reload the browser to load the new styles. No deployment refresh,
+selection changes or embedding reindex is needed for this layout fix.
 
 Version **1.4.0** adds FLUX.2 image generation/editing and the image-model
 selector and settings above the composer. Existing chats, documents,
@@ -919,7 +926,7 @@ update the image and fully reload the browser. For older installations, the
 group and generation-link migrations introduced in the 1.2 series run
 automatically. The compatibility notes below also apply to those upgrades.
 The `1.2` and `1.3` image tags stay on their respective release series; switch
-explicitly to `1.4.0` or `1.4` to follow the new series.
+explicitly to `1.4.1` or `1.4` to follow the new series.
 For multi-resource discovery, grant the app identity Reader on the configured
 resource groups while keeping inference permissions scoped to the intended
 accounts. Refresh deployments, explicitly enable the desired targets and save
@@ -940,7 +947,7 @@ question association. See [Sending a previous question again](#sending-a-previou
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.4.0`, keeping the same persistent volume, ports and
+   `ghcr.io/daknoblo/ai-ui:1.4.1`, keeping the same persistent volume, ports and
    environment settings. The `1.4` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.

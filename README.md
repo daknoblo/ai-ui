@@ -281,15 +281,25 @@ uses the image tool. In manual mode, Automatic uses the configured image default
 
 **FLUX inference permissions:** `Cognitive Services OpenAI User` alone does not
 authorize the BFL provider API. For the application service principal, use a
-custom role with the following **DataAction**, assigned only at each image
+custom role with the following **DataActions**, assigned only at each image
 resource that it needs to call:
 
-`Microsoft.CognitiveServices/accounts/MaaS/images/generations/action`
+- `Microsoft.CognitiveServices/accounts/MaaS/images/generations/action`
+- `Microsoft.CognitiveServices/accounts/AIServices/providers/action`
 
-This permission covers a prompt with an optional base image, so it supports both
-generation and editing. The role needs no key-listing or management permissions;
+The MaaS permission covers image generation with an optional base image, but
+alone is insufficient for the BFL route: Azure also requires the provider
+action for `POST /providers/{providerName}/*`. The provider action is not
+FLUX-specific or image-only; it permits provider model actions on the assigned
+resource. Keep assignments resource-scoped and approve this broader inference
+access explicitly. The role needs no key-listing or management permissions;
 broader `Foundry User` or `Cognitive Services User` roles are not required.
 Keep the separate Reader permission needed for ARM inventory discovery.
+
+If an existing installation reports `PermissionDenied` naming
+`AIServices/providers/action`, update its custom role, allow time for Azure RBAC
+propagation, and retry generation. This permission fix does not require a new
+application image.
 
 Use the operation name from `Microsoft.Authorization/providerOperations` with
 `$expand=resourceTypes`. The CognitiveServices operations API may advertise

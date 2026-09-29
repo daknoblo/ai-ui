@@ -4,7 +4,7 @@
 # The builder ALWAYS runs natively on the build platform ($BUILDPLATFORM) and
 # cross compiles for the target architecture ($TARGETARCH). This avoids slow
 # QEMU emulation for multi-arch builds (Go cross compiles fine without CGO).
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 WORKDIR /src
 

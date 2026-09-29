@@ -47,6 +47,14 @@ export async function verifyChatScroll(page, base, index, mobile) {
   await page.locator('#chat-form textarea').fill(index.stream_prompt);
   await page.locator('#chat-form button[type="submit"]').click();
   await page.waitForFunction(() => window.scrollTestSources.length > 0);
+  if (await page.title() !== `AI-UI – ${await page.locator('#chat-title').innerText()}`) {
+    throw new Error('The provisional chat title did not update the browser tab');
+  }
+  await emit(page, 'title', '<title>AI-UI – Stream title &amp; details</title><h1 id="chat-title" hx-swap-oob="true">Stream title &amp; details</h1>');
+  if (await page.title() !== 'AI-UI – Stream title & details' ||
+      await page.locator('#chat-title').innerText() !== 'Stream title & details') {
+    throw new Error('The SSE title update did not preserve the application name');
+  }
   await emit(page, 'token', paragraphs(80));
   await assertFollowing(page, 'submitting a new message while reading history');
   await scrollUp(page, mobile);

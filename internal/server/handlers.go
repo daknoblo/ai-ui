@@ -144,7 +144,7 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 	cfg := s.cfg.Get()
 
 	pd := pageData{
-		Title:             "AI UI",
+		Title:             s.t("chat.default_title"),
 		Chats:             sidebar.Chats,
 		Groups:            sidebar.Groups,
 		Ungrouped:         sidebar.Ungrouped,

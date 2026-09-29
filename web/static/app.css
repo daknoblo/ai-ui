@@ -586,31 +586,16 @@ html, body {
 .tool-opt[hidden] { display: none; }
 .tool-opt:hover { color: var(--text); }
 .attach-opt input[type="file"] { display: none; }
-/* Image mode has to be unmistakable: accent frame plus the parameter row. */
-.composer.image-mode textarea {
-	border-color: var(--accent);
-	box-shadow: 0 0 0 2px rgba(16,163,127,.35);
-}
-.image-params {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px 14px;
-	align-items: center;
-	flex-basis: 100%;
-	min-width: 0;
-	border-top: 1px solid var(--border);
-	padding-top: 8px;
-}
+/* Keep form submission intact while its groups share the wrapping toolbar. */
+.image-params { display: contents; }
 .image-param-group {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 8px 14px;
 	max-width: 100%;
-}
-.image-param-group:not([hidden]) ~ .image-param-group:not([hidden]) {
 	border-inline-start: 1px solid var(--border);
-	padding-inline-start: 14px;
+	padding-inline-start: 16px;
 }
 /* The class sets display, so the hidden attribute needs to win explicitly. */
 .image-params[hidden] { display: none; }
@@ -1088,9 +1073,7 @@ html, body {
 	.composer-tools > .tool-opt + .tool-opt { padding-inline-start: 12px; }
 	.tool-opt { gap: 4px; }
 	.tool-opt .btn-icon { font-size: 17px; }
-	.image-params { gap: 6px 10px; }
-	.image-param-group { gap: 6px 10px; }
-	.image-param-group:not([hidden]) ~ .image-param-group:not([hidden]) { padding-inline-start: 10px; }
+	.image-param-group { gap: 6px 10px; padding-inline-start: 12px; }
 	.image-params label { font-size: 11px; gap: 4px; }
 	.image-params select { padding: 3px 6px; }
 	.composer textarea { padding: 9px 12px; }

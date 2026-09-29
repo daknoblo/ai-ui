@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>{{.Title}}</title>
+	{{template "page-title" .Title}}
 	<link rel="stylesheet" href="{{assetURL "app.css"}}">
 	<link rel="stylesheet" href="{{assetURL "chat-groups.css"}}">
 	<script src="{{assetURL "htmx.min.js"}}"></script>
@@ -111,7 +111,6 @@
 			var editFlag = document.getElementById('edit-flag');
 			if (editFlag) editFlag.value = edit ? '1' : '0';
 
-			if (box) box.classList.toggle('image-mode', image);
 			var ta = document.querySelector('#chat-form textarea');
 			if (ta && ta.dataset.placeholderImage) {
 				ta.placeholder = image ? ta.dataset.placeholderImage : ta.dataset.placeholderChat;
@@ -144,3 +143,5 @@
 </body>
 </html>
 {{end}}
+
+{{define "page-title"}}<title>{{t "page.title" .}}</title>{{end}}

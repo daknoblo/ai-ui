@@ -23,8 +23,8 @@ export async function selectImageModel(page, base, model) {
   if (!(await saved).ok()) throw new Error(`Could not save image model ${model}`);
 }
 
-async function verifyImageControlLayout(page) {
-  const layout = await page.locator('.composer-tools').evaluate(toolbar => {
+async function verifyImageControlLayout(page, singleRow = false) {
+  const layout = await page.locator('.composer-tools').evaluate((toolbar, singleRow) => {
     const picker = toolbar.querySelector('#image-model-form');
     const attach = toolbar.querySelector('.attach-opt');
     const reasoning = toolbar.querySelector('#reasoning-opt');
@@ -41,18 +41,33 @@ async function verifyImageControlLayout(page) {
       hasHelp: !!document.querySelector('#image-model-help'),
       aligned: window.innerWidth <= 720 || [attach, reasoning].filter(visible).every(node => Math.abs(center(node) - center(picker)) < 2),
       matchingStyle: getComputedStyle(picker).fontSize === getComputedStyle(attach).fontSize,
-      separateParams: !visible(params) || (params.getBoundingClientRect().top >= picker.getBoundingClientRect().bottom &&
-        getComputedStyle(params).borderTopStyle === 'solid'),
-      separatedGroups: [...toolbar.querySelectorAll('.image-param-group')].filter(visible).slice(1).every(node =>
+      inlineParams: getComputedStyle(params).display === (params.hidden ? 'none' : 'contents'),
+      singleRow: !singleRow || window.innerWidth <= 720 ||
+        boxes.every(box => Math.abs(box.y + box.height / 2 - center(picker)) < 2),
+      separatedGroups: [...toolbar.querySelectorAll('.image-param-group')].filter(visible).every(node =>
         getComputedStyle(node).borderInlineStartStyle === 'solid'),
       overlapping: boxes.some((box, i) => boxes.slice(i + 1).some(other =>
         box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)),
       overflowing: toolbar.scrollWidth > toolbar.clientWidth + 2 || boxes.some(box => box.left < 0 || box.right > window.innerWidth),
     };
-  });
+  }, singleRow);
   if (!layout.hasPicker || layout.hasHelp || !layout.aligned || !layout.matchingStyle ||
-      !layout.separateParams || !layout.separatedGroups || layout.overlapping || layout.overflowing) {
+      !layout.inlineParams || !layout.singleRow || !layout.separatedGroups || layout.overlapping || layout.overflowing) {
     throw new Error(`Image control layout regression: ${JSON.stringify(layout)}`);
+  }
+}
+
+async function inputStyle(page) {
+  return page.locator('#chat-form textarea').evaluate(input => {
+    input.blur();
+    const style = getComputedStyle(input);
+    return JSON.stringify([style.borderColor, style.borderWidth, style.boxShadow, style.backgroundColor]);
+  });
+}
+
+async function verifyChatTabTitle(page) {
+  if (await page.title() !== `AI-UI – ${await page.locator('#chat-title').innerText()}`) {
+    throw new Error('Browser tab did not retain the application name and current chat title');
   }
 }
 
@@ -63,6 +78,7 @@ export async function verifyFluxModels(page, base, index, language) {
     await page.goto(`${base}/`, { waitUntil: 'networkidle' });
     id = new URL(page.url()).pathname.split('/').at(-1);
     if (Object.values(index.chats).includes(Number(id))) throw new Error('Expected disposable FLUX chat');
+    await verifyChatTabTitle(page);
     const picker = page.locator('#image-model-select');
     const options = await picker.locator('option').evaluateAll(items => items.map(item => item.value));
     if (!['', 'flux.2-pro', 'flux.2-flex', 'gpt-image-2'].every(model => options.includes(model)) ||
@@ -77,15 +93,17 @@ export async function verifyFluxModels(page, base, index, language) {
     if (await page.locator('.composer').getAttribute('data-mode') !== 'chat') throw new Error('Image selection changed chat mode');
     await page.reload({ waitUntil: 'networkidle' });
     if (await picker.inputValue() !== 'flux.2-flex') throw new Error('Image selection was not persisted per chat');
+    const chatInputStyle = await inputStyle(page);
     const mode = page.waitForResponse(r => r.url().endsWith('/mode') && r.request().method() === 'POST');
     await page.locator('[data-mode="image"].mode-opt').click();
     if (!(await mode).ok()) throw new Error('Image mode could not be saved');
+    if (await inputStyle(page) !== chatInputStyle) throw new Error('Image mode changed the input frame or background');
     if (!(await page.locator('[data-image-setting="flex"]').first().isVisible()) ||
         await page.locator('[data-image-setting="gpt"]').first().isVisible()) throw new Error('Flex showed incorrect parameters');
     await verifyImageControlLayout(page);
     await selectImageModel(page, base, 'flux.2-pro');
     if (await page.locator('[data-image-setting="flex"]').first().isVisible()) throw new Error('Pro exposed Flex-only settings');
-    await verifyImageControlLayout(page);
+    await verifyImageControlLayout(page, true);
     await selectImageModel(page, base, 'gpt-image-2');
     if (!(await page.locator('[data-image-setting="gpt"]').first().isVisible()) ||
         await page.locator('[data-image-setting="flux"]').isVisible()) throw new Error('GPT parameters were not preserved');
@@ -107,10 +125,13 @@ export async function verifyFluxModels(page, base, index, language) {
           form.get('edit') !== (step ? '1' : '0')) throw new Error('Image request lost the current model, parameters or latest-image edit');
       await page.waitForFunction(count => document.querySelectorAll('#messages .bubble img').length === count &&
         [...document.querySelectorAll('#messages [sse-connect]')].every(node => node.dataset.streamState === 'finished'), step + 1);
+      await verifyChatTabTitle(page);
     }
     const urls = await page.locator('#messages .bubble img').evaluateAll(images => images.map(image => image.getAttribute('src')));
     const bytes = await Promise.all(urls.map(async url => (await page.request.get(base + url)).body()));
     await page.reload({ waitUntil: 'networkidle' });
+    await verifyChatTabTitle(page);
+    if (await inputStyle(page) !== chatInputStyle) throw new Error('Reloaded image mode changed input styling');
     for (let i = 0; i < urls.length; i++) {
       if (!(await (await page.request.get(base + urls[i])).body()).equals(bytes[i])) throw new Error('Reload changed durable image bytes');
     }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,48 @@ import (
 
 	"github.com/daknoblo/ai-ui/internal/storage"
 )
+
+func TestBrandedPageTitles(t *testing.T) {
+	for _, language := range []string{"en", "de"} {
+		t.Run(language, func(t *testing.T) {
+			s, handler := newTestServer(t, language)
+			checkTitle := func(body, title string) {
+				t.Helper()
+				expected := "<title>" + html.EscapeString("AI-UI – "+title) + "</title>"
+				if strings.Count(body, "<title>") != 1 || !strings.Contains(body, expected) {
+					t.Errorf("expected exactly one branded title %q", expected)
+				}
+			}
+			for _, title := range []string{"", "Research & <draft>"} {
+				id, err := s.store.CreateChat(t.Context(), title, "", "auto")
+				if err != nil {
+					t.Fatal(err)
+				}
+				page := httptest.NewRecorder()
+				handler.ServeHTTP(page, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/chat/%d", id), nil))
+				if page.Code != http.StatusOK {
+					t.Fatal(page.Code)
+				}
+				checkTitle(page.Body.String(), s.chatTitle(title))
+				data, err := s.buildSidebarData(t.Context(), id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, fragment := range []string{"title-oob", "title-update"} {
+					checkTitle(s.renderString(fragment, data), s.chatTitle(title))
+				}
+			}
+			for _, name := range []string{"stats", "logs"} {
+				page := httptest.NewRecorder()
+				handler.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/"+name, nil))
+				if page.Code != http.StatusOK {
+					t.Fatal(page.Code)
+				}
+				checkTitle(page.Body.String(), s.t(name+".title"))
+			}
+		})
+	}
+}
 
 func TestChatHeaderHasNoModelSelector(t *testing.T) {
 	for _, language := range []string{"en", "de"} {

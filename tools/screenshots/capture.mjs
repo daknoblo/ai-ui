@@ -66,8 +66,8 @@ const SHOTS = [
     id: 'flux-models',
     langs: ['en', 'de'],
     meta: {
-      en: { title: 'FLUX.2 model and image controls', caption: 'Choose Automatic or one image model above the input. FLUX.2 Flex offers resolution, format, steps and guidance; only activated regional replicas are used.' },
-      de: { title: 'FLUX.2-Modell und Bildeinstellungen', caption: 'Über der Eingabe Automatisch oder ein Bildmodell wählen. FLUX.2 Flex bietet Auflösung, Format, Schritte und Prompt-Treue; nur aktivierte regionale Replikate werden verwendet.' },
+      en: { title: 'FLUX.2 model and image controls', caption: 'Choose an image model in the input toolbar. Resolution, format, steps and guidance are grouped separately below; only activated regional replicas are used.' },
+      de: { title: 'FLUX.2-Modell und Bildeinstellungen', caption: 'Das Bildmodell in der Eingabe-Werkzeugleiste wählen. Auflösung, Format, Schritte und Prompt-Treue sind darunter separat gruppiert; nur aktivierte regionale Replikate werden verwendet.' },
     },
     capture: async (page, ctx) => {
       await enableFluxModels(page, base, ctx.index);

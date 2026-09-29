@@ -7,7 +7,7 @@
       "width": 1440,
       "height": 900,
       "title": "FLUX.2 model and image controls",
-      "caption": "Choose Automatic or one image model above the input. FLUX.2 Flex offers resolution, format, steps and guidance; only activated regional replicas are used."
+      "caption": "Choose an image model in the input toolbar. Resolution, format, steps and guidance are grouped separately below; only activated regional replicas are used."
     },
     {
       "id": "sidebar-resize",
@@ -187,7 +187,7 @@
       "width": 1440,
       "height": 900,
       "title": "FLUX.2-Modell und Bildeinstellungen",
-      "caption": "Über der Eingabe Automatisch oder ein Bildmodell wählen. FLUX.2 Flex bietet Auflösung, Format, Schritte und Prompt-Treue; nur aktivierte regionale Replikate werden verwendet."
+      "caption": "Das Bildmodell in der Eingabe-Werkzeugleiste wählen. Auflösung, Format, Schritte und Prompt-Treue sind darunter separat gruppiert; nur aktivierte regionale Replikate werden verwendet."
     },
     {
       "id": "sidebar-resize",

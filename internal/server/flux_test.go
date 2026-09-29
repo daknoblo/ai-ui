@@ -68,7 +68,7 @@ func TestFluxComposerSelectionValidationAndLocalization(t *testing.T) {
 			body := page.Body.String()
 			picker, input := strings.Index(body, `id="image-model-select"`), strings.Index(body, `id="chat-form"`)
 			if picker < 0 || input < picker || !strings.Contains(body, s.t("chat.image_automatic")) ||
-				!strings.Contains(body, `<option value="flux.2-flex" selected>`) || !strings.Contains(body, s.t("chat.image_model_help")) {
+				!strings.Contains(body, `<option value="flux.2-flex" selected>`) || !strings.Contains(body, s.t("chat.image_model")) {
 				t.Fatal("localized saved image selector is not above the composer")
 			}
 			before := s.cfg.Get()

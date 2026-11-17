@@ -24,6 +24,11 @@ services:
       - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
       - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
       - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET:-}
+      # Optional Azure Document Intelligence S0: analyze all PDF pages with
+      # Layout, including scans. Reuses the explicit Azure identity above.
+      # Dedicated API key is an alternative; never reuse an unrelated AI key.
+      - AZURE_DOCUMENT_ENDPOINT=${AZURE_DOCUMENT_ENDPOINT:-}
+      - AZURE_DOCUMENT_API_KEY=${AZURE_DOCUMENT_API_KEY:-}
       # Foundry derives the endpoint from ARM metadata. Optional explicit v1
       # override; this also pins the endpoint in manual mode.
       - AZURE_ENDPOINT=${AZURE_ENDPOINT:-}

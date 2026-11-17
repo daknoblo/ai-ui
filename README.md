@@ -11,13 +11,14 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.5.0.** Optional Azure Document Intelligence Layout reads
-PDFs, including scans and mixed pages, into searchable context with filename
-and page references. OpenDocument text and tables are parsed locally.
-Analysis limits and completeness checks prevent silently indexing partial
-service results. Existing chat/image routing and stored documents are retained.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.5.0)
-and [upgrade checklist](#upgrading-to-150).
+**Current release: 1.5.1.** This maintenance release updates the HTTP router,
+Azure authentication libraries, Markdown renderer, SQLite driver and local PDF
+parser. Browser tests use stable Playwright 1.65.0; image publication uses
+Trivy 0.76.2 and Cosign 3.1.4 with signature verification before promotion.
+Document Intelligence, existing settings and stored document context remain
+unchanged. Go stays on the patched 1.26 series.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.5.1)
+and [upgrade checklist](#upgrading-to-151).
 
 **Website with the full screenshot gallery:**
 <https://daknoblo.github.io/ai-ui/>
@@ -1011,11 +1012,19 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.5.0` and `1.5` and also
+`stable`; version releases publish tags such as `1.5.1` and `1.5` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
-### Upgrading to 1.5.0
+### Upgrading to 1.5.1
+
+Version **1.5.1** updates dependencies without changing the database schema.
+Back up the persistent volume, update the image and reload the browser.
+Keep the existing Azure endpoints, identity and Document Intelligence settings.
+No embedding reindex or deployment refresh is needed. A synthetic database
+created by 1.5.0 was opened with the new SQLite driver, migrated, written to and
+read back without changes to its existing chats, messages, documents, chunks
+or images.
 
 Version **1.5.0** adds optional Azure document analysis and local OpenDocument
 extraction. Back up the data volume, update the image and reload the browser.
@@ -1052,7 +1061,7 @@ update the image and fully reload the browser. For older installations, the
 group and generation-link migrations introduced in the 1.2 series run
 automatically. The compatibility notes below also apply to those upgrades.
 The `1.2`, `1.3` and `1.4` image tags stay on their respective release series; switch
-explicitly to `1.5.0` or `1.5` to follow the new series.
+explicitly to `1.5.1` or `1.5` to follow the new series.
 For multi-resource discovery, grant the app identity Reader on the configured
 resource groups while keeping inference permissions scoped to the intended
 accounts. Refresh deployments, explicitly enable the desired targets and save
@@ -1073,7 +1082,7 @@ question association. See [Sending a previous question again](#sending-a-previou
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.5.0`, keeping the same persistent volume, ports and
+   `ghcr.io/daknoblo/ai-ui:1.5.1`, keeping the same persistent volume, ports and
    environment settings. The `1.5` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.

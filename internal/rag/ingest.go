@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/daknoblo/ai-ui/internal/docparse"
+	"github.com/daknoblo/ai-ui/internal/documentai"
 	"github.com/daknoblo/ai-ui/internal/llm"
 	"github.com/daknoblo/ai-ui/internal/storage"
 )
@@ -33,14 +35,35 @@ type IngestResult struct {
 	Chunks     int
 	// OCRPages is greater than zero when the document had no text layer and was
 	// read off its page images instead.
-	OCRPages int
+	OCRPages      int
+	AnalysisPages int
 }
 
 // Ingestor processes uploaded documents: parse -> chunk -> embed -> store.
 type Ingestor struct {
-	store   *storage.Store
-	llm     *llm.Client
-	prompts Prompts
+	store    *storage.Store
+	llm      *llm.Client
+	prompts  Prompts
+	analyzer interface {
+		Analyze(context.Context, []byte) ([]documentai.Page, error)
+	}
+}
+
+// SetDocumentAnalyzer configures analysis before the server starts serving.
+func (in *Ingestor) SetDocumentAnalyzer(analyzer interface {
+	Analyze(context.Context, []byte) ([]documentai.Page, error)
+}) {
+	in.analyzer = analyzer
+}
+
+// AnalyzesImage reports whether an upload should be ingested as a document
+// instead of being kept solely as a vision/image-editing attachment.
+func (in *Ingestor) AnalyzesImage(filename, mime string) bool {
+	return in.analyzer != nil && docparse.IsAnalysisImage(filename, mime)
+}
+
+func (in *Ingestor) DocumentAnalysisEnabled() bool {
+	return in.analyzer != nil
 }
 
 // NewIngestor creates an ingestor.
@@ -73,7 +96,29 @@ func (in *Ingestor) ingest(ctx context.Context, chatID int64, filename, mime str
 ) (IngestResult, error) {
 	var res IngestResult
 
-	text, err := docparse.Extract(filename, mime, data)
+	var chunks []string
+	var text string
+	var err error
+	if in.analyzer != nil && docparse.UseDocumentAnalysis(filename, mime, data) {
+		if expected := docparse.PDFPageCount(data); expected > documentai.MaxPages {
+			return res, fmt.Errorf("document exceeds the %d-page analysis limit", documentai.MaxPages)
+		}
+		pages, analyzeErr := in.analyzer.Analyze(ctx, data)
+		if analyzeErr != nil {
+			return res, analyzeErr
+		}
+		if expected := docparse.PDFPageCount(data); expected > 0 && len(pages) != expected {
+			return res, fmt.Errorf("document analysis returned %d of %d pages; use the S0 tier (F0 returns only two pages)", len(pages), expected)
+		}
+		res.AnalysisPages = len(pages)
+		for _, page := range pages {
+			for _, chunk := range ChunkText(page.Text, defaultChunkSize, defaultOverlap) {
+				chunks = append(chunks, fmt.Sprintf("%q\n%s\n%s", filename, in.prompts.OCRPage(page.Number, len(pages)), chunk))
+			}
+		}
+	} else {
+		text, err = docparse.Extract(filename, mime, data)
+	}
 	// A PDF without a text layer is a scan. Its pages are images, so the model
 	// that reads images can supply the text the parser could not find.
 	if errors.Is(err, docparse.ErrNeedsOCR) {
@@ -83,7 +128,9 @@ func (in *Ingestor) ingest(ctx context.Context, chatID int64, filename, mime str
 		return res, err
 	}
 
-	chunks := ChunkText(text, defaultChunkSize, defaultOverlap)
+	if res.AnalysisPages == 0 {
+		chunks = ChunkText(text, defaultChunkSize, defaultOverlap)
+	}
 	if len(chunks) == 0 {
 		return res, fmt.Errorf("document contains no usable text")
 	}
@@ -111,7 +158,9 @@ func (in *Ingestor) ingest(ctx context.Context, chatID int64, filename, mime str
 	res.DocumentID = docID
 
 	if err := in.store.AddChunks(ctx, docID, chunks, embeddings); err != nil {
-		return res, err
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		return IngestResult{}, errors.Join(err, in.store.DeleteDocument(cleanup, docID))
 	}
 	res.Chunks = len(chunks)
 	return res, nil

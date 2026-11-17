@@ -11,13 +11,13 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.4.2.** Chat and image mode now share one wrapping toolbar
-and the same input styling, without an image-only green frame or a separate
-image-parameter row. Browser tabs use **AI-UI – page title**, including live
-chat-title updates, statistics and logs. Model routing, saved choices and image
-editing remain unchanged; no embedding reindex is required.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.4.2)
-and [upgrade checklist](#upgrading-to-142).
+**Current release: 1.5.0.** Optional Azure Document Intelligence Layout reads
+PDFs, including scans and mixed pages, into searchable context with filename
+and page references. OpenDocument text and tables are parsed locally.
+Analysis limits and completeness checks prevent silently indexing partial
+service results. Existing chat/image routing and stored documents are retained.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.5.0)
+and [upgrade checklist](#upgrading-to-150).
 
 **Website with the full screenshot gallery:**
 <https://daknoblo.github.io/ai-ui/>
@@ -624,6 +624,8 @@ Image generation (fall back to the AI endpoint when empty):
 | `AZURE_IMAGE_ENDPOINT` | Image endpoint URL, e.g. `https://my-resource.services.ai.azure.com/openai/v1`. |
 | `AZURE_IMAGE_DEPLOYMENT` | Deployment name of the image model, e.g. `gpt-image-2`. |
 | `AZURE_IMAGE_MODELS` | Image deployment list (comma or newline separated). In manual mode, empty ⇒ only `AZURE_IMAGE_DEPLOYMENT`; in Foundry mode, empty ⇒ supported inventory entries, otherwise an allow-list for the image selection in Settings. |
+| `AZURE_DOCUMENT_ENDPOINT` | Optional Document Intelligence **S0** resource endpoint, e.g. `https://my-documents.cognitiveservices.azure.com`. Enables Layout for every PDF and TIFF/BMP/HEIF document upload. |
+| `AZURE_DOCUMENT_API_KEY` | Optional dedicated Document Intelligence key, environment only. When absent, uses the explicit `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` identity. No CLI/default-credential fallback in production. |
 | `AZURE_IMAGE_API_VERSION` | Image API version.                    |
 
 The key is `AZURE_IMAGE_API_KEY`; when it is empty `AZURE_API_KEY` is used.
@@ -660,11 +662,14 @@ when you want to verify generation, bearing in mind the associated charges.
 
 Document uploads are only enabled once storage and the embedding endpoint are
 green, because a document is chunked and embedded on the way in. Attaching an
-image needs neither: it is stored as is and travels with the message. A scanned
-PDF additionally needs a supported vision deployment (a vision-capable
+PNG/JPEG/WebP/GIF image needs neither: it is stored as is and travels with the
+message. With `AZURE_DOCUMENT_ENDPOINT`, PDFs and TIFF/BMP/HEIF document images
+use Azure Document Intelligence and require its analysis permissions, not a
+vision deployment. Without it, a scanned PDF needs a supported vision deployment (a vision-capable
 `AZURE_MODELS` entry in manual mode, or the selected chat/vision role in Foundry
 mode); without one the upload fails with that reason instead of storing an
-empty document. A
+empty document. That legacy fallback recognizes only directly embedded
+JPEG/PNG scans; it is not a general PDF renderer. A
 background check (`HEALTHCHECK_INTERVAL`) monitors the connection continuously -
 without the per-deployment probes - and reports failures through the sidebar
 status and the log.
@@ -681,6 +686,113 @@ extracted text.
 Parser improvements apply to newly uploaded documents. To replace an old
 incorrect extract, remove and upload that document again; rebuilding embeddings
 alone reuses the already stored text.
+
+### Azure Document Intelligence (optional)
+
+Set `AZURE_DOCUMENT_ENDPOINT` to a dedicated **S0** resource's custom-domain
+endpoint and reuse the app's explicit Azure service-principal environment:
+
+```yaml
+environment:
+  - AZURE_DOCUMENT_ENDPOINT=https://my-documents.cognitiveservices.azure.com
+  - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+  - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+  - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+```
+
+Alternatively, supply `AZURE_DOCUMENT_API_KEY` for that resource. No secret is
+stored in the UI or configuration file. Invalid/incomplete startup configuration
+fails explicitly. The integration uses `prebuilt-layout`, API `2024-11-30`,
+without optional paid add-ons or custom model training.
+
+Grant a custom role **only at this resource**, with no management/key actions:
+
+```text
+Microsoft.CognitiveServices/accounts/FormRecognizer/documentmodels:analyze/action
+Microsoft.CognitiveServices/accounts/FormRecognizer/documentmodels/analyzeresults/read
+```
+
+These grant document-model analysis/results, not an exclusive restriction to
+Layout. Provisioning or testing with an operator identity does not establish
+the app identity's effective access. Verify a synthetic PDF upload using the
+deployed app identity, including result deletion, before using real documents.
+The existing connection monitor does not make billable Layout probes.
+
+**Processing and formats**
+
+- Every PDF goes through Layout, including text PDFs, scans and mixed pages.
+  PDF compression/image encoding no longer depends on the legacy image scanner.
+- Extracted Markdown retains table structure. Each stored chunk includes its
+  filename and page reference. OCR is performed on upload, not on each question
+  or embedding reindex. The upload notice identifies Azure analysis and warns
+  that important figures should be verified against the original.
+- TIFF/TIF, BMP and HEIF/HEIC uploads become searchable documents when enabled.
+  PNG/JPEG/WebP/GIF remain ordinary vision/image-editing attachments.
+- DOCX/XLSX/PPTX, RTF, text and structured text keep their local parsers.
+  ODT/ODS/ODP support extracts text/table values locally with ZIP/XML limits.
+  OpenDocument comments/deleted text are excluded; macros and external
+  references are not executed or fetched. Nested OpenDocument tables and
+  excessive repeated nonempty rows/columns fail explicitly.
+- This is **not** arbitrary-file conversion: legacy DOC/XLS/PPT, arbitrary
+  archives, audio/video and OCR of images embedded inside Office/OpenDocument
+  files are not included. Export these to PDF first when their visual content
+  must be analyzed.
+
+**Limits and failure behavior**
+
+Uploads remain limited to 25 MiB/file. Azure analysis accepts up to **100 pages**,
+with a five-minute deadline and one concurrent analysis per app process.
+When the local PDF parser can determine the page count, over-limit documents
+are rejected before submission. Otherwise the request includes pages 1-101:
+the sentinel page detects over-limit files, so up to **101 pages may be billed**
+even when the upload is rejected. Longer documents are never silently truncated.
+Use **S0**, not F0 (which returns only two pages). Known PDF page counts are
+checked against the result; unreadable local page counts cannot detect an F0
+truncation, making the S0 requirement essential.
+
+Responses are capped at 32 MiB and extracted text at 8 MiB. Missing/out-of-order
+pages, invalid page spans, empty output, service errors and cleanup failures
+fail the upload instead of indexing a partial result. The legacy vision OCR
+fallback also aborts on a failed page. Malformed files and OCR mistakes are not
+made reliable by automatic retries.
+
+Billable POST submissions are never automatically replayed. Polling respects
+bounded Retry-After delays; redirects and cross-origin operation URLs are
+rejected before forwarding credentials. The app attempts to delete the Azure
+analysis result after retrieval or failure, including request cancellation.
+If cleanup fails, the upload reports failure; Azure's retention policy can
+still apply. Original files are not added to local document storage; extracted
+chunks stay in the existing SQLite database.
+
+**Costs and privacy**
+
+Layout includes OCR and is charged per analyzed page; embeddings and chat
+usage remain separate. Only explicitly enabling this endpoint sends PDFs and
+the additional document-image formats to Document Intelligence. Microsoft
+documents regional processing and temporary retention of inputs/results for
+24 hours, with earlier deletion through the result-deletion API. See
+[pricing](https://azure.microsoft.com/en-us/pricing/details/document-intelligence/)
+and [data handling](https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/document-intelligence/data-privacy-security).
+
+After enabling the feature, **upload previously failed/incomplete PDFs again**.
+An embedding reindex cannot recreate text that was never extracted.
+For comparing documents, retrieval still selects relevant excerpts rather
+than guaranteeing a complete line-by-line audit of every page.
+
+An opt-in integration test uses synthetic text and scanned PDF pages:
+
+```sh
+DOCUMENTAI_LIVE_TEST_ENDPOINT=https://my-documents.cognitiveservices.azure.com \
+DOCUMENTAI_LIVE_TEST_SUBSCRIPTION=<subscription-id> \
+go test ./internal/documentai -run '^TestLiveLayout$' -v -count=1
+```
+
+This makes one billed two-page Layout request using the Azure CLI **operator**
+identity, not the production service principal. Normal tests use local fixtures
+and never contact Azure.
+To test the application identity instead, set `DOCUMENTAI_LIVE_TEST_AUTH=application`
+and supply the three `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`
+environment variables; this mode never falls back to CLI credentials.
 
 ### Web search (optional)
 
@@ -899,11 +1011,21 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.4.2` and `1.4` and also
+`stable`; version releases publish tags such as `1.5.0` and `1.5` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
-### Upgrading to 1.4.2
+### Upgrading to 1.5.0
+
+Version **1.5.0** adds optional Azure document analysis and local OpenDocument
+extraction. Back up the data volume, update the image and reload the browser.
+Without `AZURE_DOCUMENT_ENDPOINT`, existing PDF extraction remains local with
+the limited vision-scan fallback. To enable Layout, configure an S0 resource,
+resource-scoped analysis permissions and the environment described in
+[Azure Document Intelligence](#azure-document-intelligence-optional).
+No database migration or embedding reindex is needed. Remove and upload any
+previously failed/incomplete documents again; reindexing alone cannot recover
+missing text.
 
 Version **1.4.2** unifies the composer layout across chat and image mode and
 adds the application name to browser tabs without changing model routing,
@@ -929,8 +1051,8 @@ When updating an existing 1.2.x installation, back up the data volume,
 update the image and fully reload the browser. For older installations, the
 group and generation-link migrations introduced in the 1.2 series run
 automatically. The compatibility notes below also apply to those upgrades.
-The `1.2` and `1.3` image tags stay on their respective release series; switch
-explicitly to `1.4.2` or `1.4` to follow the new series.
+The `1.2`, `1.3` and `1.4` image tags stay on their respective release series; switch
+explicitly to `1.5.0` or `1.5` to follow the new series.
 For multi-resource discovery, grant the app identity Reader on the configured
 resource groups while keeping inference permissions scoped to the intended
 accounts. Refresh deployments, explicitly enable the desired targets and save
@@ -951,8 +1073,8 @@ question association. See [Sending a previous question again](#sending-a-previou
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.4.2`, keeping the same persistent volume, ports and
-   environment settings. The `1.4` tag follows releases in this minor series;
+   `ghcr.io/daknoblo/ai-ui:1.5.0`, keeping the same persistent volume, ports and
+   environment settings. The `1.5` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.
    With the service name from the example:

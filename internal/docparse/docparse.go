@@ -47,6 +47,8 @@ func Extract(filename, mime string, data []byte) (string, error) {
 		text, err = parsePPTX(data)
 	case formatRTF:
 		text, err = parseRTF(data)
+	case formatODF:
+		text, err = parseODF(data)
 	case formatLegacyOffice:
 		return "", fmt.Errorf("legacy Office format; please save it as .docx, .xlsx or .pptx and upload it again")
 	default:
@@ -75,6 +77,7 @@ const (
 	formatXLSX
 	formatPPTX
 	formatRTF
+	formatODF
 	formatLegacyOffice
 )
 
@@ -85,6 +88,7 @@ var extensions = map[string]kind{
 	".pdf": formatPDF, ".docx": formatDOCX, ".xlsx": formatXLSX, ".pptx": formatPPTX,
 	".docm": formatDOCX, ".xlsm": formatXLSX, ".pptm": formatPPTX,
 	".rtf": formatRTF,
+	".odt": formatODF, ".ods": formatODF, ".odp": formatODF,
 	".doc": formatLegacyOffice, ".xls": formatLegacyOffice, ".ppt": formatLegacyOffice,
 
 	// markup
@@ -120,22 +124,25 @@ var extensions = map[string]kind{
 // when both are known, because browsers derive the type from the extension
 // anyway and get it wrong for many of the entries above.
 var mimes = map[string]kind{
-	"application/pdf": formatPDF,
+	"application/pdf":                                                           formatPDF,
+	"application/vnd.oasis.opendocument.text":                                   formatODF,
+	"application/vnd.oasis.opendocument.spreadsheet":                            formatODF,
+	"application/vnd.oasis.opendocument.presentation":                           formatODF,
 	"application/vnd.openxmlformats-officedocument.wordprocessingml.document":   formatDOCX,
 	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":         formatXLSX,
 	"application/vnd.openxmlformats-officedocument.presentationml.presentation": formatPPTX,
-	"application/msword":            formatLegacyOffice,
-	"application/vnd.ms-excel":      formatLegacyOffice,
-	"application/vnd.ms-powerpoint": formatLegacyOffice,
-	"application/rtf":               formatRTF,
-	"text/rtf":                      formatRTF,
-	"application/json":              formatText,
-	"application/x-ndjson":          formatText,
-	"application/yaml":              formatText,
-	"application/toml":              formatText,
-	"application/xml":               formatMarkup,
-	"text/xml":                      formatMarkup,
-	"text/html":                     formatMarkup,
+	"application/msword":                                                        formatLegacyOffice,
+	"application/vnd.ms-excel":                                                  formatLegacyOffice,
+	"application/vnd.ms-powerpoint":                                             formatLegacyOffice,
+	"application/rtf":                                                           formatRTF,
+	"text/rtf":                                                                  formatRTF,
+	"application/json":                                                          formatText,
+	"application/x-ndjson":                                                      formatText,
+	"application/yaml":                                                          formatText,
+	"application/toml":                                                          formatText,
+	"application/xml":                                                           formatMarkup,
+	"text/xml":                                                                  formatMarkup,
+	"text/html":                                                                 formatMarkup,
 }
 
 // UploadAccept is the accept attribute of the file picker: the known extensions
@@ -209,6 +216,12 @@ func sniffZIP(data []byte) kind {
 		return formatUnknown
 	}
 	for _, f := range zr.File {
+		if f.Name == "mimetype" {
+			raw, err := zr.readPart(f)
+			if err == nil && strings.HasPrefix(string(raw), "application/vnd.oasis.opendocument.") {
+				return formatODF
+			}
+		}
 		switch {
 		case strings.HasPrefix(f.Name, "word/"):
 			return formatDOCX

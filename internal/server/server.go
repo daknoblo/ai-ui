@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/daknoblo/ai-ui/internal/config"
+	"github.com/daknoblo/ai-ui/internal/documentai"
 	"github.com/daknoblo/ai-ui/internal/i18n"
 	"github.com/daknoblo/ai-ui/internal/llm"
 	"github.com/daknoblo/ai-ui/internal/logbuf"
@@ -46,7 +47,7 @@ type Server struct {
 }
 
 // New creates a server and parses the templates.
-func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
+func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer, options ...func(*Server)) *Server {
 	staticFS, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {
 		panic("embedded static assets missing: " + err.Error())
@@ -132,8 +133,21 @@ func New(cfg *config.Store, store *storage.Store, logs *logbuf.Buffer) *Server {
 		generations:         make(map[int64]generationJob),
 		generationWatchDone: make(chan struct{}),
 	}
+	for _, option := range options {
+		option(s)
+	}
 	go s.watchGenerations()
 	return s
+}
+
+// WithDocumentAnalysis enables Azure Layout without changing existing demo or
+// manual-mode callers. A nil client keeps the local extraction path.
+func WithDocumentAnalysis(client *documentai.Client) func(*Server) {
+	return func(s *Server) {
+		if client != nil {
+			s.ingestor.SetDocumentAnalyzer(client)
+		}
+	}
 }
 
 // Close cancels and joins indexing and generation workers before closing SQLite.

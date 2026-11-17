@@ -168,6 +168,9 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		FluxGuidance:      cfg.FluxGuidance,
 	}
 	pd.ImageModels = s.imageModels()
+	if s.ingestor.DocumentAnalysisEnabled() {
+		pd.UploadAccept += ",.tif,.tiff,.bmp,.heif,.heic"
+	}
 	if s.cfg.ImageFoundryStatus().Enabled {
 		pd.ImageEditModels = s.cfg.ImageModels(foundry.ImageEdits)
 	} else {
@@ -1473,6 +1476,10 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	// capable chat model, which is configured elsewhere.
 	var images, docs []*multipart.FileHeader
 	for _, header := range headers {
+		if s.ingestor.AnalyzesImage(header.Filename, header.Header.Get("Content-Type")) {
+			docs = append(docs, header)
+			continue
+		}
 		if uploadImageMIME(header) != "" {
 			images = append(images, header)
 			continue
@@ -1501,6 +1508,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		failures []string
 		// transcribed names the scans that had to be read by the model.
 		transcribed []string
+		analyzed    []string
 	)
 	for _, header := range images {
 		if header.Size > maxUploadBytes {
@@ -1544,12 +1552,18 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		if res.OCRPages > 0 {
 			transcribed = append(transcribed, s.t("upload.ocr_item", header.Filename, res.OCRPages))
 		}
+		if res.AnalysisPages > 0 {
+			analyzed = append(analyzed, s.t("upload.ocr_item", header.Filename, res.AnalysisPages))
+		}
 		added++
 	}
 
 	notice, isErr := s.uploadSummary(added, failures)
 	if len(transcribed) > 0 {
 		notice += " " + s.t("upload.ocr_used", strings.Join(transcribed, ", "))
+	}
+	if len(analyzed) > 0 {
+		notice += " " + s.t("upload.analysis_used", strings.Join(analyzed, ", "))
 	}
 	s.renderDocList(w, r, chatID, notice, isErr)
 }

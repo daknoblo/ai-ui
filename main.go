@@ -83,6 +83,10 @@ func run() error {
 		return err
 	}
 	configureFoundryFromEnv(cfgStore, os.Getenv)
+	documentClient, err := documentAnalysisFromEnv(os.Getenv)
+	if err != nil {
+		return err
+	}
 	logs.SetLevel(logbuf.ParseLevel(cfg.LogLevel))
 
 	// Open the SQLite database in the data path.
@@ -98,7 +102,7 @@ func run() error {
 	}
 
 	// Start the HTTP server.
-	srv := server.New(cfgStore, store, logs)
+	srv := server.New(cfgStore, store, logs, server.WithDocumentAnalysis(documentClient))
 	defer srv.Close()
 	httpServer := &http.Server{
 		Addr:              ":" + port,

@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 )
 
@@ -14,12 +13,6 @@ type TranscribeResult struct {
 	Model string
 	Usage Usage
 }
-
-// maxConsecutiveFailures stops a transcription that is failing for a reason
-// outside the individual page - an endpoint that is down, out of quota or
-// rejecting the model. Every attempt after that costs without any prospect of
-// succeeding.
-const maxConsecutiveFailures = 3
 
 // CanTranscribe reports whether reading images as text is possible at all: it
 // needs the chat endpoint, a key and a deployment that can see.
@@ -59,12 +52,7 @@ func (c *Client) Transcribe(ctx context.Context, prompt string, pageLabel func(p
 	if cfg.Foundry && cfg.EnabledDeployments != nil {
 		opts.Model = ""
 	}
-	var (
-		sb          strings.Builder
-		lastErr     error
-		failures    int
-		consecutive int
-	)
+	var sb strings.Builder
 
 	for i, img := range images {
 		if err := ctx.Err(); err != nil {
@@ -77,27 +65,15 @@ func (c *Client) Transcribe(ctx context.Context, prompt string, pageLabel func(p
 			{Role: "system", Content: prompt},
 			{Role: "user", Content: label, Images: []ImageContent{img}},
 		}, nil, func(delta string) error {
+			if len(delta) > (8<<20)-page.Len() || len(delta) > (8<<20)-sb.Len()-page.Len() {
+				return fmt.Errorf("transcription exceeds the 8 MiB text limit")
+			}
 			page.WriteString(delta)
 			return nil
 		})
 		if err != nil {
-			// One unreadable page must not throw away the rest of the document.
-			slog.Warn("transcribe page", "page", i+1, "of", len(images), "err", err)
-			lastErr = err
-			failures++
-			consecutive++
-			// An endpoint that is down, rate limited or refusing the model
-			// fails every page the same way. Retrying the whole document
-			// against it only burns quota, so give up once it is clearly not a
-			// problem of the individual page.
-			if consecutive >= maxConsecutiveFailures {
-				slog.Warn("giving up on the transcription",
-					"consecutive_failures", consecutive, "read", result.Pages, "of", len(images))
-				break
-			}
-			continue
+			return TranscribeResult{}, fmt.Errorf("transcription failed on page %d of %d; no partial document was saved: %w", i+1, len(images), err)
 		}
-		consecutive = 0
 
 		result.Usage.PromptTokens += turn.Usage.PromptTokens
 		result.Usage.CompletionTokens += turn.Usage.CompletionTokens
@@ -121,14 +97,7 @@ func (c *Client) Transcribe(ctx context.Context, prompt string, pageLabel func(p
 
 	result.Text = sb.String()
 	if result.Pages == 0 {
-		if lastErr != nil {
-			return result, fmt.Errorf("transcription failed: %w", lastErr)
-		}
 		return result, fmt.Errorf("the pages carry no readable text")
-	}
-	if failures > 0 {
-		slog.Warn("some pages could not be transcribed",
-			"failed", failures, "read", result.Pages, "total", len(images))
 	}
 	return result, nil
 }

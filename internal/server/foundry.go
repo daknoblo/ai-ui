@@ -21,9 +21,11 @@ import (
 var errRefreshRunning = errors.New("deployment refresh is already running")
 
 type deploymentChoice struct {
-	Name    string
-	Label   string
-	Checked bool
+	Name     string
+	Label    string
+	Location string
+	Detail   string
+	Checked  bool
 }
 
 type deploymentRow struct {
@@ -42,6 +44,16 @@ type deploymentField struct {
 	Name, LabelKey, Current, Env, EmptyKey string
 	Choices                                []deploymentChoice
 	Locked, CurrentAvailable               bool
+}
+
+func (f deploymentField) SelectedCount() int {
+	count := 0
+	for _, choice := range f.Choices {
+		if choice.Checked {
+			count++
+		}
+	}
+	return count
 }
 
 type foundryView struct {
@@ -216,19 +228,20 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 		var choices []deploymentChoice
 		for _, target := range s.cfg.Targets(op) {
 			resource := target.Account.ResourceID[strings.LastIndex(target.Account.ResourceID, "/")+1:]
-			label := target.Deployment.Name + " — " + resource
+			location := resource
 			if target.Account.Location != "" {
-				label += " · " + target.Account.Location
+				location += " · " + target.Account.Location
 			}
-			label += " · " + target.Deployment.ModelName
+			detail := target.Deployment.ModelName
 			if target.Deployment.ModelVersion != "" {
-				label += " (" + target.Deployment.ModelVersion + ")"
+				detail += " (" + target.Deployment.ModelVersion + ")"
 			}
-			choices = append(choices, deploymentChoice{Name: target.Key, Label: label, Checked: slices.Contains(pools[op], target.Key)})
+			choices = append(choices, deploymentChoice{Name: target.Key, Label: target.Deployment.Name,
+				Location: location, Detail: detail, Checked: slices.Contains(pools[op], target.Key)})
 		}
 		for _, id := range pools[op] {
 			if !slices.ContainsFunc(choices, func(choice deploymentChoice) bool { return choice.Name == id }) {
-				choices = append(choices, deploymentChoice{Name: id, Label: s.t("foundry.unavailable_selection", id), Checked: true})
+				choices = append(choices, deploymentChoice{Name: id, Label: s.t("foundry.unavailable_selection", shortDeploymentTarget(id)), Detail: id, Checked: true})
 			}
 		}
 		return choices

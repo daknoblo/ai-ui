@@ -101,8 +101,21 @@ func GroupThousands(lang string, n int64) string {
 // stable; only the values differ per language.
 var catalog = map[string]map[string]string{
 	EN: {
-		"page.title":            "AI-UI – %s",
-		"chat.image_resolution": "Resolution",
+		"config.details":               "Details",
+		"config.check_details":         "About connection checks",
+		"config.verify_short_hint":     "Uses saved settings. Chat and embedding checks may consume tokens.",
+		"foundry.connection_details":   "Connection details",
+		"foundry.catalog_details":      "Full deployment catalog",
+		"foundry.selection_details":    "How model selection works",
+		"foundry.refresh_short_hint":   "Updates the catalog only. Your saved selections stay unchanged.",
+		"foundry.selection_short_hint": "Check the deployments to use, then Save. Multiple selections rotate; an empty group disables that function.",
+		"foundry.selected_count":       "%d / %d selected",
+		"check.state_ok":               "Ready",
+		"check.state_err":              "Failed",
+		"check.state_info":             "Limited check",
+		"check.state_skipped":          "Not tested",
+		"page.title":                   "AI-UI – %s",
+		"chat.image_resolution":        "Resolution",
 
 		// ---- generic actions ----
 		"action.close":  "Close",
@@ -498,8 +511,21 @@ var catalog = map[string]map[string]string{
 	},
 
 	DE: {
-		"page.title":            "AI-UI – %s",
-		"chat.image_resolution": "Auflösung",
+		"config.details":               "Details",
+		"config.check_details":         "Hinweise zur Verbindungsprüfung",
+		"config.verify_short_hint":     "Verwendet gespeicherte Einstellungen. Chat- und Embedding-Prüfungen können Tokens verbrauchen.",
+		"foundry.connection_details":   "Verbindungsdetails",
+		"foundry.catalog_details":      "Vollständiger Deployment-Katalog",
+		"foundry.selection_details":    "So funktioniert die Modellauswahl",
+		"foundry.refresh_short_hint":   "Aktualisiert nur den Katalog. Deine gespeicherte Auswahl bleibt unverändert.",
+		"foundry.selection_short_hint": "Gewünschte Deployments anhaken, dann speichern. Mehrere werden reihum genutzt; eine leere Gruppe deaktiviert die Funktion.",
+		"foundry.selected_count":       "%d / %d ausgewählt",
+		"check.state_ok":               "Bereit",
+		"check.state_err":              "Fehlgeschlagen",
+		"check.state_info":             "Teilprüfung",
+		"check.state_skipped":          "Nicht getestet",
+		"page.title":                   "AI-UI – %s",
+		"chat.image_resolution":        "Auflösung",
 
 		// ---- generic actions ----
 		"action.close":  "Schließen",

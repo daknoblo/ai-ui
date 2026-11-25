@@ -11,13 +11,13 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.6.0.** GPT-Image-2.5 Sunburst joins the image composer with
-independent resolution and quality controls, including `xhigh` and `max`.
-Keep a compact Sunburst + FLUX.2 Pro selection by enabling only their regional
-replicas in both image pools. Existing models and saved selections are retained
-until explicitly changed; no automatic migration or embedding reindex occurs.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.6.0)
-and [upgrade checklist](#upgrading-to-160).
+**Current release: 1.6.1.** Settings now shows compact deployment choices and
+expandable connection checks, with technical connection details and the full
+inventory collapsed by default. Errors remain visible. FLUX's expected
+missing-prompt HTTP 422 is recognized as a limited API probe, not an inference
+failure or proof of generation access. Saved model selections are unchanged.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.6.1)
+and [upgrade checklist](#upgrading-to-161).
 
 **Website with the full screenshot gallery:**
 <https://daknoblo.github.io/ai-ui/>
@@ -670,6 +670,15 @@ Variables that are not set stay editable in the UI. Empty values count as
 
 ### Readiness & connection check
 
+Settings prioritizes the selectable deployment pools. Checkbox rows show the
+deployment name, resource and region; full identifiers/model versions remain
+available under Details. Connection addresses and the full inventory are
+collapsed by default to avoid repeating the same metadata.
+Check results use compact expandable rows. Errors stay expanded, while limited
+metadata/API probes are labeled as such rather than shown as proof of inference.
+Refresh only updates inventory; Save applies checkbox selections; Check again
+tests saved settings and may consume chat/embedding tokens.
+
 The connection check sits at the top of the settings dialog and runs at startup.
 In manual mode it also runs in the dialog after configuration changes; in
 Foundry mode save the role selections and explicitly choose **Check again**.
@@ -685,6 +694,9 @@ check sends no prompt: only the expected missing-prompt response is accepted,
 and the result explicitly says that generation is untested. An arbitrary 400,
 such as `unknown_model`, is an error, not a green check. Use a real image request
 when you want to verify generation, bearing in mind the associated charges.
+For FLUX, a structured HTTP 422 error containing only a missing `body.prompt`
+is also an expected probe result. Other 422 errors remain failures; this probe
+still does not prove permission to generate an image.
 
 Document uploads are only enabled once storage and the embedding endpoint are
 green, because a document is chunked and embedded on the way in. Attaching an
@@ -1037,11 +1049,16 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.6.0` and `1.6` and also
+`stable`; version releases publish tags such as `1.6.1` and `1.6` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
-### Upgrading to 1.6.0
+### Upgrading to 1.6.1
+
+Version **1.6.1** simplifies Settings and corrects the FLUX missing-prompt
+probe. Update the container and fully reload the browser. Run **Check again**
+to replace previously cached FLUX probe errors. Existing checkbox selections,
+model routing and document data are unchanged; no reindex is needed.
 
 Version **1.6.0** adds Sunburst image generation/editing and independent options.
 Back up the volume, update the image and reload the browser. Refresh the
@@ -1108,7 +1125,7 @@ update the image and fully reload the browser. For older installations, the
 group and generation-link migrations introduced in the 1.2 series run
 automatically. The compatibility notes below also apply to those upgrades.
 The `1.2`, `1.3`, `1.4` and `1.5` image tags stay on their respective release series; switch
-explicitly to `1.6.0` or `1.6` to follow the new series.
+explicitly to `1.6.1` or `1.6` to follow the new series.
 For multi-resource discovery, grant the app identity Reader on the configured
 resource groups while keeping inference permissions scoped to the intended
 accounts. Refresh deployments, explicitly enable the desired targets and save
@@ -1129,7 +1146,7 @@ question association. See [Sending a previous question again](#sending-a-previou
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.6.0`, keeping the same persistent volume, ports and
+   `ghcr.io/daknoblo/ai-ui:1.6.1`, keeping the same persistent volume, ports and
    environment settings. The `1.6` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.

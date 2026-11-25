@@ -331,7 +331,30 @@ func (c *Client) VerifyImage(ctx context.Context, deployment string) error {
 	if resp.StatusCode == http.StatusBadRequest && missingImagePrompt(message) {
 		return nil
 	}
+	if fluxPath != "" && resp.StatusCode == http.StatusUnprocessableEntity && missingFluxPrompt(message) {
+		return nil
+	}
 	return fmt.Errorf("image API probe returned HTTP %d instead of the expected missing-prompt response: %s", resp.StatusCode, message)
+}
+
+// BFL uses a structured 422 validation error. Accept only missing body.prompt,
+// never unrelated validation failures, permission errors or empty error lists.
+func missingFluxPrompt(body string) bool {
+	var payload struct {
+		Detail []struct {
+			Type string   `json:"type"`
+			Loc  []string `json:"loc"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil || len(payload.Detail) == 0 {
+		return false
+	}
+	for _, detail := range payload.Detail {
+		if detail.Type != "missing" || len(detail.Loc) != 2 || detail.Loc[0] != "body" || detail.Loc[1] != "prompt" {
+			return false
+		}
+	}
+	return true
 }
 
 func missingImagePrompt(body string) bool {

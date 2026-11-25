@@ -157,6 +157,8 @@ func readImageParams(form url.Values, cfg *config.Config) error {
 		{"image_quality", &cfg.ImageQuality, imageQualities},
 		{"image_format", &cfg.ImageFormat, imageFormats},
 		{"flux_size", &cfg.FluxSize, llm.FluxSizes},
+		{"sunburst_size", &cfg.SunburstSize, llm.SunburstSizes},
+		{"sunburst_quality", &cfg.SunburstQuality, llm.SunburstQualities},
 	} {
 		if form.Has(field.key) {
 			value := form.Get(field.key)

@@ -1,12 +1,18 @@
-export async function enableFluxModels(page, base, index) {
+export async function enableFluxModels(page, base, index, pairOnly = false) {
   await page.goto(`${base}/chat/${index.chats.chat}`, { waitUntil: 'networkidle' });
   await page.locator('.btn-config[hx-get="/config"]').evaluate(button => button.click());
   await page.locator('.config-form').waitFor();
   const original = await page.locator('.config-form').evaluate(form => new URLSearchParams(new FormData(form)).toString());
   for (const op of ['images', 'image_edits']) {
-    const replicas = page.locator(`input[name="enabled_${op}"][value$="/flux-pro"], input[name="enabled_${op}"][value$="/flux-flex"]`);
+    const replicas = page.locator(`input[name="enabled_${op}"][value$="/flux-pro"], input[name="enabled_${op}"][value$="/flux-flex"], input[name="enabled_${op}"][value$="/sunburst"]`);
     if (await replicas.count() < 2) throw new Error('FLUX models missing from demo inventory');
     for (const replica of await replicas.all()) await replica.check();
+    if (pairOnly) {
+      for (const replica of await page.locator(`input[name="enabled_${op}"]`).all()) {
+        const value = await replica.inputValue();
+        await replica.setChecked(value.endsWith('/flux-pro') || value.endsWith('/sunburst'));
+      }
+    }
   }
   const form = await page.locator('.config-form').evaluate(form => new URLSearchParams(new FormData(form)).toString());
   const saved = await page.request.post(`${base}/config`, { data: form, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
@@ -81,7 +87,7 @@ export async function verifyFluxModels(page, base, index, language) {
     await verifyChatTabTitle(page);
     const picker = page.locator('#image-model-select');
     const options = await picker.locator('option').evaluateAll(items => items.map(item => item.value));
-    if (!['', 'flux.2-pro', 'flux.2-flex', 'gpt-image-2'].every(model => options.includes(model)) ||
+    if (!['', 'flux.2-pro', 'flux.2-flex', 'gpt-image-2', 'gpt-image-2.5-sunburst'].every(model => options.includes(model)) ||
         options.length !== new Set(options).size) throw new Error('Image picker did not collapse replicas');
     const automatic = await picker.locator('option[value=""]').innerText();
     if (automatic !== (language === 'de' ? 'Automatisch' : 'Automatic')) throw new Error('Automatic option is not localized');
@@ -138,6 +144,38 @@ export async function verifyFluxModels(page, base, index, language) {
     if (await page.locator('.chat-main').evaluate(node => node.scrollWidth > node.clientWidth + 2)) {
       throw new Error('Image controls overflow the viewport');
     }
+    await enableFluxModels(page, base, index, true);
+    await page.goto(`${base}/chat/${id}`, { waitUntil: 'networkidle' });
+    await selectImageModel(page, base, 'gpt-image-2.5-sunburst');
+    await page.reload({ waitUntil: 'networkidle' });
+    const pairOptions = await picker.locator('option').evaluateAll(items => items.map(item => item.value));
+    if (pairOptions.join(',') !== ',flux.2-pro,gpt-image-2.5-sunburst') throw new Error('Disabled image models remain in the picker');
+    if (!(await page.locator('[data-image-setting="sunburst"]').isVisible()) ||
+        await page.locator('[data-image-setting="gpt"]').isVisible() ||
+        await page.locator('[data-image-setting="flex"]').isVisible()) throw new Error('Sunburst parameters are not isolated');
+    for (const [field, value] of [['sunburst_size', '1536x864'], ['sunburst_quality', 'xhigh']]) {
+      const saved = page.waitForResponse(r => r.url().endsWith('/image/params') && r.request().method() === 'POST');
+      await page.locator(`[name="${field}"]`).selectOption(value);
+      if (!(await saved).ok()) throw new Error('Sunburst option was not saved');
+    }
+    await selectImageModel(page, base, 'flux.2-pro');
+    if (await page.locator('[data-image-setting="sunburst"]').isVisible()) throw new Error('FLUX exposed Sunburst quality');
+    await selectImageModel(page, base, 'gpt-image-2.5-sunburst');
+    await page.reload({ waitUntil: 'networkidle' });
+    await verifyImageControlLayout(page);
+    if (await page.locator('[name="sunburst_quality"]').inputValue() !== 'xhigh') throw new Error('Sunburst quality lost on reload');
+    await page.locator('#chat-form textarea').fill('Make the tree golden.');
+    const sunburstSent = page.waitForRequest(r => r.url().endsWith('/send') && r.method() === 'POST');
+    await page.locator('#chat-form button[type="submit"]').click();
+    const sunburstForm = new URLSearchParams((await sunburstSent).postData());
+    if (sunburstForm.get('sunburst_size') !== '1536x864' || sunburstForm.get('sunburst_quality') !== 'xhigh' ||
+        sunburstForm.get('image_model') !== 'gpt-image-2.5-sunburst' || sunburstForm.get('edit') !== '1') {
+      throw new Error('Sunburst edit lost its options or latest-image source');
+    }
+    await page.waitForFunction(() => document.querySelectorAll('#messages .bubble img').length === 3 &&
+      [...document.querySelectorAll('#messages [sse-connect]')].every(node => node.dataset.streamState === 'finished'));
+    const invalidSunburst = await page.request.post(`${base}/image/params`, { form: { sunburst_quality: 'invalid' } });
+    if (invalidSunburst.status() !== 400) throw new Error('Invalid Sunburst quality accepted');
     const invalid = await page.request.post(`${base}/image/params`, { form: { flux_steps: '51' } });
     if (invalid.status() !== 400) throw new Error('Server accepted invalid FLUX steps');
     await restore();

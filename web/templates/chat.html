@@ -89,6 +89,18 @@
 					</select>
 				</label>
 				</div>
+				<div class="image-param-group" data-image-setting="sunburst">
+					<label>{{t "chat.image_resolution"}}
+						<select name="sunburst_size">
+							{{range $.SunburstSizes}}<option value="{{.}}" {{if eq . $.SunburstSize}}selected{{end}}>{{if eq . "auto"}}{{t "chat.image_automatic"}}{{else}}{{.}}{{end}}</option>{{end}}
+						</select>
+					</label>
+					<label>{{t "config.image_quality"}}
+						<select name="sunburst_quality">
+							{{range $.SunburstQualities}}<option value="{{.}}" {{if eq . $.SunburstQuality}}selected{{end}}>{{.}}</option>{{end}}
+						</select>
+					</label>
+				</div>
 				<div class="image-param-group" data-image-setting="flux">
 				<label>{{t "chat.image_resolution"}}
 					<select name="flux_size">
@@ -208,7 +220,7 @@
 		data-retry-error="{{t "retry.failed"}}"
 		{{if .QuestionID}}hx-post="/chat/{{.ChatID}}/retry/{{.QuestionID}}" hx-target="#messages" hx-swap="beforeend"
 		hx-include="#web-flag, #mode-flag, #edit-flag, #image-model-select, #image-params"
-		hx-params="web,mode,edit,image_model,image_size,image_quality,image_format,flux_size,flux_steps,flux_guidance"
+		hx-params="web,mode,edit,image_model,image_size,image_quality,image_format,flux_size,flux_steps,flux_guidance,sunburst_size,sunburst_quality"
 		hx-disabled-elt="this" hx-confirm="{{t "retry.confirm"}}"{{else}}disabled{{end}}>
 		<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 12l-4-5"/></svg>
 		<span class="response-retry-label">{{t "retry.label"}}</span>

@@ -1,6 +1,15 @@
 {
   "shots": [
     {
+      "id": "sunburst-models",
+      "lang": "en",
+      "file": "en/sunburst-models.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Sunburst and FLUX.2 Pro",
+      "caption": "Keep two image models in the enabled pools. Sunburst has independent resolution and quality controls, including xhigh and max; regional replicas rotate in the background."
+    },
+    {
       "id": "flux-models",
       "lang": "en",
       "file": "en/flux-models.png",
@@ -179,6 +188,15 @@
       "height": 844,
       "title": "Phone layout",
       "caption": "On a narrow viewport the sidebar turns into an off-canvas drawer behind the ☰ button, so the conversation keeps the full width."
+    },
+    {
+      "id": "sunburst-models",
+      "lang": "de",
+      "file": "de/sunburst-models.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Sunburst und FLUX.2 Pro",
+      "caption": "Zwei Bildmodelle in den aktivierten Pools behalten. Sunburst bietet eigene Auflösungs- und Qualitätsregler einschließlich xhigh und max; regionale Replikate wechseln im Hintergrund."
     },
     {
       "id": "flux-models",

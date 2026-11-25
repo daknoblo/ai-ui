@@ -19,6 +19,11 @@ import (
 
 var FluxSizes = []string{"auto", "1024x1024", "1024x1536", "1536x1024", "2048x2048", "1536x2560", "2560x1536"}
 
+const SunburstModel = "gpt-image-2.5-sunburst"
+
+var SunburstSizes = []string{"auto", "1024x1024", "1024x1536", "1536x1024", "1536x864", "864x1536", "2560x1440", "1440x2560"}
+var SunburstQualities = []string{"auto", "low", "medium", "high", "xhigh", "max"}
+
 func isFlux(model string) bool { return model == "flux.2-pro" || model == "flux.2-flex" }
 
 // PrepareImage freezes a replica and its credential before a durable turn starts.
@@ -51,6 +56,10 @@ func (c *Client) PrepareImage(opts ImageOptions, edit bool) (ImageOptions, error
 	if isFlux(opts.Model) {
 		opts.Size = opts.FluxSize
 		opts.Quality = ""
+	} else if opts.Model == SunburstModel {
+		// Independent values prevent Sunburst-only settings leaking into older
+		// GPT models when an automatic pool alternates between model families.
+		opts.Size, opts.Quality = opts.SunburstSize, opts.SunburstQuality
 	}
 	if err := ValidateImageOptions(opts); err != nil {
 		return opts, err
@@ -70,6 +79,15 @@ func ValidateImageOptions(opts ImageOptions) error {
 			math.IsNaN(opts.Guidance) || math.IsInf(opts.Guidance, 0) ||
 			(opts.Guidance != 0 && (opts.Guidance < 1.5 || opts.Guidance > 10)) {
 			return fmt.Errorf("invalid FLUX flex steps or guidance")
+		}
+		return nil
+	}
+	if opts.Model == SunburstModel {
+		if opts.Size != "" && !slices.Contains(SunburstSizes, opts.Size) {
+			return fmt.Errorf("unsupported Sunburst image resolution")
+		}
+		if opts.Quality != "" && !slices.Contains(SunburstQualities, opts.Quality) {
+			return fmt.Errorf("unsupported Sunburst image quality")
 		}
 		return nil
 	}

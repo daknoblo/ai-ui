@@ -40,6 +40,8 @@ type Config struct {
 	ImageQuality          string                         `json:"image_quality"`     // low | medium | high | auto
 	ImageFormat           string                         `json:"image_format"`      // png | jpeg | webp
 	FluxSize              string                         `json:"flux_size"`
+	SunburstSize          string                         `json:"sunburst_size"`
+	SunburstQuality       string                         `json:"sunburst_quality"`
 	FluxSteps             int                            `json:"flux_steps"`
 	FluxGuidance          float64                        `json:"flux_guidance"`
 	SearchProvider        string                         `json:"search_provider"`    // "", "tavily", "brave", "searxng"

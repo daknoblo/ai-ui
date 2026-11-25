@@ -127,7 +127,8 @@
 			document.querySelectorAll('[data-image-setting]').forEach(function(field) {
 				var kind = field.dataset.imageSetting;
 				function supports(value) {
-					return !!value && (kind === 'gpt' ? value.indexOf('flux.2-') !== 0 :
+					return !!value && (kind === 'sunburst' ? value === 'gpt-image-2.5-sunburst' :
+						kind === 'gpt' ? value.indexOf('flux.2-') !== 0 && value !== 'gpt-image-2.5-sunburst' :
 						kind === 'flex' ? value === 'flux.2-flex' : value.indexOf('flux.2-') === 0);
 				}
 				field.hidden = automatic ? !models.some(supports) : !supports(model);

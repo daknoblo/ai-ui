@@ -23,6 +23,17 @@ type checkResult struct {
 	Info    bool
 }
 
+func (r checkResult) ShortTarget() string { return shortDeploymentTarget(r.Target) }
+
+func shortDeploymentTarget(target string) string {
+	parts := strings.Split(strings.Trim(target, "/"), "/")
+	if len(parts) == 10 && strings.EqualFold(parts[8], "deployments") &&
+		foundry.ValidateResourceID("/"+strings.Join(parts[:8], "/")) == nil {
+		return parts[9] + " · " + parts[7]
+	}
+	return target
+}
+
 func (r *readiness) invalidateImageChecks(detail string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

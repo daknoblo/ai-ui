@@ -22,6 +22,41 @@ export async function verifyDeploymentPools(page, base, index) {
   };
   await open();
   await submit('/config/deployments/refresh', '[hx-post="/config/deployments/refresh"]');
+  const verify = page.waitForResponse(r => r.url() === base + '/verify' && r.request().method() === 'POST');
+  await page.locator('button[hx-post="/verify"]').click();
+  if (!(await verify).ok()) throw new Error('Connection check failed');
+  await page.waitForFunction(() => !document.querySelector('#verify-results.htmx-request'));
+  const checkLayout = await page.locator('.check:not(.err)').evaluateAll(rows => rows.map(row => ({
+    height: row.getBoundingClientRect().height,
+    text: row.querySelector('summary').innerText,
+  })));
+  if (checkLayout.some(row => row.text.includes('/subscriptions/')) ||
+      (page.viewportSize().width > 720 && checkLayout.some(row => row.height > 70))) {
+    throw new Error('Default connection check rows are not compact');
+  }
+  const beforeDetails = await page.locator('.config-form').evaluate(form => new URLSearchParams(new FormData(form)).toString());
+  if (await page.locator('#foundry-resource-id').isVisible() || await page.locator('.foundry-model-list').first().isVisible()) {
+    throw new Error('Technical connection details and duplicate inventory should start collapsed');
+  }
+  const catalogSummary = page.locator('#foundry-catalog > summary');
+  await catalogSummary.focus();
+  await page.keyboard.press('Enter');
+  if (!(await page.locator('.foundry-model-list').first().isVisible())) throw new Error('Catalog is not keyboard accessible');
+  await page.keyboard.press('Enter');
+  await page.locator('#foundry-connections > summary').click();
+  if (!(await page.locator('#foundry-resource-id').isVisible())) throw new Error('Full resource identifier is inaccessible');
+  await page.locator('#foundry-connections > summary').click();
+  const afterDetails = await page.locator('.config-form').evaluate(form => new URLSearchParams(new FormData(form)).toString());
+  if (beforeDetails !== afterDetails) throw new Error('Expanding details changed staged checkbox selections');
+  const visibleLabels = await page.locator('.deployment-choice').allInnerTexts();
+  if (visibleLabels.some(label => label.includes('/subscriptions/'))) throw new Error('Checkbox labels expose verbose resource IDs');
+  const info = page.locator('.check.info .check-body').first();
+  if (await info.count()) {
+    if (await info.getAttribute('open') !== null) throw new Error('Informational checks should be compact by default');
+    await info.locator('summary').click();
+    if (!(await info.locator('.check-detail').first().isVisible())) throw new Error('Probe limitations are inaccessible');
+    await info.locator('summary').click();
+  }
   const text = await page.locator('.config-form').innerText();
   if (!text.includes('polandcentral') || !text.includes('swedencentral')) {
     throw new Error('Multi-resource inventory must show Sweden and Poland');

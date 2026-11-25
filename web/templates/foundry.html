@@ -1,6 +1,27 @@
 {{define "foundry-settings"}}
 <div class="config-section-head">{{t "foundry.title"}}</div>
 <div class="config-full">
+	<div class="foundry-refresh-bar">
+		<button type="button" class="btn btn-ghost" hx-post="/config/deployments/refresh"
+			hx-target="#modal-root" hx-swap="innerHTML" hx-params="none"
+			hx-disabled-elt="this" hx-indicator="#foundry-refresh-indicator">
+			{{t "foundry.refresh"}}
+		</button>
+		<span class="hint">{{if .UpdatedAt}}{{t "foundry.updated_at" .UpdatedAt}}{{else}}{{t "foundry.not_discovered"}}{{end}}</span>
+		<span id="foundry-refresh-indicator" class="htmx-indicator hint">{{t "foundry.refreshing"}}</span>
+	</div>
+	<p class="hint config-hint-tight">{{t "foundry.refresh_short_hint"}}</p>
+	{{if .IdentityError}}<div class="config-notice-err">{{t "foundry.identity_error" .IdentityError}}</div>{{end}}
+	{{if .RefreshError}}<div class="config-notice-err">{{t "foundry.stale" .RefreshError}}</div>{{end}}
+	{{range .Catalog.DiscoveryErrors}}<div class="config-notice-err">{{t "foundry.stale" .}}</div>{{end}}
+	{{if not .SeparateImageResource}}{{if .Catalog.ImageCatalogError}}<div class="config-notice-err">{{t "foundry.image_catalog_error" .Catalog.ImageCatalogError}}</div>{{end}}{{end}}
+	{{if .SeparateImageResource}}
+	{{if .ImageResource.IdentityError}}<div class="config-notice-err">{{t "foundry.identity_error" .ImageResource.IdentityError}}</div>{{end}}
+	{{if .ImageResource.RefreshError}}<div class="config-notice-err">{{t "foundry.stale" .ImageResource.RefreshError}}</div>{{end}}
+	{{range .ImageResource.Catalog.DiscoveryErrors}}<div class="config-notice-err">{{t "foundry.stale" .}}</div>{{end}}
+	{{end}}
+	<details class="config-details" id="foundry-connections">
+	<summary>{{t "foundry.connection_details"}}</summary>
 	<p class="hint">{{t "foundry.identity_hint"}}</p>
 	<div class="foundry-connection">
 		<label class="foundry-resource" for="foundry-resource-id">
@@ -12,18 +33,6 @@
 			<input id="foundry-endpoint" class="config-readonly" type="text" readonly value="{{.Catalog.Endpoint}}" placeholder="{{t "foundry.not_discovered"}}">
 		</label>
 	</div>
-	{{if .IdentityError}}<div class="config-notice-err">{{t "foundry.identity_error" .IdentityError}}</div>{{end}}
-	{{if .RefreshError}}<div class="config-notice-err">{{t "foundry.stale" .RefreshError}}</div>{{end}}
-	{{range .Catalog.DiscoveryErrors}}<div class="config-notice-err">{{t "foundry.stale" .}}</div>{{end}}
-	{{if not .SeparateImageResource}}{{if .Catalog.ImageCatalogError}}<div class="config-notice-err">{{t "foundry.image_catalog_error" .Catalog.ImageCatalogError}}</div>{{end}}{{end}}
-	<p class="hint">{{if .UpdatedAt}}{{t "foundry.updated_at" .UpdatedAt}}{{else}}{{t "foundry.not_discovered"}}{{end}}</p>
-	<button type="button" class="btn btn-ghost" hx-post="/config/deployments/refresh"
-		hx-target="#modal-root" hx-swap="innerHTML" hx-params="none"
-		hx-disabled-elt="this" hx-indicator="#foundry-refresh-indicator">
-		{{t "foundry.refresh"}}
-	</button>
-	<span id="foundry-refresh-indicator" class="htmx-indicator hint">{{t "foundry.refreshing"}}</span>
-</div>
 {{if .SeparateImageResource}}
 <div id="foundry-image-resource" class="config-full">
 	<p class="hint">{{t "foundry.separate_images_hint"}}</p>
@@ -37,13 +46,24 @@
 			<input id="foundry-image-endpoint" class="config-readonly" type="text" readonly value="{{.ImageResource.Catalog.Endpoint}}" placeholder="{{t "foundry.not_discovered"}}">
 		</label>
 	</div>
-	{{if .ImageResource.IdentityError}}<div class="config-notice-err">{{t "foundry.identity_error" .ImageResource.IdentityError}}</div>{{end}}
-	{{if .ImageResource.RefreshError}}<div class="config-notice-err">{{t "foundry.stale" .ImageResource.RefreshError}}</div>{{end}}
-	{{range .ImageResource.Catalog.DiscoveryErrors}}<div class="config-notice-err">{{t "foundry.stale" .}}</div>{{end}}
 	<p class="hint">{{if .ImageUpdatedAt}}{{t "foundry.updated_at" .ImageUpdatedAt}}{{else}}{{t "foundry.not_discovered"}}{{end}}</p>
 </div>
 {{end}}
-<div class="config-full foundry-inventory">
+	</details>
+</div>
+<div class="config-section-head">{{t "foundry.roles"}}</div>
+<p class="hint config-full">{{t "foundry.selection_short_hint"}}</p>
+{{if .ChatFilterActive}}<p class="warn-text config-full">{{t "foundry.chat_filter_hint"}}</p>{{end}}
+{{if .ImageFilterActive}}<p class="warn-text config-full">{{t "foundry.image_filter_hint"}}</p>{{end}}
+<input type="hidden" name="deployment_pools" value="1">
+{{range .Fields}}{{template "deployment-field" .}}{{end}}
+<details class="config-full config-details">
+	<summary>{{t "foundry.selection_details"}}</summary>
+	<p class="hint">{{t "foundry.roles_hint"}}</p>
+</details>
+<details class="config-full config-details" id="foundry-catalog">
+	<summary>{{t "foundry.catalog_details"}}</summary>
+<div class="foundry-inventory">
 	{{range .Groups}}{{if .Models}}
 	{{if .Unsupported}}
 	<details class="foundry-model-group">
@@ -59,12 +79,7 @@
 	{{end}}{{end}}
 	{{if .EmptyImageInventory}}<p class="hint foundry-empty">{{t "foundry.no_image_models"}}</p>{{end}}
 </div>
-<div class="config-section-head">{{t "foundry.roles"}}</div>
-<p class="hint config-full">{{t "foundry.roles_hint"}}</p>
-{{if .ChatFilterActive}}<p class="warn-text config-full">{{t "foundry.chat_filter_hint"}}</p>{{end}}
-{{if .ImageFilterActive}}<p class="warn-text config-full">{{t "foundry.image_filter_hint"}}</p>{{end}}
-<input type="hidden" name="deployment_pools" value="1">
-{{range .Fields}}{{template "deployment-field" .}}{{end}}
+</details>
 <div class="config-full">{{template "embedding-index" .Index}}</div>
 {{end}}
 
@@ -93,13 +108,20 @@
 
 {{define "deployment-field"}}
 <fieldset class="config-full deployment-pool">
-	<legend>{{t .LabelKey}}</legend>
+	<legend>{{t .LabelKey}} <span class="foundry-count">{{t "foundry.selected_count" .SelectedCount (len .Choices)}}</span></legend>
 	{{if .Locked}}<span class="hint">{{t "config.set_via" .Env}}</span>{{end}}
 	{{range .Choices}}
+	<div class="deployment-entry">
 	<label class="config-check deployment-choice">
 		<input type="checkbox" name="{{$.Name}}" value="{{.Name}}"{{if .Checked}} checked{{end}}{{if $.Locked}} disabled{{end}}>
-		<span>{{.Label}}</span>
+		<span><strong>{{.Label}}</strong>{{if .Location}}<small>{{.Location}}</small>{{end}}</span>
 	</label>
+	<details class="deployment-detail">
+		<summary>{{t "config.details"}}</summary>
+		<p>{{.Detail}}</p>
+		<p>{{.Name}}</p>
+	</details>
+	</div>
 	{{else}}<p class="hint">{{t "foundry.not_configured"}}</p>{{end}}
 </fieldset>
 {{end}}

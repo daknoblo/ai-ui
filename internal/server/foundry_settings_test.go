@@ -104,6 +104,30 @@ func TestFoundrySettingsUseReadableGroupsAndReadonlyFields(t *testing.T) {
 	}
 }
 
+func TestCompactChecksKeepErrorsAndFullTargetsAccessible(t *testing.T) {
+	srv, _ := newTestServer(t, "en")
+	target := serverResourceID + "/deployments/replica"
+	row := checkResult{Name: "Image API", Target: target, OK: true, Info: true, Detail: "No image was generated"}
+	body := srv.renderString("check-list", struct {
+		Results        []checkResult
+		UploadsAllowed bool
+		CheckedAt      string
+	}{Results: []checkResult{row, {Name: "Broken", Detail: "Permission denied"}}})
+	want := "replica · " + serverResourceID[strings.LastIndex(serverResourceID, "/")+1:]
+	if row.ShortTarget() != want {
+		t.Fatalf("short target=%q want=%q", row.ShortTarget(), want)
+	}
+	if !strings.Contains(body, `<details class="check-body">`) ||
+		!strings.Contains(body, `<details class="check-body" open>`) ||
+		!strings.Contains(body, "No image was generated") || !strings.Contains(body, "Permission denied") ||
+		!strings.Contains(body, `<p class="check-detail check-full-target">`+target+`</p>`) {
+		t.Fatal("compact checks lost diagnostic information or hid errors")
+	}
+	if shortDeploymentTarget("custom-alias") != "custom-alias" {
+		t.Fatal("ordinary alias changed")
+	}
+}
+
 func TestFoundryUnconfiguredChecksAreSkipped(t *testing.T) {
 	srv, _, _, calls := newFoundryTestServer(t, "en")
 	results := srv.runChecks(t.Context(), true)

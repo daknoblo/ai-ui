@@ -36,8 +36,8 @@ func TestFluxManualEndpointAndProbe(t *testing.T) {
 			if len(body) != 1 {
 				t.Error("probe submitted generation parameters")
 			}
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = fmt.Fprint(w, `{"error":{"message":"prompt is required"}}`) // Local validation fixture.
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = fmt.Fprint(w, `{"detail":[{"type":"missing","loc":["body","prompt"],"msg":"Field required","input":{"model":"FLUX.2-pro"}}]}`) // Local validation fixture.
 			return
 		}
 		_, _ = fmt.Fprintf(w, `{"data":[{"b64_json":%q}]}`, fluxPNG) // Local image fixture.
@@ -55,6 +55,24 @@ func TestFluxManualEndpointAndProbe(t *testing.T) {
 	}
 	if _, err := client.GenerateImage(t.Context(), "A tree", ImageOptions{}); err != nil || calls.Load() != 2 {
 		t.Fatalf("manual generation failed: %v calls=%d", err, calls.Load())
+	}
+}
+
+func TestFluxProbeRejectsUnrelatedValidationErrors(t *testing.T) {
+	for _, tc := range []struct {
+		body  string
+		valid bool
+	}{
+		{`{"detail":[{"type":"missing","loc":["body","prompt"]}]}`, true},
+		{`{"detail":[{"type":"missing","loc":["body","model"]}]}`, false},
+		{`{"detail":[{"type":"missing","loc":["body","prompt"]},{"type":"missing","loc":["body","model"]}]}`, false},
+		{`{"detail":[{"type":"string_type","loc":["body","prompt"]}]}`, false},
+		{`{"detail":[]}`, false},
+		{`{"detail":"prompt is missing"}`, false},
+	} {
+		if got := missingFluxPrompt(tc.body); got != tc.valid {
+			t.Errorf("structured probe %s: got %v", tc.body, got)
+		}
 	}
 }
 

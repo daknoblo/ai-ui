@@ -789,6 +789,17 @@ html, body {
 .config-form .config-readonly { font: inherit; line-height: 1.5; color: var(--text-dim); }
 .config-form textarea.config-readonly { field-sizing: content; resize: vertical; overflow-wrap: anywhere; min-height: 4.5em; }
 .foundry-inventory { display: grid; gap: 18px; min-width: 0; }
+.foundry-refresh-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.config-details { margin: 8px 0; min-width: 0; }
+.config-details > summary, .deployment-detail > summary { cursor: pointer; color: var(--text-dim); font-size: 12px; }
+.config-details[open] > summary { margin-bottom: 12px; }
+.deployment-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.deployment-entry + .deployment-entry { border-top: 1px solid var(--border); }
+.deployment-choice strong { font-size: 12px; font-weight: 500; }
+.deployment-choice small { display: block; color: var(--text-dim); margin-top: 4px; font-size: 11px; }
+.deployment-detail { margin: 10px 0; min-width: 0; max-width: 100%; }
+.deployment-detail[open] { grid-column: 1 / -1; margin-top: 0; }
+.deployment-detail p { font-size: 11px; color: var(--text-dim); overflow-wrap: anywhere; margin: 6px 0; }
 .foundry-model-group h3, .foundry-model-group summary { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--text); }
 .foundry-model-group summary { cursor: pointer; }
 .foundry-count { display: inline-block; margin-left: 5px; padding: 1px 6px; border-radius: 8px; background: var(--bg); font-size: 11px; color: var(--text-dim); }
@@ -880,10 +891,7 @@ html, body {
 .verify-banner + .config-hint-tight { margin-top: 8px; }
 .check-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .check {
-	display: grid;
-	grid-template-columns: auto minmax(0, 1fr);
-	gap: 8px;
-	align-items: baseline;
+	display: block;
 	font-size: 13px;
 	background: var(--bg);
 	border: 1px solid var(--border);
@@ -894,11 +902,17 @@ html, body {
 .check.ok .check-icon { color: var(--accent); }
 .check.err .check-icon { color: var(--danger); }
 .check.info .check-icon, .check.skipped .check-icon { color: var(--text-dim); }
-.check-body { min-width: 0; display: grid; gap: 4px; }
-.check-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.check-body { min-width: 0; }
+.check-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; cursor: pointer; }
+.check-heading::after { content: "+"; color: var(--text-dim); }
+.check-body[open] > .check-heading::after { content: "−"; }
+.check-state { margin-inline-start: auto; color: var(--text-dim); font-size: 11px; }
+.check.err .check-state { color: var(--danger); }
+.check.ok .check-state { color: var(--accent); }
 .check-name { color: var(--text); }
-.check-target { color: var(--text-dim); font-size: 12px; overflow-wrap: anywhere; }
-.check-detail { color: var(--text-dim); overflow-wrap: anywhere; }
+.check-target { color: var(--text-dim); font-size: 11px; overflow-wrap: anywhere; }
+.check-detail { color: var(--text-dim); overflow-wrap: anywhere; margin: 8px 0 0; font-size: 12px; }
+.check-full-target { font-size: 11px; }
 
 /* ---------- Statistics page ---------- */
 .stats-page {

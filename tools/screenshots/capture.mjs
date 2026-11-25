@@ -328,7 +328,7 @@ const SHOTS = [
     capture: async (page, ctx) => {
       await openSettings(page, ctx);
       await submitSettings(page, '[hx-post="/config/deployments/refresh"]', '/config/deployments/refresh');
-      await scrollSettingsTo(page, '.foundry-resource');
+      await scrollSettingsTo(page, '.foundry-refresh-bar');
     },
   },
   {
@@ -346,6 +346,7 @@ const SHOTS = [
     },
     capture: async (page, ctx) => {
       await openSettings(page, ctx);
+      await page.locator('#foundry-connections > summary').click();
       await page.locator('#foundry-image-resource-id').waitFor();
       await scrollSettingsTo(page, '#foundry-image-resource');
     },
@@ -460,7 +461,7 @@ async function openSettings(page, ctx) {
   if (!ctx.index.foundry) throw new Error('Settings screenshots require the Foundry demo fixture');
   await open(page, `/chat/${ctx.index.chats.chat}`);
   await page.click('.btn-config[hx-get="/config"]');
-  await page.locator('.foundry-inventory').waitFor();
+  await page.locator('.foundry-inventory').waitFor({ state: 'attached' });
   const resource = page.locator('#foundry-resource-id');
   const endpoint = page.locator('#foundry-endpoint');
   if (!(await resource.inputValue()).includes('/providers/Microsoft.CognitiveServices/accounts/')) {

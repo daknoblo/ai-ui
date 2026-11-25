@@ -21,17 +21,25 @@ import (
 var errRefreshRunning = errors.New("deployment refresh is already running")
 
 type deploymentChoice struct {
-	Name     string
-	Label    string
-	Location string
-	Detail   string
-	Checked  bool
+	Name       string
+	Label      string
+	Location   string
+	Detail     string
+	Checked    bool
+	Deployment foundry.Deployment
+}
+
+type deploymentToggle struct {
+	Name, Value, Label, Env string
+	Checked, Locked         bool
 }
 
 type deploymentRow struct {
 	Name, Model, Version, Format, State, Source, Detail string
 	Operations                                          []string
 	APIModel, Ready                                     bool
+	Key, Location                                       string
+	Toggles                                             []deploymentToggle
 }
 
 type deploymentGroup struct {
@@ -237,7 +245,7 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 				detail += " (" + target.Deployment.ModelVersion + ")"
 			}
 			choices = append(choices, deploymentChoice{Name: target.Key, Label: target.Deployment.Name,
-				Location: location, Detail: detail, Checked: slices.Contains(pools[op], target.Key)})
+				Location: location, Detail: detail, Checked: slices.Contains(pools[op], target.Key), Deployment: target.Deployment})
 		}
 		for _, id := range pools[op] {
 			if !slices.ContainsFunc(choices, func(choice deploymentChoice) bool { return choice.Name == id }) {
@@ -333,6 +341,46 @@ func (s *Server) foundryData(ctx context.Context) foundryView {
 			row.Ready = false
 		}
 		view.Groups[group].Models = append(view.Groups[group].Models, row)
+	}
+	// Supported cards come from all resource-qualified choices, not just the
+	// primary account's inventory. Each card retains independent operation flags.
+	for i := 0; i < 3; i++ {
+		view.Groups[i].Models = nil
+	}
+	type position struct{ group, row int }
+	positions := map[string]position{}
+	for _, field := range view.Fields {
+		for _, choice := range field.Choices {
+			pos, exists := positions[choice.Name]
+			if !exists {
+				d := choice.Deployment
+				group := 2
+				if d.Supports(foundry.Chat) || field.Name == "enabled_chat" || field.Name == "enabled_vision" {
+					group = 0
+				} else if d.Supports(foundry.Embeddings) || field.Name == "enabled_embeddings" {
+					group = 1
+				}
+				row := deploymentRow{Key: choice.Name, Name: choice.Label, Location: choice.Location,
+					Model: d.ModelName, Version: d.ModelVersion, Format: d.ModelFormat,
+					Ready: strings.EqualFold(d.ProvisioningState, "Succeeded"), APIModel: d.Source == foundry.ModelsAPISource}
+				row.Source = s.t("foundry.source_deployment")
+				row.State = s.t("foundry.deployment_ready")
+				if row.APIModel {
+					row.Source, row.State = s.t("foundry.source_models_api"), s.t("foundry.image_not_tested")
+				} else if !row.Ready {
+					row.State = s.t("chat.image_unavailable")
+				}
+				if row.Version == "" {
+					row.Version = s.t("foundry.version_default")
+				}
+				pos = position{group, len(view.Groups[group].Models)}
+				view.Groups[group].Models = append(view.Groups[group].Models, row)
+				positions[choice.Name] = pos
+			}
+			row := &view.Groups[pos.group].Models[pos.row]
+			row.Toggles = append(row.Toggles, deploymentToggle{Name: field.Name, Value: choice.Name,
+				Label: s.t(field.LabelKey), Env: field.Env, Checked: choice.Checked, Locked: field.Locked})
+		}
 	}
 	view.EmptyImageInventory = len(view.Groups[2].Models) == 0
 	return view

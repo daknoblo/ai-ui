@@ -1,3 +1,8 @@
+export async function saveSettings(page, expected = true) {
+  const saved = await page.evaluate(() => window.AIUI_SETTINGS.flush());
+  if (saved !== expected) throw new Error(`Autosave result ${saved}, expected ${expected}`);
+}
+
 export async function verifyDeploymentPools(page, base, index) {
   const open = async () => {
     await page.goto(`${base}/chat/${index.chats.chat}`, { waitUntil: 'networkidle' });
@@ -26,6 +31,11 @@ export async function verifyDeploymentPools(page, base, index) {
   await page.locator('button[hx-post="/verify"]').click();
   if (!(await verify).ok()) throw new Error('Connection check failed');
   await page.waitForFunction(() => !document.querySelector('#verify-results.htmx-request'));
+  const timestamp = await page.locator('.check-timestamp').boundingBox();
+  const heading = await page.locator('.readiness-heading').boundingBox();
+  if (!timestamp || !heading || Math.abs(timestamp.x + timestamp.width - heading.x - heading.width) > 2) {
+    throw new Error('Last check is not aligned at the right of the section heading');
+  }
   const checkLayout = await page.locator('.check:not(.err)').evaluateAll(rows => rows.map(row => ({
     height: row.getBoundingClientRect().height,
     text: row.querySelector('summary').innerText,
@@ -35,20 +45,23 @@ export async function verifyDeploymentPools(page, base, index) {
     throw new Error('Default connection check rows are not compact');
   }
   const beforeDetails = await page.locator('.config-form').evaluate(form => new URLSearchParams(new FormData(form)).toString());
-  if (await page.locator('#foundry-resource-id').isVisible() || await page.locator('.foundry-model-list').first().isVisible()) {
-    throw new Error('Technical connection details and duplicate inventory should start collapsed');
+  if (await page.locator('#foundry-resource-id').isVisible() || !(await page.locator('.foundry-model-list').first().isVisible())) {
+    throw new Error('Technical details should be collapsed while deployment cards are visible');
   }
-  const catalogSummary = page.locator('#foundry-catalog > summary');
+  if (await page.locator('.config-form button[type="submit"]').count()) throw new Error('Save button remains');
+  const languageY = (await page.locator('.settings-language').boundingBox()).y;
+  if (languageY >= (await page.locator('#verify-results').boundingBox()).y) throw new Error('Language is not first');
+  const catalogSummary = page.locator('.deployment-card-details > summary').first();
   await catalogSummary.focus();
   await page.keyboard.press('Enter');
-  if (!(await page.locator('.foundry-model-list').first().isVisible())) throw new Error('Catalog is not keyboard accessible');
+  if (!(await page.locator('.deployment-card-details .foundry-model-meta').first().isVisible())) throw new Error('Card details are not keyboard accessible');
   await page.keyboard.press('Enter');
   await page.locator('#foundry-connections > summary').click();
   if (!(await page.locator('#foundry-resource-id').isVisible())) throw new Error('Full resource identifier is inaccessible');
   await page.locator('#foundry-connections > summary').click();
   const afterDetails = await page.locator('.config-form').evaluate(form => new URLSearchParams(new FormData(form)).toString());
   if (beforeDetails !== afterDetails) throw new Error('Expanding details changed staged checkbox selections');
-  const visibleLabels = await page.locator('.deployment-choice').allInnerTexts();
+  const visibleLabels = await page.locator('.deployment-toggles label').allInnerTexts();
   if (visibleLabels.some(label => label.includes('/subscriptions/'))) throw new Error('Checkbox labels expose verbose resource IDs');
   const info = page.locator('.check.info .check-body').first();
   if (await info.count()) {
@@ -75,7 +88,7 @@ export async function verifyDeploymentPools(page, base, index) {
     await page.locator(`input[name="enabled_${op}"][value="${replica}"]`).check();
     if (!selected[op].includes(replica)) selected[op].push(replica);
   }
-  await submit('/config', '.config-form button[type="submit"]');
+  await saveSettings(page);
   if (await page.locator('.config-notice-err').count()) throw new Error('Compatible replicas were rejected');
   await open();
   for (const op of names) {
@@ -86,15 +99,17 @@ export async function verifyDeploymentPools(page, base, index) {
   }
   const modelChange = page.locator('input[name="enabled_embeddings"][value$="/accounts/local-demo/deployments/docs-next"]');
   await modelChange.check();
-  await submit('/config', '.config-form button[type="submit"]');
-  await page.locator('.config-notice-err').first().waitFor();
+  await saveSettings(page, false);
+  await page.locator('.settings-save-toast[data-state="error"]').waitFor();
+  if (!(await modelChange.isChecked())) throw new Error('Rejected edit was silently discarded');
+  await page.locator('[data-settings-discard]').click();
   await open();
   if (await page.locator('input[name="enabled_embeddings"][value$="/docs-next"]:checked').count()) {
     throw new Error('Incompatible vector-space selection was saved');
   }
   for (const op of names) {
     for (const input of await page.locator(`input[name="enabled_${op}"]`).all()) await input.uncheck();
-    await submit('/config', '.config-form button[type="submit"]');
+    await saveSettings(page);
     if (await page.locator('.config-notice-err').count()) throw new Error(`Disabling ${op} was rejected`);
     await submit('/config/deployments/refresh', '[hx-post="/config/deployments/refresh"]');
     await open();
@@ -108,9 +123,59 @@ export async function verifyDeploymentPools(page, base, index) {
       }
     }
     for (const id of selected[op]) await page.locator(`input[name="enabled_${op}"][value="${id}"]`).check();
-    await submit('/config', '.config-form button[type="submit"]');
+    await saveSettings(page);
     if (await page.locator('.config-notice-err').count()) throw new Error(`Restoring ${op} was rejected`);
   }
   const overflow = await page.locator('.modal').evaluate(element => element.scrollWidth > element.clientWidth + 2);
   if (overflow) throw new Error('Deployment pool controls overflow on this viewport');
+  const prompt = page.locator('[name="system_prompt"]');
+  const originalPrompt = await prompt.inputValue();
+  let active = 0, maxActive = 0, posts = 0;
+  await page.route(`${base}/config`, async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    active++;
+    maxActive = Math.max(maxActive, active);
+    posts++;
+    if (posts === 1) await new Promise(resolve => setTimeout(resolve, 400));
+    const response = await route.fetch();
+    active--;
+    await route.fulfill({ response });
+  });
+  const firstSave = page.waitForRequest(r => r.url() === base + '/config' && r.method() === 'POST');
+  await prompt.fill('First autosave');
+  await page.evaluate(() => { window.AIUI_SETTINGS.flush(); });
+  await firstSave;
+  await prompt.fill('Latest autosave');
+  await saveSettings(page);
+  if (maxActive !== 1 || posts !== 2) throw new Error('Autosaves were not serialized and coalesced');
+  await page.unroute(`${base}/config`);
+  await open();
+  if (await prompt.inputValue() !== 'Latest autosave') throw new Error('Later edits were lost while saving');
+  await page.route(`${base}/config`, route => route.request().method() === 'POST'
+    ? route.fulfill({ status: 503, contentType: 'text/plain', body: 'Unavailable' }) : route.continue());
+  await prompt.fill('Pending after failure');
+  await saveSettings(page, false);
+  if (!(await page.locator('.settings-save-toast[data-state="error"]').isVisible())) throw new Error('Save failure has no red overlay');
+  await page.unroute(`${base}/config`);
+  await prompt.fill(originalPrompt);
+  await saveSettings(page);
+  if (!(await page.locator('.settings-save-toast[data-state="saved"]').isVisible())) throw new Error('Save success has no green overlay');
+  await prompt.fill('Saved while closing');
+  await page.locator('.modal-close[data-settings-close]').click();
+  await page.locator('.settings-overlay').waitFor({ state: 'detached' });
+  await open();
+  if (await prompt.inputValue() !== 'Saved while closing') throw new Error('Closing discarded a pending save');
+  await prompt.fill(originalPrompt);
+  await saveSettings(page);
+  const originalLanguage = await page.locator('[name="language"]').inputValue();
+  for (const language of [originalLanguage === 'en' ? 'de' : 'en', originalLanguage]) {
+    const loaded = page.waitForEvent('load');
+    await page.locator('[name="language"]').selectOption(language);
+    await loaded;
+    await page.locator('.settings-overlay').waitFor();
+    if (await page.locator('[name="language"]').inputValue() !== language ||
+        await page.locator('html').getAttribute('lang') !== language) {
+      throw new Error('Language autosave did not reload and reopen Settings in the new language');
+    }
+  }
 }

@@ -90,8 +90,8 @@ func TestFoundrySettingsUseReadableGroupsAndReadonlyFields(t *testing.T) {
 			body := response.Body.String()
 			for _, expected := range []string{
 				`id="foundry-resource-id"`, `id="foundry-endpoint"`, `class="config-readonly"`,
-				`class="foundry-model-list"`, `class="foundry-capabilities"`,
-				srv.t("config.verify_pending"), srv.t("config.verify_saved_hint"),
+				`class="foundry-model-list"`, `class="deployment-toggles"`, `data-autosave`,
+				srv.t("config.verify_pending"),
 			} {
 				if !strings.Contains(body, expected) {
 					t.Errorf("settings omit %q", expected)

@@ -1164,7 +1164,7 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	// it is stored (see websearch.ValidateEndpoint).
 	searchEndpoint := strings.TrimSpace(r.FormValue("search_endpoint"))
 	if err := websearch.ValidateEndpoint(searchEndpoint); err != nil {
-		s.renderConfigNotice(w, s.t("error.invalid_endpoint", err.Error()), true)
+		s.configSaveError(w, r, s.t("error.invalid_endpoint", err.Error()))
 		return
 	}
 	cfg.SearchEndpoint = searchEndpoint
@@ -1196,10 +1196,10 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := s.cfg.ValidateRoleSelections(cfg); err != nil {
 			if errors.Is(err, config.ErrEmbeddingPool) {
-				s.renderConfigNotice(w, s.t("foundry.embedding_pool_invalid"), true)
+				s.configSaveError(w, r, s.t("foundry.embedding_pool_invalid"))
 				return
 			}
-			s.renderConfigNotice(w, s.t("foundry.invalid_selection", err.Error()), true)
+			s.configSaveError(w, r, s.t("foundry.invalid_selection", err.Error()))
 			return
 		}
 		if cfg.EnabledDeployments == nil {
@@ -1216,7 +1216,7 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if exists && job.Status == "running" {
-			s.renderConfigNotice(w, s.t("foundry.reindex_busy"), true)
+			s.configSaveError(w, r, s.t("foundry.reindex_busy"))
 			return
 		}
 	}
@@ -1229,6 +1229,29 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	// Configuration changed: verification has to run again.
 	s.ready.invalidate()
 
+	if r.Header.Get("X-Config-Autosave") == "1" {
+		results, checkedAt := s.ready.lastResults()
+		checks := struct {
+			Results        []checkResult
+			CheckedAt      string
+			UploadsAllowed bool
+		}{s.currentInventoryResults(results), formatCheckTime(checkedAt), s.ready.uploadsAllowed()}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(struct {
+			Saved  bool   `json:"saved"`
+			Reload bool   `json:"reload"`
+			Checks string `json:"checks"`
+			Index  string `json:"index"`
+		}{true, cfg.Language != previousLanguage ||
+			llm.IsV1Endpoint(cfg.Endpoint) != llm.IsV1Endpoint(previous.Endpoint) ||
+			llm.IsV1Endpoint(cfg.EmbeddingHost()) != llm.IsV1Endpoint(previous.EmbeddingHost()) ||
+			llm.IsV1Endpoint(cfg.ImageHost()) != llm.IsV1Endpoint(previous.ImageHost()), s.renderString("check-list", checks),
+			s.renderString("embedding-index", s.embeddingIndexData(r.Context()))}); err != nil {
+			slog.Warn("write configuration save response", "err", err)
+		}
+		return
+	}
+
 	// A language change affects the whole page, not just the dialog, so ask
 	// htmx for a full reload instead of swapping a single fragment.
 	if cfg.Language != previousLanguage && r.Header.Get("HX-Request") == "true" {
@@ -1237,6 +1260,19 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderConfig(w, true)
+}
+
+func (s *Server) configSaveError(w http.ResponseWriter, r *http.Request, message string) {
+	if r.Header.Get("X-Config-Autosave") == "1" {
+		slog.Warn("configuration autosave rejected", "reason", message)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		if err := json.NewEncoder(w).Encode(map[string]any{"saved": false, "error": message}); err != nil {
+			slog.Warn("write configuration rejection", "err", err)
+		}
+		return
+	}
+	s.renderConfigNotice(w, message, true)
 }
 
 // handleVerify runs all readiness checks and returns the result.

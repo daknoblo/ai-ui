@@ -52,24 +52,15 @@
 	</details>
 </div>
 <div class="config-section-head">{{t "foundry.roles"}}</div>
-<p class="hint config-full">{{t "foundry.selection_short_hint"}}</p>
 {{if .ChatFilterActive}}<p class="warn-text config-full">{{t "foundry.chat_filter_hint"}}</p>{{end}}
 {{if .ImageFilterActive}}<p class="warn-text config-full">{{t "foundry.image_filter_hint"}}</p>{{end}}
 <input type="hidden" name="deployment_pools" value="1">
-{{range .Fields}}{{template "deployment-field" .}}{{end}}
-<details class="config-full config-details">
-	<summary>{{t "foundry.selection_details"}}</summary>
-	<p class="hint">{{t "foundry.roles_hint"}}</p>
-</details>
-<details class="config-full config-details" id="foundry-catalog">
-	<summary>{{t "foundry.catalog_details"}}</summary>
-<div class="foundry-inventory">
+<div class="config-full foundry-inventory" id="foundry-catalog">
 	{{range .Groups}}{{if .Models}}
 	{{if .Unsupported}}
 	<details class="foundry-model-group">
 		<summary>{{.Title}} <span class="foundry-count">{{len .Models}}</span></summary>
 		{{template "foundry-model-list" .}}
-	</details>
 	{{else}}
 	<section class="foundry-model-group">
 		<h3>{{.Title}} <span class="foundry-count">{{len .Models}}</span></h3>
@@ -87,43 +78,34 @@
 <ul class="foundry-model-list">
 	{{range .Models}}
 	<li class="foundry-model">
-		<div class="foundry-model-head">
-			<strong>{{.Name}}</strong>
+		<details class="deployment-card-details">
+		<summary class="foundry-model-head">
+			<span><strong>{{.Name}}</strong>{{if .Location}}<small class="deployment-location">{{.Location}}</small>{{end}}</span>
 			<span class="foundry-state {{if .APIModel}}info{{else if .Ready}}ok{{else}}warn{{end}}">{{.State}}</span>
-		</div>
+		</summary>
 		<dl class="foundry-model-meta">
 			{{if ne .Model .Name}}<div><dt>{{t "foundry.model"}}</dt><dd>{{.Model}}</dd></div>{{end}}
 			<div><dt>{{t "foundry.version"}}</dt><dd>{{.Version}}</dd></div>
 			<div><dt>{{t "foundry.format"}}</dt><dd>{{.Format}}</dd></div>
 			<div><dt>{{t "foundry.source"}}</dt><dd>{{.Source}}</dd></div>
 		</dl>
+		{{if .Key}}<p class="foundry-model-note">{{.Key}}</p>{{end}}
+		{{if .Detail}}<p class="foundry-model-note">{{.Detail}}</p>{{end}}
+		</details>
+		{{if .Toggles}}<div class="deployment-toggles">
+			{{range .Toggles}}
+			<label class="config-check">
+				<input type="checkbox" name="{{.Name}}" value="{{.Value}}"{{if .Checked}} checked{{end}}{{if .Locked}} disabled{{end}}>
+				<span>{{.Label}}{{if .Locked}} <small>{{t "config.set_via" .Env}}</small>{{end}}</span>
+			</label>
+			{{end}}
+		</div>{{end}}
 		{{if .Operations}}<ul class="foundry-capabilities" aria-label="{{t "foundry.support"}}">
 			{{range .Operations}}<li>{{.}}</li>{{end}}
 		</ul>{{end}}
-		{{if .Detail}}<p class="foundry-model-note">{{.Detail}}</p>{{end}}
 	</li>
 	{{end}}
 </ul>
-{{end}}
-
-{{define "deployment-field"}}
-<fieldset class="config-full deployment-pool">
-	<legend>{{t .LabelKey}} <span class="foundry-count">{{t "foundry.selected_count" .SelectedCount (len .Choices)}}</span></legend>
-	{{if .Locked}}<span class="hint">{{t "config.set_via" .Env}}</span>{{end}}
-	{{range .Choices}}
-	<div class="deployment-entry">
-	<label class="config-check deployment-choice">
-		<input type="checkbox" name="{{$.Name}}" value="{{.Name}}"{{if .Checked}} checked{{end}}{{if $.Locked}} disabled{{end}}>
-		<span><strong>{{.Label}}</strong>{{if .Location}}<small>{{.Location}}</small>{{end}}</span>
-	</label>
-	<details class="deployment-detail">
-		<summary>{{t "config.details"}}</summary>
-		<p>{{.Detail}}</p>
-		<p>{{.Name}}</p>
-	</details>
-	</div>
-	{{else}}<p class="hint">{{t "foundry.not_configured"}}</p>{{end}}
-</fieldset>
 {{end}}
 
 {{define "embedding-index"}}

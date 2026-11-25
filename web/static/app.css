@@ -802,11 +802,35 @@ html, body {
 .deployment-detail p { font-size: 11px; color: var(--text-dim); overflow-wrap: anywhere; margin: 6px 0; }
 .foundry-model-group h3, .foundry-model-group summary { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--text); }
 .foundry-model-group summary { cursor: pointer; }
+.foundry-model-group + .foundry-model-group { border-top: 1px solid var(--border); padding-top: 16px; }
 .foundry-count { display: inline-block; margin-left: 5px; padding: 1px 6px; border-radius: 8px; background: var(--bg); font-size: 11px; color: var(--text-dim); }
 .foundry-model-list { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .foundry-model { padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); min-width: 0; }
 .foundry-model-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
 .foundry-model-head strong { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.deployment-card-details > summary { cursor: pointer; }
+.deployment-card-details > summary::after { content: "+"; color: var(--text-dim); }
+.deployment-card-details[open] > summary::after { content: "−"; }
+.deployment-card-details .foundry-state { margin-inline-start: auto; }
+.deployment-location { display: block; margin-top: 4px; font-size: 11px; color: var(--text-dim); overflow-wrap: anywhere; }
+.deployment-toggles { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.config-form .deployment-toggles label { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; }
+.config-form .settings-language { display: flex; flex-direction: row; align-items: center; gap: 16px; }
+.settings-language select { max-width: 240px; }
+.readiness-heading { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.check-timestamp { margin-inline-start: auto; text-transform: none; letter-spacing: normal; font-size: 11px; }
+.settings-save-toast {
+	position: fixed; bottom: 20px; right: 20px; z-index: 1200;
+	max-width: min(380px, calc(100vw - 40px)); padding: 10px 14px;
+	border: 1px solid var(--accent); border-radius: 9px; background: var(--bg-elev);
+	color: var(--accent); font-size: 13px; box-shadow: 0 4px 18px rgba(0,0,0,.25);
+}
+.settings-save-toast[data-state="saving"] { color: var(--text-dim); border-color: var(--border); }
+.settings-save-toast[data-state="error"] { color: var(--danger); border-color: var(--danger); }
+.settings-save-toast button { display: block; margin-top: 8px; }
+.settings-save-toast button[hidden], .settings-save-toast[hidden] { display: none; }
+.config-form[data-save-state="error"] input:invalid,
+.config-form[data-save-state="error"] textarea:invalid { border-color: var(--danger); }
 .foundry-state { font-size: 11px; color: var(--text-dim); }
 .foundry-state.ok { color: var(--accent); }
 .foundry-state.warn { color: var(--warn); }

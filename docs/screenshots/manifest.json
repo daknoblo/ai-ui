@@ -1,6 +1,15 @@
 {
   "shots": [
     {
+      "id": "settings-autosave",
+      "lang": "en",
+      "file": "en/settings-autosave.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Settings save automatically",
+      "caption": "Language comes first, checks share one style, and deployment cards combine details with operation checkboxes. A green overlay confirms saved changes; failures remain red and keep pending edits."
+    },
+    {
       "id": "sunburst-models",
       "lang": "en",
       "file": "en/sunburst-models.png",
@@ -188,6 +197,15 @@
       "height": 844,
       "title": "Phone layout",
       "caption": "On a narrow viewport the sidebar turns into an off-canvas drawer behind the ☰ button, so the conversation keeps the full width."
+    },
+    {
+      "id": "settings-autosave",
+      "lang": "de",
+      "file": "de/settings-autosave.png",
+      "width": 1440,
+      "height": 900,
+      "title": "Einstellungen speichern automatisch",
+      "caption": "Sprache zuerst, einheitliche Prüfzeilen und Deployment-Karten mit Details und Funktionsauswahl. Ein grünes Overlay bestätigt das Speichern; Fehler bleiben rot und erhalten offene Änderungen."
     },
     {
       "id": "sunburst-models",

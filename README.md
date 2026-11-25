@@ -11,12 +11,13 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.5.2.** GPT-6.2 Astra is explicitly recognized for chat and
-vision. Tool calls use the Responses API, preserving reasoning context across
-tool results, and its reasoning picker excludes unsupported `none`/`minimal`
-values. Existing settings, model selections and document context are retained.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.5.2)
-and [upgrade checklist](#upgrading-to-152).
+**Current release: 1.6.0.** GPT-Image-2.5 Sunburst joins the image composer with
+independent resolution and quality controls, including `xhigh` and `max`.
+Keep a compact Sunburst + FLUX.2 Pro selection by enabling only their regional
+replicas in both image pools. Existing models and saved selections are retained
+until explicitly changed; no automatic migration or embedding reindex occurs.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.6.0)
+and [upgrade checklist](#upgrading-to-160).
 
 **Website with the full screenshot gallery:**
 <https://daknoblo.github.io/ai-ui/>
@@ -80,7 +81,7 @@ All screenshots are generated automatically from the demo instance
 - Optional web search (🌐) per request: pulls in current online results as
   context - provider agnostic (Tavily, Brave Search, SearXNG)
 - Optional image generation (🖼): the toggle switches the next message from a
-  chat answer to a generated image (`gpt-image-2`, `FLUX.2-pro`, or `FLUX.2-flex`);
+  chat answer to a generated image (for example, `gpt-image-2.5-sunburst` or `FLUX.2-pro`);
   images are stored in the database and shown inline. In image mode an attached
   image turns the next prompt into an edit of that image. Image deployments
   are configured in Settings
@@ -268,6 +269,32 @@ selections, keyed internally by resource ID plus deployment name.
   replayed on another provider. The next user operation advances the cycle.
   Responses display and persist the answering model reported by the provider,
   or the selected deployment when that API does not report a model.
+
+### Sunburst and a compact image-model selection
+
+`gpt-image-2.5-sunburst` (OpenAI, version `2026-09-08`) supports image
+generation and editing. It has independent resolution and quality controls,
+including `xhigh` and `max`. Those values are never sent to FLUX or older GPT
+image models. Resolution presets include square, portrait and landscape up to
+2560x1440 (or 1440x2560); experimental larger resolutions are not exposed.
+Higher quality/resolution can increase latency and cost.
+
+For a compact choice of **Sunburst + FLUX.2 Pro**:
+
+1. Deploy Sunburst on the desired image resources and refresh the inventory.
+2. In **both Image generation and Image edits**, enable the Sunburst and
+   FLUX.2 Pro replicas, and disable GPT-Image-2, FLUX.2 Flex and other models.
+3. Save. The composer then offers Automatic plus these two canonical models,
+   not one entry per region. Explicit selection cycles only matching replicas;
+   Automatic cycles the complete enabled pool.
+4. Switch existing chats explicitly pinned to disabled image models to one of
+   the remaining models. They do not silently change model.
+
+Discovery and upgrades do not automatically replace saved selections. Keep
+old deployments as a rollback until generation and cross-region editing are
+verified, then remove them separately if desired. Existing images/documents
+remain stored; no embedding reindex is required. Flare is not added by this
+feature; previously supported image models remain available when enabled.
 
 ### FLUX.2 image models
 
@@ -1010,11 +1037,18 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.5.2` and `1.5` and also
+`stable`; version releases publish tags such as `1.6.0` and `1.6` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
-### Upgrading to 1.5.2
+### Upgrading to 1.6.0
+
+Version **1.6.0** adds Sunburst image generation/editing and independent options.
+Back up the volume, update the image and reload the browser. Refresh the
+inventory and follow [the compact image selection checklist](#sunburst-and-a-compact-image-model-selection)
+to keep only Sunburst and FLUX.2 Pro in both image pools. Existing model choices
+are not silently changed, and old deployments are not deleted by an upgrade.
+No database migration or embedding reindex is needed.
 
 Version **1.5.2** fixes tool API selection and reasoning controls for
 `gpt-6.2-astra` (version `2026-11-17`), including custom deployment aliases.
@@ -1073,8 +1107,8 @@ When updating an existing 1.2.x installation, back up the data volume,
 update the image and fully reload the browser. For older installations, the
 group and generation-link migrations introduced in the 1.2 series run
 automatically. The compatibility notes below also apply to those upgrades.
-The `1.2`, `1.3` and `1.4` image tags stay on their respective release series; switch
-explicitly to `1.5.2` or `1.5` to follow the new series.
+The `1.2`, `1.3`, `1.4` and `1.5` image tags stay on their respective release series; switch
+explicitly to `1.6.0` or `1.6` to follow the new series.
 For multi-resource discovery, grant the app identity Reader on the configured
 resource groups while keeping inference permissions scoped to the intended
 accounts. Refresh deployments, explicitly enable the desired targets and save
@@ -1095,8 +1129,8 @@ question association. See [Sending a previous question again](#sending-a-previou
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.5.2`, keeping the same persistent volume, ports and
-   environment settings. The `1.5` tag follows releases in this minor series;
+   `ghcr.io/daknoblo/ai-ui:1.6.0`, keeping the same persistent volume, ports and
+   environment settings. The `1.6` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.
    With the service name from the example:
@@ -1233,7 +1267,7 @@ The demo is also the source of the screenshots. The capture script starts it
 with `-foundry -separate-images`, exercises both local inventories, role defaults and reindex consent
 views, and captures those sections with Playwright. The resource and endpoint
 remain truthful read-only demo values; it does not replace them with real Azure
-URLs or contact real services. The gallery contains 35 screenshots, including
+URLs or contact real services. The gallery contains 37 screenshots, including
 the FLUX image controls in English and German. Screenshots are written to
 `docs/screenshots`, together with a manifest describing every shot:
 

@@ -63,6 +63,22 @@ const MOBILE = {
 /** The sections that are captured, in gallery order. */
 const SHOTS = [
   {
+    id: 'sunburst-models',
+    langs: ['en', 'de'],
+    meta: {
+      en: { title: 'Sunburst and FLUX.2 Pro', caption: 'Keep two image models in the enabled pools. Sunburst has independent resolution and quality controls, including xhigh and max; regional replicas rotate in the background.' },
+      de: { title: 'Sunburst und FLUX.2 Pro', caption: 'Zwei Bildmodelle in den aktivierten Pools behalten. Sunburst bietet eigene Auflösungs- und Qualitätsregler einschließlich xhigh und max; regionale Replikate wechseln im Hintergrund.' },
+    },
+    capture: async (page, ctx) => {
+      const restore = await enableFluxModels(page, base, ctx.index, true);
+      await open(page, `/chat/${ctx.index.chats.image}`);
+      await selectImageModel(page, base, 'gpt-image-2.5-sunburst');
+      // Preserve the rendered pair in this screenshot while restoring global
+      // pools for later independent shots.
+      await restore();
+    },
+  },
+  {
     id: 'flux-models',
     langs: ['en', 'de'],
     meta: {

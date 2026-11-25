@@ -366,6 +366,7 @@ var modelProfiles = map[string]modelProfile{
 	"gpt-image-1-mini":                       {"openai", imagesBit | imageEditsBit},
 	"gpt-image-1.5":                          {"openai", imagesBit | imageEditsBit},
 	"gpt-image-2":                            {"openai", imagesBit | imageEditsBit},
+	"gpt-image-2.5-sunburst":                 {"openai", imagesBit | imageEditsBit},
 	"flux.2-pro":                             {"blackforestlabs", imagesBit | imageEditsBit},
 	"flux.2-flex":                            {"blackforestlabs", imagesBit | imageEditsBit},
 	"deepseek-r1":                            {"deepseek", chatBit},

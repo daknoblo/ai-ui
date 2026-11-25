@@ -237,6 +237,7 @@ func (s *demoFoundrySource) Refresh(ctx context.Context, override string) (found
 		deployments = []foundry.Deployment{
 			deployment("canvas", "gpt-image-2", "2026-04-21"),
 			deployment("canvas-legacy", "gpt-image-1.5", "2025-12-16"),
+			deployment("sunburst", "gpt-image-2.5-sunburst", "2026-09-08"),
 			flux("flux-pro", "FLUX.2-pro"),
 			flux("flux-flex", "FLUX.2-flex"),
 		}

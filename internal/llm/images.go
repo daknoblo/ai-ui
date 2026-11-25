@@ -59,15 +59,17 @@ func imageAPIVersion(cfg config.Config) string {
 // ImageOptions are the generation parameters offered in the settings dialog.
 // Empty values and "auto" are omitted so the service default applies.
 type ImageOptions struct {
-	Deployment string // image deployment of the chat; empty uses the configured one
-	Model      string // canonical model after routing
-	Size       string // e.g. 1024x1024
-	Quality    string // low | medium | high
-	Format     string // png | jpeg
-	FluxSize   string // independent FLUX resolution, preserved across model switches
-	Steps      int
-	Guidance   float64
-	route      *Client
+	Deployment      string // image deployment of the chat; empty uses the configured one
+	Model           string // canonical model after routing
+	Size            string // e.g. 1024x1024
+	Quality         string // low | medium | high
+	Format          string // png | jpeg
+	FluxSize        string // independent FLUX resolution, preserved across model switches
+	SunburstSize    string
+	SunburstQuality string
+	Steps           int
+	Guidance        float64
+	route           *Client
 }
 
 // imageDeployment resolves which deployment answers an image request.

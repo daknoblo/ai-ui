@@ -97,6 +97,10 @@ type pageData struct {
 	ImageModelMissing bool
 	FluxSize          string
 	FluxSizes         []string
+	SunburstSize      string
+	SunburstQuality   string
+	SunburstSizes     []string
+	SunburstQualities []string
 	FluxSteps         int
 	FluxGuidance      float64
 	Reasoning         reasoningView
@@ -164,6 +168,10 @@ func (s *Server) buildPageData(ctx context.Context, current *storage.Chat) (page
 		StatusBadge:       s.statusData(),
 		FluxSize:          cfg.FluxSize,
 		FluxSizes:         llm.FluxSizes,
+		SunburstSize:      cfg.SunburstSize,
+		SunburstQuality:   cfg.SunburstQuality,
+		SunburstSizes:     llm.SunburstSizes,
+		SunburstQualities: llm.SunburstQualities,
 		FluxSteps:         cfg.FluxSteps,
 		FluxGuidance:      cfg.FluxGuidance,
 	}
@@ -519,7 +527,8 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request, chat storag
 			ReasoningEffort: llm.NormalizeReasoningEffort(s.cfg.ModelIdentity(chat.Model), chat.ReasoningEffort)},
 		ImageOptions: llm.ImageOptions{Deployment: imageDeployment,
 			Size: cfg.ImageSize, Quality: cfg.ImageQuality, Format: cfg.ImageFormat,
-			FluxSize: cfg.FluxSize, Steps: cfg.FluxSteps, Guidance: cfg.FluxGuidance},
+			FluxSize: cfg.FluxSize, Steps: cfg.FluxSteps, Guidance: cfg.FluxGuidance,
+			SunburstSize: cfg.SunburstSize, SunburstQuality: cfg.SunburstQuality},
 	})
 	if errors.Is(err, storage.ErrGenerationBusy) {
 		http.Error(w, s.t("stream.busy"), http.StatusConflict)

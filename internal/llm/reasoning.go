@@ -45,7 +45,7 @@ func ReasoningEfforts(model string) []string {
 		return nil
 	case strings.HasSuffix(name, "-chat"), strings.Contains(name, "chat-latest"):
 		return nil // the chat tuned siblings answer without reasoning
-	case strings.Contains(name, "gpt-6-"):
+	case strings.Contains(name, "gpt-6-"), strings.Contains(name, "gpt-6.2-astra"):
 		return effortsGPT6
 	case strings.Contains(name, "gpt-5."):
 		return effortsGPT51

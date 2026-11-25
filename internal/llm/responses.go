@@ -76,7 +76,7 @@ func (c *Client) useResponses(opts ChatOptions, messages []Message, tools bool) 
 		return false
 	}
 	model := strings.ToLower(c.store.ModelIdentity(chatDeployment(c.store.Get(), opts.Model)))
-	return strings.HasPrefix(model, "gpt-6-") || strings.HasPrefix(model, "gpt-5.6-") ||
+	return strings.HasPrefix(model, "gpt-6-") || model == "gpt-6.2-astra" || strings.HasPrefix(model, "gpt-5.6-") ||
 		model == "gpt-5.5" || strings.HasPrefix(model, "gpt-5.5-")
 }
 

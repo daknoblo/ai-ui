@@ -12,14 +12,16 @@ func TestReasoningEfforts(t *testing.T) {
 		model string
 		want  []string
 	}{
-		{"", effortsAny},                     // router: the answering model is unknown
-		{"model-router", effortsAny},         // unknown name: offer everything
-		{"claude-opus-4-7", effortsAny},      //
-		{"gpt-5", effortsGPT5},               //
-		{"gpt-5-mini", effortsGPT5},          //
-		{"gpt-5.1", effortsGPT51},            //
-		{"gpt-5.6-sol", effortsGPT51},        //
-		{"gpt-6-astra", effortsGPT6},         //
+		{"", effortsAny},                // router: the answering model is unknown
+		{"model-router", effortsAny},    // unknown name: offer everything
+		{"claude-opus-4-7", effortsAny}, //
+		{"gpt-5", effortsGPT5},          //
+		{"gpt-5-mini", effortsGPT5},     //
+		{"gpt-5.1", effortsGPT51},       //
+		{"gpt-5.6-sol", effortsGPT51},   //
+		{"gpt-6-astra", effortsGPT6},    //
+		{"gpt-6.2-astra", effortsGPT6},
+		{"prod-gpt-6.2-astra", effortsGPT6},
 		{"gpt-5.1-chat", nil},                // chat tuned: answers without reasoning
 		{"gpt-chat-latest", nil},             //
 		{"grok-4.3", effortsAny},             //
@@ -71,6 +73,9 @@ func TestNormalizeReasoningEffort(t *testing.T) {
 		{"gpt-6-astra", "none", ReasoningAuto},
 		{"gpt-6-astra", "minimal", ReasoningAuto},
 		{"gpt-6-astra", "high", "high"},
+		{"gpt-6.2-astra", "none", ReasoningAuto},
+		{"gpt-6.2-astra", "minimal", ReasoningAuto},
+		{"gpt-6.2-astra", "xhigh", "xhigh"},
 		{"gpt-4.1", "high", ReasoningAuto},
 		{"gpt-5.1", "", ReasoningAuto},
 	}

@@ -11,14 +11,12 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.5.1.** This maintenance release updates the HTTP router,
-Azure authentication libraries, Markdown renderer, SQLite driver and local PDF
-parser. Browser tests use stable Playwright 1.65.0; image publication uses
-Trivy 0.76.2 and Cosign 3.1.4 with signature verification before promotion.
-Document Intelligence, existing settings and stored document context remain
-unchanged. Go stays on the patched 1.26 series.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.5.1)
-and [upgrade checklist](#upgrading-to-151).
+**Current release: 1.5.2.** GPT-6.2 Astra is explicitly recognized for chat and
+vision. Tool calls use the Responses API, preserving reasoning context across
+tool results, and its reasoning picker excludes unsupported `none`/`minimal`
+values. Existing settings, model selections and document context are retained.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.5.2)
+and [upgrade checklist](#upgrading-to-152).
 
 **Website with the full screenshot gallery:**
 <https://daknoblo.github.io/ai-ui/>
@@ -353,12 +351,12 @@ and Cohere embedding request formats need separate adapters and are not
 selectable in Foundry mode. New chat model names can use recognized Azure
 chat/vision capability metadata when their model format is already supported.
 Known model profiles cover deployments that omit those hints, including
-GPT-5.6, GPT-6 Astra, GPT-chat-latest and Grok 4.3. Unsupported protocols,
+GPT-5.6, GPT-6 Astra, GPT-6.2 Astra, GPT-chat-latest and Grok 4.3. Unsupported protocols,
 Responses-only models and batch deployments remain excluded.
 
 Automatic image requests use a function tool routed through the enabled image
 generation/edit pool (or the legacy configured deployment), not a model chosen
-by the chat response. GPT-6 Astra and GPT-5.5/5.6
+by the chat response. GPT-6 Astra, GPT-6.2 Astra and GPT-5.5/5.6
 use the Responses API for tool-enabled turns; requests are stateless
 (`store=false`), and encrypted reasoning items are retained only within the
 current tool loop. Other supported chat models use Chat Completions tools.
@@ -1012,11 +1010,26 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.5.1` and `1.5` and also
+`stable`; version releases publish tags such as `1.5.2` and `1.5` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
-### Upgrading to 1.5.1
+### Upgrading to 1.5.2
+
+Version **1.5.2** fixes tool API selection and reasoning controls for
+`gpt-6.2-astra` (version `2026-11-17`), including custom deployment aliases.
+After updating, refresh the Foundry inventory and explicitly enable the new
+deployments in the **Chat** and **Vision/OCR** pools, then save. Newly discovered
+models remain disabled until selected. Enable only the desired replicas if
+every new routed turn should use Astra 6.2; an explicitly pinned existing chat
+keeps its original model, so use a new chat to test round-robin selection.
+Reasoning options are auto, low, medium, high and xhigh. No embedding reindex
+or database migration is required.
+
+Claude is still unsupported by the current OpenAI adapter. A model appearing
+in the Azure catalog with free quota does not establish Marketplace purchase
+eligibility: internal/sandbox subscriptions can reject paid Claude offers.
+Do not substitute another hosting version or subscription without approval.
 
 Version **1.5.1** updates dependencies without changing the database schema.
 Back up the persistent volume, update the image and reload the browser.
@@ -1061,7 +1074,7 @@ update the image and fully reload the browser. For older installations, the
 group and generation-link migrations introduced in the 1.2 series run
 automatically. The compatibility notes below also apply to those upgrades.
 The `1.2`, `1.3` and `1.4` image tags stay on their respective release series; switch
-explicitly to `1.5.1` or `1.5` to follow the new series.
+explicitly to `1.5.2` or `1.5` to follow the new series.
 For multi-resource discovery, grant the app identity Reader on the configured
 resource groups while keeping inference permissions scoped to the intended
 accounts. Refresh deployments, explicitly enable the desired targets and save
@@ -1082,7 +1095,7 @@ question association. See [Sending a previous question again](#sending-a-previou
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.5.1`, keeping the same persistent volume, ports and
+   `ghcr.io/daknoblo/ai-ui:1.5.2`, keeping the same persistent volume, ports and
    environment settings. The `1.5` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.

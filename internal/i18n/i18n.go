@@ -101,6 +101,12 @@ func GroupThousands(lang string, n int64) string {
 // stable; only the values differ per language.
 var catalog = map[string]map[string]string{
 	EN: {
+		"config.saving":                "Saving…",
+		"config.autosave_error":        "Could not save. Your changes are still pending.",
+		"config.autosave_invalid":      "Not saved: check the highlighted or required fields.",
+		"config.discard_close":         "Discard changes and close",
+		"config.upload_status":         "Document uploads",
+		"config.upload_blocked":        "Blocked",
 		"config.details":               "Details",
 		"config.check_details":         "About connection checks",
 		"config.verify_short_hint":     "Uses saved settings. Chat and embedding checks may consume tokens.",
@@ -291,7 +297,7 @@ var catalog = map[string]map[string]string{
 		"foundry.support":                "Supported operations",
 		"foundry.no_deployments":         "No deployments have been discovered. Check the resource and identity, then refresh.",
 		"foundry.unsupported_detail":     "Not supported by this app: %s",
-		"foundry.roles":                  "Default deployments",
+		"foundry.roles":                  "Deployments",
 		"foundry.roles_hint":             "Enable deployments per operation and save. Enabled providers are used cyclically; new discoveries stay disabled. Empty pools disable that operation (an empty chat pool disables chat). Explicit per-chat pins remain on their original resource. Refresh reads accounts in the same resource groups and requires group-level Reader; it never runs inference. Embedding replicas must share the exact model, version and dimensions.",
 		"foundry.embedding_pool_invalid": "Embedding replicas must have the same known model, version and vector dimensions. Your settings and document index have not been changed.",
 		"foundry.chat":                   "Chat",
@@ -511,6 +517,12 @@ var catalog = map[string]map[string]string{
 	},
 
 	DE: {
+		"config.saving":                "Wird gespeichert…",
+		"config.autosave_error":        "Speichern fehlgeschlagen. Deine Änderungen sind noch offen.",
+		"config.autosave_invalid":      "Nicht gespeichert: Bitte ungültige oder erforderliche Felder prüfen.",
+		"config.discard_close":         "Änderungen verwerfen und schließen",
+		"config.upload_status":         "Dokument-Uploads",
+		"config.upload_blocked":        "Gesperrt",
 		"config.details":               "Details",
 		"config.check_details":         "Hinweise zur Verbindungsprüfung",
 		"config.verify_short_hint":     "Verwendet gespeicherte Einstellungen. Chat- und Embedding-Prüfungen können Tokens verbrauchen.",
@@ -701,7 +713,7 @@ var catalog = map[string]map[string]string{
 		"foundry.support":                "Unterstützte Funktionen",
 		"foundry.no_deployments":         "Keine Deployments ermittelt. Prüfe Ressource und Identität und aktualisiere den Bestand.",
 		"foundry.unsupported_detail":     "Von dieser App nicht unterstützt: %s",
-		"foundry.roles":                  "Standard-Deployments",
+		"foundry.roles":                  "Deployments",
 		"foundry.roles_hint":             "Deployments je Vorgang aktivieren und speichern. Aktive Anbieter werden reihum genutzt; neue Funde bleiben deaktiviert. Leere Listen deaktivieren den Vorgang (eine leere Chat-Liste deaktiviert Chat). Feste Modelle bestehender Chats bleiben auf ihrer ursprünglichen Ressource. Aktualisieren liest Konten derselben Ressourcengruppen und benötigt Reader auf Gruppenebene; dabei erfolgt keine Inferenz. Embedding-Replikate müssen Modell, Version und Dimensionen teilen.",
 		"foundry.embedding_pool_invalid": "Embedding-Replikate müssen dasselbe bekannte Modell, dieselbe Version und dieselbe Vektordimension haben. Einstellungen und Dokumentindex wurden nicht geändert.",
 		"foundry.chat":                   "Chat",

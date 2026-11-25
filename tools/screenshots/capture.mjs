@@ -22,7 +22,7 @@ import { verifyChatGroups, createGroup } from './group-checks.mjs';
 import { verifyResponseRetry } from './retry-checks.mjs';
 import { verifyImageRefinements } from './image-checks.mjs';
 import { verifySidebarResize } from './sidebar-checks.mjs';
-import { verifyDeploymentPools } from './pool-checks.mjs';
+import { verifyDeploymentPools, saveSettings } from './pool-checks.mjs';
 import { enableFluxModels, selectImageModel, verifyFluxModels } from './flux-checks.mjs';
 
 const args = Object.fromEntries(
@@ -62,6 +62,34 @@ const MOBILE = {
 
 /** The sections that are captured, in gallery order. */
 const SHOTS = [
+  {
+    id: 'settings-autosave',
+    langs: ['en', 'de'],
+    meta: {
+      en: { title: 'Settings save automatically', caption: 'Language comes first, checks share one style, and deployment cards combine details with operation checkboxes. A green overlay confirms saved changes; failures remain red and keep pending edits.' },
+      de: { title: 'Einstellungen speichern automatisch', caption: 'Sprache zuerst, einheitliche Prüfzeilen und Deployment-Karten mit Details und Funktionsauswahl. Ein grünes Overlay bestätigt das Speichern; Fehler bleiben rot und erhalten offene Änderungen.' },
+    },
+    capture: async (page, ctx) => {
+      await openSettings(page, ctx);
+      const field = page.locator('[name="search_max_results"]');
+      const original = await field.inputValue();
+      await field.fill(original === '5' ? '6' : '5');
+      await saveSettings(page);
+      const checked = page.waitForResponse(response => response.url() === base + '/verify' && response.request().method() === 'POST');
+      await page.locator('button[hx-post="/verify"]').click();
+      if (!(await checked).ok()) throw new Error('Could not verify screenshot configuration');
+      await page.locator('.check-timestamp').waitFor();
+      await page.locator('.modal').evaluate(modal => { modal.scrollTop = 0; });
+      // Restore the fixture without replacing the rendered success toast.
+      const data = await page.locator('.config-form').evaluate((form, value) => {
+        const params = new URLSearchParams(new FormData(form));
+        params.set('search_max_results', value);
+        return params.toString();
+      }, original);
+      const response = await page.request.post(`${base}/config`, { data, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      if (!response.ok()) throw new Error('Could not restore screenshot configuration');
+    },
+  },
   {
     id: 'sunburst-models',
     langs: ['en', 'de'],
@@ -388,7 +416,7 @@ const SHOTS = [
       const embedding = page.locator('.config-form input[name="enabled_embeddings"]');
       for (const input of await embedding.all()) await input.uncheck();
       await page.locator('input[name="enabled_embeddings"][value$="/accounts/local-demo/deployments/docs-next"]').check();
-      await submitSettings(page, '.config-form button[type="submit"]', '/config');
+      await saveSettings(page);
       await page.locator('#embedding-index input[name="confirm_reindex"]').waitFor();
       await scrollSettingsTo(page, 'input[name="enabled_embeddings"]');
     },

@@ -11,13 +11,14 @@ A small, self-hosted ChatGPT-like web interface written in Go with document
 context (RAG), connected to Azure OpenAI-compatible deployments, with an
 optional identity-backed Microsoft Foundry deployment inventory.
 
-**Current release: 1.6.1.** Settings now shows compact deployment choices and
-expandable connection checks, with technical connection details and the full
-inventory collapsed by default. Errors remain visible. FLUX's expected
-missing-prompt HTTP 422 is recognized as a limited API probe, not an inference
-failure or proof of generation access. Saved model selections are unchanged.
-See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.6.1)
-and [upgrade checklist](#upgrading-to-161).
+**Current release: 1.7.0.** Settings combines deployment selection and catalog
+details into one card per resource/deployment. Changes save automatically with
+a green confirmation or persistent red error overlay. Language comes first;
+checks share one compact style with the last-check time at the top right.
+Existing selections remain unchanged until edited, and embedding rebuilds
+still require explicit consent.
+See the [release notes](https://github.com/daknoblo/ai-ui/releases/tag/v1.7.0)
+and [upgrade checklist](#upgrading-to-170).
 
 **Website with the full screenshot gallery:**
 <https://daknoblo.github.io/ai-ui/>
@@ -245,7 +246,8 @@ the deployment, resource, Azure region, canonical model and version. A deploymen
 name such as `gpt-image-2` in Sweden and the same name in Poland are distinct
 selections, keyed internally by resource ID plus deployment name.
 
-- Check the providers you want to use and **Save**. Each operation cycles through
+- Check the providers you want to use and wait for the green **Saved** overlay.
+  Changes are saved automatically. Each operation cycles through
   its enabled providers in a deterministic order, atomically across concurrent
   requests. Newly discovered providers are always disabled until explicitly selected.
 - Existing single-resource defaults migrate to their original account's
@@ -284,7 +286,7 @@ For a compact choice of **Sunburst + FLUX.2 Pro**:
 1. Deploy Sunburst on the desired image resources and refresh the inventory.
 2. In **both Image generation and Image edits**, enable the Sunburst and
    FLUX.2 Pro replicas, and disable GPT-Image-2, FLUX.2 Flex and other models.
-3. Save. The composer then offers Automatic plus these two canonical models,
+3. Wait for the green autosave confirmation. The composer then offers Automatic plus these two canonical models,
    not one entry per region. Explicit selection cycles only matching replicas;
    Automatic cycles the complete enabled pool.
 4. Switch existing chats explicitly pinned to disabled image models to one of
@@ -301,7 +303,7 @@ feature; previously supported image models remain available when enabled.
 Deploy `FLUX.2-pro` and/or `FLUX.2-flex` (BlackForestLabs format, version `1`)
 on a supported Azure AI Services / Foundry resource. Refresh the inventory,
 then explicitly activate the desired regional deployments in **Image generation**
-and **Image edits** and save. Discovery alone never enables a deployment.
+and **Image edits** and wait for autosave. Discovery alone never enables a deployment.
 Existing GPT-Image deployments and manual API-key mode remain supported.
 
 The **image-model selector above the chat input** is saved per chat and never
@@ -392,7 +394,7 @@ The chat deployment must support function tools on its selected API. The manual
 image button bypasses chat-model orchestration and remains available.
 
 In **Settings**, use **Refresh**, check the deployments for each operation,
-**Save**, then run **Check again**. Refresh fetches metadata
+wait for the green autosave confirmation, then run **Check again**. Refresh fetches metadata
 only: it neither invokes models nor changes enabled selections. A failed refresh
 keeps the last successful inventory and displays the failure. Connection
 verification is separate and can consume chat/embedding tokens.
@@ -457,7 +459,7 @@ This is a one-time creation command, not a container startup or rotation command
 
 [docker-compose.example.yml](docker-compose.example.yml) already maps these four
 variables. Start/recreate the container with the values, then open
-**Settings > Refresh deployments**, select the models, **Save**, and
+**Settings > Refresh deployments**, select the models, wait for autosave, and
 **Check again**. Allow a few minutes for new role assignments to propagate;
 model verification and use can incur Azure charges.
 
@@ -510,7 +512,7 @@ Add the printed variable to the container environment and recreate it.
 Leave `AZURE_IMAGE_ENDPOINT` unset to derive the endpoint from the image
 account; remove an old override that points to the primary resource.
 In Settings, choose **Refresh deployments**, check the actual image
-deployments for generation and editing, save, then **Check again**. Allow time for role assignments
+deployments for generation and editing, wait for autosave, then **Check again**. Allow time for role assignments
 to propagate. `AZURE_IMAGE_DEPLOYMENT` can optionally pin that deployment, and
 `AZURE_IMAGE_MODELS` remains an optional allow-list for that image resource.
 
@@ -552,7 +554,7 @@ Changing to a different vector space still requires the staged rebuild below;
 the old index continues using its known source until the atomic switch, when
 that source is still present and authorized.
 
-Save the new embedding selection, review the document/chunk counts and cost
+Wait for the new embedding selection to autosave, review the document/chunk counts and cost
 warning, then explicitly consent to **Rebuild embedding index** in Settings.
 Rebuilding embeds the stored chunk texts into a staged index; it does not
 reparse the original files or repeat OCR. It can process the whole corpus and
@@ -670,18 +672,33 @@ Variables that are not set stay editable in the UI. Empty values count as
 
 ### Readiness & connection check
 
-Settings prioritizes the selectable deployment pools. Checkbox rows show the
-deployment name, resource and region; full identifiers/model versions remain
-available under Details. Connection addresses and the full inventory are
-collapsed by default to avoid repeating the same metadata.
+Settings starts with Language. Each resource-qualified deployment appears once
+as a catalog-style card, with independent checkboxes for supported operations.
+Its resource and region remain visible; model version, full identifier and
+other metadata are expandable. Connection addresses are collapsed by default.
 Check results use compact expandable rows. Errors stay expanded, while limited
 metadata/API probes are labeled as such rather than shown as proof of inference.
-Refresh only updates inventory; Save applies checkbox selections; Check again
-tests saved settings and may consume chat/embedding tokens.
+The latest check time appears at the top right of the check section.
 
-The connection check sits at the top of the settings dialog and runs at startup.
-In manual mode it also runs in the dialog after configuration changes; in
-Foundry mode save the role selections and explicitly choose **Check again**.
+There is no Save button: valid changes autosave after a short delay, with a
+green confirmation at the bottom right. Failed saves show a persistent red
+overlay and retain the pending edits. Correct the fields or change a value to
+try again; Discard changes and close leaves the saved configuration intact.
+Requests are serialized and rapid changes coalesced, so an older response
+cannot overwrite a newer edit. Closing waits for pending saves; navigating
+away warns if unsaved changes remain. Language changes reload and reopen
+Settings only after pending saves complete.
+
+Refresh only updates inventory; Check again tests saved settings and may
+consume chat/embedding tokens. These actions wait for pending autosaves.
+An embedding rebuild remains separate and always requires explicit consent;
+checking its consent box does not trigger autosave or a rebuild.
+
+The connection check sits below Language and runs at application startup.
+In manual mode opening Settings without results also triggers a check.
+Autosave itself does not call inference: after changing settings, wait for
+autosave and explicitly choose **Check again**. Saving invalidates previous
+readiness results, as the previous manual Save action did.
 It probes storage (data path writable), chat and embeddings, and the selectable
 chat deployments individually. A typo in a manual `AZURE_MODELS` list or an
 inference permission error therefore appears before that model is picked.
@@ -1049,11 +1066,19 @@ labels are included but commented out. The project is designed for exactly one
 container - how many instances of it you run is up to you (e.g. several services
 in a single stack). The image is built and published to
 `ghcr.io/daknoblo/ai-ui` by GitHub Actions. Main builds update `latest` and
-`stable`; version releases publish tags such as `1.6.1` and `1.6` and also
+`stable`; version releases publish tags such as `1.7.0` and `1.7` and also
 advance `latest`. Use an exact version or digest for controlled upgrades.
 The image tag carries no `v` prefix even though the git tag does.
 
-### Upgrading to 1.6.1
+### Upgrading to 1.7.0
+
+Version **1.7.0** introduces automatic saving in Settings. After upgrading,
+fully reload the browser. There is no Save button: changing a field or an
+operation checkbox saves automatically. Wait for the green confirmation;
+a red overlay means pending changes were not confirmed as saved.
+Deployment cards preserve independent Chat/Vision and generation/edit choices.
+Existing selections, stored chats and documents are retained. No deployment
+refresh, database migration or embedding reindex is required for this UI update.
 
 Version **1.6.1** simplifies Settings and corrects the FLUX missing-prompt
 probe. Update the container and fully reload the browser. Run **Check again**
@@ -1070,7 +1095,7 @@ No database migration or embedding reindex is needed.
 Version **1.5.2** fixes tool API selection and reasoning controls for
 `gpt-6.2-astra` (version `2026-11-17`), including custom deployment aliases.
 After updating, refresh the Foundry inventory and explicitly enable the new
-deployments in the **Chat** and **Vision/OCR** pools, then save. Newly discovered
+deployments in the **Chat** and **Vision/OCR** pools, then wait for autosave. Newly discovered
 models remain disabled until selected. Enable only the desired replicas if
 every new routed turn should use Astra 6.2; an explicitly pinned existing chat
 keeps its original model, so use a new chat to test round-robin selection.
@@ -1115,7 +1140,7 @@ in [FLUX.2 image models](#flux2-image-models).
 
 For a two-region FLUX setup, refresh the inventory after upgrading, explicitly
 enable **all four deployments** (Pro and Flex in each region) in both **Image
-generation** and **Image edits**, then **save** the pools. Refresh alone does not
+generation** and **Image edits**, then wait for autosave. Refresh alone does not
 activate them. Choose Automatic or a specific image model above the chat input;
 PNG/JPEG, resolution/aspect ratio and Flex steps/guidance apply to the selected
 model family. This image-only change does **not** require reindexing documents.
@@ -1124,12 +1149,12 @@ When updating an existing 1.2.x installation, back up the data volume,
 update the image and fully reload the browser. For older installations, the
 group and generation-link migrations introduced in the 1.2 series run
 automatically. The compatibility notes below also apply to those upgrades.
-The `1.2`, `1.3`, `1.4` and `1.5` image tags stay on their respective release series; switch
-explicitly to `1.6.1` or `1.6` to follow the new series.
+The `1.2`, `1.3`, `1.4`, `1.5` and `1.6` image tags stay on their respective release series; switch
+explicitly to `1.7.0` or `1.7` to follow the new series.
 For multi-resource discovery, grant the app identity Reader on the configured
 resource groups while keeping inference permissions scoped to the intended
-accounts. Refresh deployments, explicitly enable the desired targets and save
-the checkbox pools. Newly discovered targets are not enabled automatically.
+accounts. Refresh deployments, explicitly enable the desired targets and wait
+for the autosave confirmation. Newly discovered targets are not enabled automatically.
 Compatible embedding replicas do not require a rebuild; changing the embedding
 model or vector space still requires the explicit staged reindex workflow.
 Existing chats with explicit model pins keep those pins; use a new chat to test
@@ -1146,8 +1171,8 @@ question association. See [Sending a previous question again](#sending-a-previou
    database, any journal/WAL files, stored configuration and file ownership.
    Do not remove the volume or run `docker compose down -v`.
 2. **Pin the image in the existing stack** to
-   `ghcr.io/daknoblo/ai-ui:1.6.1`, keeping the same persistent volume, ports and
-   environment settings. The `1.6` tag follows releases in this minor series;
+   `ghcr.io/daknoblo/ai-ui:1.7.0`, keeping the same persistent volume, ports and
+   environment settings. The `1.7` tag follows releases in this minor series;
    an exact version or digest is preferable when upgrades must be controlled.
 3. **Review the configuration changes below**, then recreate the ai-ui service.
    With the service name from the example:
@@ -1284,7 +1309,7 @@ The demo is also the source of the screenshots. The capture script starts it
 with `-foundry -separate-images`, exercises both local inventories, role defaults and reindex consent
 views, and captures those sections with Playwright. The resource and endpoint
 remain truthful read-only demo values; it does not replace them with real Azure
-URLs or contact real services. The gallery contains 37 screenshots, including
+URLs or contact real services. The gallery contains 39 screenshots, including
 the FLUX image controls in English and German. Screenshots are written to
 `docs/screenshots`, together with a manifest describing every shot:
 

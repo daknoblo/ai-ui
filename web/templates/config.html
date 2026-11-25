@@ -1,5 +1,5 @@
 {{define "config"}}
-<div class="modal-overlay" hx-on:click="if(event.target===this)this.remove()">
+<div class="modal-overlay settings-overlay">
 	<link rel="stylesheet" href="{{assetURL "app.css"}}"
 		hx-swap-oob="outerHTML:head link[rel='stylesheet'][href^='/static/app.css']">
 	<link rel="stylesheet" href="{{assetURL "chat-groups.css"}}"
@@ -7,19 +7,25 @@
 	<div class="modal">
 		<div class="modal-head">
 			<h2>{{t "config.title"}}</h2>
-			<button class="modal-close" hx-on:click="document.querySelector('.modal-overlay').remove()">×</button>
+			<button type="button" class="modal-close" data-settings-close>×</button>
 		</div>
 
-		<form hx-post="/config" hx-target="#modal-root" hx-swap="innerHTML" class="config-form">
-			<div class="config-section-head">{{t "config.section_readiness"}}</div>
+		<form action="/config" method="post" class="config-form" data-autosave
+			data-saving="{{t "config.saving"}}" data-saved="{{t "config.saved"}}"
+			data-save-error="{{t "config.autosave_error"}}" data-invalid="{{t "config.autosave_invalid"}}">
+			<label class="config-full settings-language">
+				{{t "config.language"}}
+				<select name="language">
+					{{range .Languages}}<option value="{{.Code}}" {{if eq .Code $.Config.Language}}selected{{end}}>{{.Name}}</option>{{end}}
+				</select>
+			</label>
 			<div id="verify-results" class="config-full"
 				{{if and (not .Results) (not .Foundry.Enabled)}}hx-post="/verify" hx-trigger="load" hx-target="this" hx-swap="innerHTML" hx-indicator="#verify-indicator"{{end}}>
-				{{if .Results}}{{template "check-list" .}}{{end}}
+				{{template "check-list" .}}
 				{{if not .CheckedAt}}<p class="hint">{{t "config.verify_pending"}}</p>{{end}}
 			</div>
 			<div id="verify-indicator" class="htmx-indicator hint config-full">{{t "config.verify_running"}}</div>
 			<div class="config-full">
-				<p class="hint">{{t "config.verify_short_hint"}}</p>
 				<button type="button" class="btn btn-ghost"
 					hx-post="/verify"
 					hx-target="#verify-results"
@@ -28,21 +34,7 @@
 					hx-indicator="#verify-indicator">
 					{{t "config.verify"}}
 				</button>
-				<details class="config-details">
-					<summary>{{t "config.check_details"}}</summary>
-					<p class="hint">{{t "config.verify_saved_hint"}}</p>
-				</details>
 			</div>
-
-			<div class="config-section-head">{{t "config.section_general"}}</div>
-			<label>
-				{{t "config.language"}} <span class="hint">{{t "config.language_hint"}}</span>
-				<select name="language">
-					{{range .Languages}}
-					<option value="{{.Code}}" {{if eq .Code $.Config.Language}}selected{{end}}>{{.Name}}</option>
-					{{end}}
-				</select>
-			</label>
 
 			{{if .Foundry.Enabled}}
 			{{template "foundry-settings" .Foundry}}
@@ -194,14 +186,14 @@
 			</div>
 
 			{{end}}
-			{{if .Saved}}<div class="config-saved">{{t "config.saved"}}</div>{{end}}
-
 			<div class="modal-actions">
-				<button type="button" class="btn btn-ghost"
-					hx-on:click="document.querySelector('.modal-overlay').remove()">{{t "action.close"}}</button>
-				<button type="submit" class="btn">{{t "action.save"}}</button>
+				<button type="button" class="btn btn-ghost" data-settings-close>{{t "action.close"}}</button>
 			</div>
 		</form>
+	</div>
+	<div class="settings-save-toast" role="status" aria-live="polite" hidden>
+		<span></span>
+		<button type="button" class="btn btn-ghost btn-small" data-settings-discard hidden>{{t "config.discard_close"}}</button>
 	</div>
 </div>
 {{end}}
@@ -209,12 +201,21 @@
 {{/* check-list: the result rows of a connection check. Rendered inside the
      settings dialog (stored result) and as the answer of /verify. */}}
 {{define "check-list"}}
-<div class="verify-banner {{if .UploadsAllowed}}ok{{else}}warn{{end}}">
-	<span class="check-icon" aria-hidden="true">{{if .UploadsAllowed}}✓{{else}}✗{{end}}</span>
-	<span>{{if .UploadsAllowed}}{{t "verify.uploads_ready"}}{{else}}{{t "verify.uploads_blocked"}}{{end}}</span>
+<div class="config-section-head readiness-heading">
+	<span>{{t "config.section_readiness"}}</span>
+	{{if .CheckedAt}}<span class="hint check-timestamp">{{t "config.checked_at" .CheckedAt}}</span>{{end}}
 </div>
-{{if .CheckedAt}}<p class="hint config-hint-tight">{{t "config.checked_at" .CheckedAt}}</p>{{end}}
 <ul class="check-list">
+	<li class="check {{if .UploadsAllowed}}ok{{else}}err{{end}}">
+		<details class="check-body">
+			<summary class="check-heading">
+				<span class="check-icon" aria-hidden="true">{{if .UploadsAllowed}}✓{{else}}✗{{end}}</span>
+				<span class="check-name">{{t "config.upload_status"}}</span>
+				<span class="check-state">{{if .UploadsAllowed}}{{t "check.state_ok"}}{{else}}{{t "config.upload_blocked"}}{{end}}</span>
+			</summary>
+			<p class="check-detail">{{if .UploadsAllowed}}{{t "verify.uploads_ready"}}{{else}}{{t "verify.uploads_blocked"}}{{end}}</p>
+		</details>
+	</li>
 	{{range .Results}}
 	<li class="check {{.State}}">
 		<details class="check-body"{{if eq .State "err"}} open{{end}}>

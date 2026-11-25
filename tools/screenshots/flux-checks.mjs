@@ -6,11 +6,11 @@ export async function enableFluxModels(page, base, index, pairOnly = false) {
   for (const op of ['images', 'image_edits']) {
     const replicas = page.locator(`input[name="enabled_${op}"][value$="/flux-pro"], input[name="enabled_${op}"][value$="/flux-flex"], input[name="enabled_${op}"][value$="/sunburst"]`);
     if (await replicas.count() < 2) throw new Error('FLUX models missing from demo inventory');
-    for (const replica of await replicas.all()) await replica.check();
+    await replicas.evaluateAll(inputs => inputs.forEach(input => { input.checked = true; }));
     if (pairOnly) {
       for (const replica of await page.locator(`input[name="enabled_${op}"]`).all()) {
         const value = await replica.inputValue();
-        await replica.setChecked(value.endsWith('/flux-pro') || value.endsWith('/sunburst'));
+        await replica.evaluate((input, checked) => { input.checked = checked; }, value.endsWith('/flux-pro') || value.endsWith('/sunburst'));
       }
     }
   }

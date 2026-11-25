@@ -351,6 +351,7 @@ var modelProfiles = map[string]modelProfile{
 	"gpt-5.6-terra":                          {"openai", chatBit | visionBit},
 	"gpt-5.6-luna":                           {"openai", chatBit | visionBit},
 	"gpt-6-astra":                            {"openai", chatBit | visionBit},
+	"gpt-6.2-astra":                          {"openai", chatBit | visionBit},
 	"gpt-chat-latest":                        {"openai", chatBit},
 	"o1":                                     {"openai", chatBit | visionBit},
 	"o1-preview":                             {"openai", chatBit},

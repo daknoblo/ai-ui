@@ -23,17 +23,18 @@ func TestResponsesToolCallPreservesStatelessContext(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Creating it.\"}\n\n")
-		_, _ = fmt.Fprint(w, `data: {"type":"response.completed","response":{"status":"completed","model":"gpt-6-astra","usage":{"input_tokens":12,"output_tokens":8,"total_tokens":20},"output":[{"type":"reasoning","id":"r1","summary":[],"encrypted_content":"encrypted-test-context"},{"type":"function_call","id":"item1","call_id":"call1","name":"generate_image","arguments":"{\"prompt\":\"A park\",\"edit\":false}"}]}}`+"\n\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"response.completed","response":{"status":"completed","model":"gpt-6.2-astra","usage":{"input_tokens":12,"output_tokens":8,"total_tokens":20},"output":[{"type":"reasoning","id":"r1","summary":[],"encrypted_content":"encrypted-test-context"},{"type":"function_call","id":"item1","call_id":"call1","name":"generate_image","arguments":"{\"prompt\":\"A park\",\"edit\":false}"}]}}`+"\n\n")
 	}))
 	defer server.Close()
 	client, store := identityClient(t, server.URL)
 	snapshot := store.FoundryStatus().Catalog
 	snapshot.Deployments = append(snapshot.Deployments, foundry.Deployment{
-		Name: "smart", ModelName: "gpt-6-astra", ModelFormat: "OpenAI", ProvisioningState: "Succeeded",
+		Name: "smart", ModelName: "gpt-6.2-astra", ModelFormat: "OpenAI", ProvisioningState: "Succeeded",
 	})
 	if err := store.SetCatalog(snapshot); err != nil {
 		t.Fatal(err)
 	}
+
 	var output strings.Builder
 	turn, err := client.ChatStreamWithTools(t.Context(), ChatOptions{Model: "smart", ReasoningEffort: "none"},
 		[]Message{{Role: "user", Content: "Draw a park"}},
@@ -59,6 +60,29 @@ func TestResponsesToolCallPreservesStatelessContext(t *testing.T) {
 	}
 	if !strings.Contains(string(inputs[0]), "encrypted-test-context") || !strings.Contains(string(inputs[2]), `"output":""`) {
 		t.Fatal("reasoning context or empty tool output was lost")
+	}
+}
+
+func TestResponsesRoutingByCanonicalModel(t *testing.T) {
+	client, store := identityClient(t, "https://test.openai.azure.com")
+	for _, model := range []string{"gpt-6-astra", "gpt-6.2-astra", "gpt-5.6-sol", "gpt-4o"} {
+		snapshot := store.FoundryStatus().Catalog
+		snapshot.Deployments = append(snapshot.Deployments, foundry.Deployment{
+			Name: model + "-alias", ModelName: model, ModelFormat: "OpenAI", ProvisioningState: "Succeeded",
+		})
+		if err := store.SetCatalog(snapshot); err != nil {
+			t.Fatal(err)
+		}
+		opts := ChatOptions{Model: model + "-alias"}
+		if got := client.useResponses(opts, nil, true); got != (model != "gpt-4o") {
+			t.Errorf("wrong tool API for %s: responses=%v", model, got)
+		}
+		if client.useResponses(opts, nil, false) {
+			t.Errorf("ordinary chat unexpectedly changed API for %s", model)
+		}
+		if !client.useResponses(opts, []Message{{ResponseItems: []json.RawMessage{json.RawMessage(`{"type":"reasoning"}`)}}}, false) {
+			t.Errorf("stateless continuation lost Responses API for %s", model)
+		}
 	}
 }
 

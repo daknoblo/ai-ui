@@ -24,6 +24,7 @@ func TestDeploymentOperationsUseCanonicalMetadata(t *testing.T) {
 		{name: "terra", model: "gpt-5.6-terra", format: "OpenAI", want: []Operation{Chat, Vision}},
 		{name: "luna", model: "gpt-5.6-luna", format: "OpenAI", want: []Operation{Chat, Vision}},
 		{name: "astra", model: "gpt-6-astra", version: "2026-09-03", format: "OpenAI", want: []Operation{Chat, Vision}},
+		{name: "astra-new", model: "gpt-6.2-astra", version: "2026-11-17", format: "OpenAI", want: []Operation{Chat, Vision}},
 		{name: "instant", model: "gpt-chat-latest", version: "2026-06-24", format: "OpenAI", want: []Operation{Chat}},
 		{name: "new-grok", model: "grok-4.3", format: "xAI", want: []Operation{Chat}},
 		{name: "router", model: "model-router", format: "OpenAI", want: []Operation{Chat}},
